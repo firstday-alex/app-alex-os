@@ -135,7 +135,7 @@ export async function httpJson(url, opts = {}) {
         attempts: attempt,
         retryable: true,
       });
-      logger?.apiCall({ label, method, status: null, durationMs: now() - startedAt, attempt, error: err.name || "network_error" });
+      logger?.apiCall?.({ label, method, status: null, durationMs: now() - startedAt, attempt, error: err.name || "network_error" });
       if (attempt === maxAttempts) throw lastError;
       await sleep(backoffMsSchedule[Math.min(attempt - 1, backoffMsSchedule.length - 1)]);
       continue;
@@ -161,7 +161,7 @@ export async function httpJson(url, opts = {}) {
           ? parsed.data.length
           : undefined;
 
-    logger?.apiCall({ label, method, status, durationMs, attempt, rows });
+    logger?.apiCall?.({ label, method, status, durationMs, attempt, rows });
 
     if (status >= 200 && status < 300) {
       return { status, headers: response.headers, body: parsed, rawLength: text.length };
@@ -225,7 +225,7 @@ export async function paginate({ fetchPage, isLastPage, extract, maxPages = 50, 
   }
 
   if (truncated) {
-    logger?.warn("paginate.capped", { label, maxPages, collected: items.length });
+    logger?.warn?.("paginate.capped", { label, maxPages, collected: items.length });
   }
   return { items, pages: page, truncated };
 }

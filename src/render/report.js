@@ -8,7 +8,7 @@ const SIGNAL_MARK = { stalled: "STALLED", waiting: "waiting", moving: "moving", 
 
 /** "L1", "L2", "L3", "CROSS". A layer label a person can read out loud. */
 function layerLabel(layer) {
-  return layer === "cross" ? "CROSS" : `L${layer}`;
+  return layer === "cross" ? "CROSS" : layer === 0 ? "STORE" : `L${layer}`;
 }
 
 function plural(n, singular, plural_) {
@@ -33,6 +33,26 @@ function names(users) {
 }
 
 /* --------------------------------- sections --------------------------------- */
+
+function renderStore(detail, section, lines) {
+  lines.push("STORE. Sitewide metrics against the previous period.");
+  if (!section?.present) {
+    lines.push(`  MISSING. ${section?.reason ?? "not collected"}`);
+    lines.push("");
+    return;
+  }
+  for (const tile of detail?.tiles ?? []) {
+    if (!tile.available) {
+      lines.push(`  ${tile.label}: unavailable. ${tile.reason ?? ""}`.trimEnd());
+      continue;
+    }
+    const value =
+      tile.format === "percent" ? `${(tile.value * 100).toFixed(2)}%` : tile.format === "money" ? `${tile.value?.toFixed(0)}` : String(Math.round(tile.value));
+    const delta = tile.changePct == null ? "no prior period" : `${tile.changePct > 0 ? "+" : ""}${tile.changePct.toFixed(1)}% vs prev`;
+    lines.push(`  ${tile.label}: ${value} (${delta})`);
+  }
+  lines.push("");
+}
 
 function renderLeadership(detail, section, lines) {
   lines.push("LAYER 1. LEADERSHIP PRIORITIES. Every item is a P1.");
@@ -216,6 +236,7 @@ export function renderText(report) {
     lines.push("");
   }
 
+  renderStore(detail.shopify, sections.shopify, lines);
   renderLeadership(detail.leadership, sections.leadership, lines);
   renderCrossLayer(detail.crossLayer, sections.crossLayer, lines);
   renderClickUp(detail.clickup, sections.clickup, lines);

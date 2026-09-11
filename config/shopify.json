@@ -1,0 +1,30 @@
+{
+  "_comment": "Layer 0. Store-wide metrics from ShopifyQL, for the overview at the top of the dashboard. Queries are config, not code: adding or changing a metric is an edit here, never a deploy of new logic.",
+  "_VERIFIED": "Query syntax and response shape validated against the live First Day store on 2026-09-10. ShopifyQL is read-only aggregated reporting.",
+
+  "shopDomain": "first-day-inc.myshopify.com",
+  "apiVersion": "2026-07",
+  "currency": "USD",
+
+  "queries": {
+    "sales": "FROM sales SHOW orders, gross_sales, discounts, net_sales, total_sales, average_order_value SINCE -1d UNTIL today COMPARE TO previous_period",
+    "sessions": "FROM sessions SHOW sessions, sessions_that_completed_checkout, conversion_rate SINCE -1d UNTIL today COMPARE TO previous_period",
+    "customers": "FROM sales SHOW customers, new_customers, returning_customers, returning_customer_rate SINCE -1d UNTIL today COMPARE TO previous_period",
+    "_comment": "SINCE -1d UNTIL today is yesterday plus today so far. COMPARE TO previous_period adds a comparison_<metric>__previous_period column for each metric, which is where the day over day arrow comes from. Every query must stay read-only: FROM ... SHOW, never a mutation."
+  },
+
+  "tiles": [
+    { "metric": "total_sales",         "from": "sales",     "label": "Total sales",     "format": "money",   "goodDirection": "up" },
+    { "metric": "orders",              "from": "sales",     "label": "Orders",          "format": "integer", "goodDirection": "up" },
+    { "metric": "average_order_value", "from": "sales",     "label": "AOV",             "format": "money",   "goodDirection": "up" },
+    { "metric": "conversion_rate",     "from": "sessions",  "label": "Conversion",      "format": "percent", "goodDirection": "up" },
+    { "metric": "sessions",            "from": "sessions",  "label": "Sessions",        "format": "integer", "goodDirection": "up" },
+    { "metric": "new_customers",       "from": "customers", "label": "New customers",   "format": "integer", "goodDirection": "up" },
+    { "metric": "discounts",           "from": "sales",     "label": "Discounts",       "format": "money",   "goodDirection": "down" }
+  ],
+
+  "alerts": {
+    "movePercentThreshold": 15,
+    "_comment": "A tile moving more than this against the previous period is flagged in the readout. Kept deliberately blunt: this is a sanity check that the store has not moved under a test, not a statistical claim. Layer 3 owns the statistics."
+  }
+}

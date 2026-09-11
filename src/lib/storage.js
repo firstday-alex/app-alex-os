@@ -165,7 +165,7 @@ export class Store {
     const collapsed = snapshot?.empty === true || (noItems && failures > 0);
 
     if (collapsed && !allowEmpty) {
-      this.logger?.warn("snapshot.empty_not_stored", {
+      this.logger?.warn?.("snapshot.empty_not_stored", {
         source,
         dateKey,
         mode,
@@ -177,7 +177,7 @@ export class Store {
     }
     if (noItems) {
       // Legitimately nothing to report. Stored, but said out loud.
-      this.logger?.info("snapshot.no_items", { source, dateKey, mode, runId });
+      this.logger?.info?.("snapshot.no_items", { source, dateKey, mode, runId });
     }
 
     const key = this.snapshotKey(source, dateKey, timeKey, mode);
@@ -196,7 +196,7 @@ export class Store {
     index.latestByDate = { ...(index.latestByDate ?? {}), [dateKey]: key };
     await this.backend.set(this.indexKey(source), index);
 
-    this.logger?.info("snapshot.stored", { source, key, mode, count: entry.count });
+    this.logger?.info?.("snapshot.stored", { source, key, mode, count: entry.count });
     return { stored: true, key };
   }
 
@@ -236,7 +236,7 @@ export class Store {
     if (report.mode === "official") {
       await this.backend.set(`${prefix}/latest-official.json`, { key, ...report });
     }
-    this.logger?.info("report.stored", { key, mode: report.mode, flags: report.flags?.length ?? 0 });
+    this.logger?.info?.("report.stored", { key, mode: report.mode, flags: report.flags?.length ?? 0 });
     return key;
   }
 

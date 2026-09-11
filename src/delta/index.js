@@ -309,6 +309,50 @@ export function computeFlags({ snapshots, baselines, config, dateKey, nowIso, lo
     sections.intelligems = { present: false, reason: snapshots.errors?.intelligems ?? "collector did not run" };
   }
 
+  /* ---- Layer 0. Store-wide metrics. ----
+     The point of this layer is context: it separates "the variant won" from "the whole
+     store moved on Tuesday". Flags here are a sanity check, never a statistical claim. */
+  let shopify = null;
+  if (snapshots.shopify) {
+    shopify = snapshots.shopify;
+    const threshold = config.shopify?.alerts?.movePercentThreshold ?? 15;
+    for (const tile of shopify.tiles ?? []) {
+      if (!tile.available) {
+        flags.push(
+          makeFlag({
+            layer: 0,
+            rule: "shopify.metric_unavailable",
+            severity: "info",
+            advisable: false,
+            subject: { type: "metric", id: `shopify:${tile.metric}`, label: tile.label },
+            message: `Store metric ${tile.label} could not be read. ${tile.reason ?? ""}`.trim(),
+            values: { metric: tile.metric, reason: tile.reason },
+          }, { dateKey }),
+        );
+        continue;
+      }
+      if (tile.changePct == null) continue;
+      if (Math.abs(tile.changePct) < threshold) continue;
+
+      // "Good" depends on the metric: discounts rising is not the same as sales rising.
+      const movedUp = tile.changePct > 0;
+      const good = tile.goodDirection === "down" ? !movedUp : movedUp;
+      flags.push(
+        makeFlag({
+          layer: 0,
+          rule: "shopify.metric_moved",
+          severity: good ? "info" : "attention",
+          subject: { type: "metric", id: `shopify:${tile.metric}`, label: tile.label },
+          message: `Store-wide ${tile.label} is ${movedUp ? "up" : "down"} ${Math.abs(tile.changePct).toFixed(1)}% against the previous period. Worth knowing before reading any test result as a win or a loss.`,
+          values: { metric: tile.metric, value: tile.value, previous: tile.previous, changePct: Number(tile.changePct.toFixed(2)), threshold },
+        }, { dateKey }),
+      );
+    }
+    sections.shopify = { present: true, tiles: (shopify.tiles ?? []).length, shopDomain: shopify.shopDomain };
+  } else {
+    sections.shopify = { present: false, reason: snapshots.errors?.shopify ?? "collector did not run" };
+  }
+
   /* ---- Layer 1 ---- */
   let leadership = null;
   if (snapshots.leadership) {
@@ -356,6 +400,6 @@ export function computeFlags({ snapshots, baselines, config, dateKey, nowIso, lo
   return {
     flags: sorted,
     sections,
-    detail: { clickup: cuDelta, intelligems: igDelta, leadership, crossLayer: cross },
+    detail: { shopify, clickup: cuDelta, intelligems: igDelta, leadership, crossLayer: cross },
   };
 }

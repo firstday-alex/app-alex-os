@@ -61,6 +61,7 @@ const FILES = {
   leadershipQueue: "leadership-queue.json",
   people: "people.json",
   references: "references.json",
+  shopify: "shopify.json",
 };
 
 function deepFreeze(value) {

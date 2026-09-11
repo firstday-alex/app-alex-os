@@ -82,14 +82,14 @@ export async function postMessage({ channel, text, blocks, threadTs, token, logg
  */
 export async function sendReadout({ report, store, config, token, channel, logger, fetchImpl, sleep, force = false }) {
   if (!token || !channel) {
-    logger?.warn("slack.not_configured", { hasToken: Boolean(token), hasChannel: Boolean(channel) });
+    logger?.warn?.("slack.not_configured", { hasToken: Boolean(token), hasChannel: Boolean(channel) });
     return { sent: false, reason: "Slack is not configured" };
   }
 
   if (report.mode === "official" && !force) {
     const already = await store.wasSent(report.dateKey);
     if (already) {
-      logger?.info("slack.already_sent", { dateKey: report.dateKey, previousRunId: already.runId, ts: already.ts });
+      logger?.info?.("slack.already_sent", { dateKey: report.dateKey, previousRunId: already.runId, ts: already.ts });
       return { sent: false, reason: "already sent for this date", previous: already };
     }
   }
@@ -107,10 +107,10 @@ export async function sendReadout({ report, store, config, token, channel, logge
     });
     const receipt = { runId: report.runId, ts: result.ts, channel: result.channel, sentAt: new Date().toISOString() };
     if (report.mode === "official") await store.markSent(report.dateKey, receipt);
-    logger?.info("slack.sent", receipt);
+    logger?.info?.("slack.sent", receipt);
     return { sent: true, ...receipt };
   } catch (err) {
-    logger?.error("slack.send_failed", { err, dateKey: report.dateKey });
+    logger?.error?.("slack.send_failed", { err, dateKey: report.dateKey });
     return { sent: false, reason: `Slack send failed: ${err.message}`, reportInStorage: true };
   }
 }

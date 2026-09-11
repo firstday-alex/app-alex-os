@@ -115,7 +115,7 @@ pre { background: var(--code); padding: 12px; border-radius: 4px; overflow-x: au
 .rock textarea.rk { resize: vertical; font-family: inherit; }
 .sig.on_track { background: #eef4ef; color: var(--green); border: 1px solid var(--green); }
 .sig.at_risk  { background: var(--amber-bg); color: var(--amber-ink); border: 1px solid var(--amber); }
-.sig.off_track{ background: var(--red-bg); color: var(--red); border: 1px solid var(--red); }
+.sig.at_risk  { background: var(--amber-bg); color: var(--amber-ink); border: 1px solid var(--amber); }
 .sig.done     { background: var(--code); color: var(--muted); }
 
 /* ---------------------------- app shell + nav ---------------------------- */
@@ -175,7 +175,7 @@ main { max-width: 940px; margin: 0 auto; padding: 22px 18px 80px; }
 #rock-form textarea.rk { resize: vertical; font-family: inherit; }
 .sig.on_track { background: #eef4ef; color: var(--green); border: 1px solid var(--green); }
 .sig.at_risk  { background: var(--amber-bg); color: var(--amber-ink); border: 1px solid var(--amber); }
-.sig.off_track{ background: var(--red-bg); color: var(--red); border: 1px solid var(--red); }
+.sig.at_risk  { background: var(--amber-bg); color: var(--amber-ink); border: 1px solid var(--amber); }
 .sig.done     { background: var(--code); color: var(--muted); }
 
 @media (max-width: 640px) { #drawer { width: 82vw; } }
@@ -191,3 +191,14 @@ main { max-width: 940px; margin: 0 auto; padding: 22px 18px 80px; }
   background: var(--code); color: var(--green); border: 1px solid var(--line);
 }
 .rock-links a:hover { background: #fff; border-color: var(--green); }
+
+/* Layer 0 store metrics */
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 8px; }
+.metric { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; }
+.metric-label { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+.metric-value { font-size: 22px; font-variant-numeric: tabular-nums; margin: 2px 0; }
+.metric-value.muted { color: var(--muted); }
+.metric-delta { font-size: 11px; color: var(--muted); }
+.metric-delta.good { color: var(--green); }
+.metric-delta.bad { color: var(--red); }
+#store-head { margin-top: 0; }

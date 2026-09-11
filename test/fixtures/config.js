@@ -69,6 +69,17 @@ export function testConfig(overrides = {}) {
     leadershipQueue: { queue: [], backlog: [] },
     people: { team: [{ clickupUserId: "u1", name: "dana", slackUserId: null, countsTowardCapacity: true }], alex: { slackUserId: "UALEX" } },
     references: { staleAfterDays: 90, currency: "USD", ltv: { subscription6MonthLtv: { value: null }, oneTime6MonthLtv: { value: null } } },
+    shopify: {
+      shopDomain: "test-shop.myshopify.com",
+      apiVersion: "2026-07",
+      currency: "USD",
+      queries: { sales: "FROM sales SHOW orders, total_sales SINCE -1d UNTIL today COMPARE TO previous_period" },
+      tiles: [
+        { metric: "total_sales", from: "sales", label: "Total sales", format: "money", goodDirection: "up" },
+        { metric: "orders", from: "sales", label: "Orders", format: "integer", goodDirection: "up" },
+      ],
+      alerts: { movePercentThreshold: 15 },
+    },
   };
 
   const merged = { ...base };

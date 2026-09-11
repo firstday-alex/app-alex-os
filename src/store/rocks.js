@@ -30,14 +30,20 @@ export const STATES = ["active", "shipped", "backlog"];
  *
  * Collapsing them would mean losing either "this shipped" or "this is in trouble".
  */
-export const STATUSES = ["on_track", "at_risk", "off_track", "done"];
+export const STATUSES = ["on_track", "at_risk", "done"];
 
 export const STATUS_LABELS = {
-  on_track: "On track",
-  at_risk: "At risk",
-  off_track: "Off track",
+  on_track: "On Track",
+  at_risk: "At Risk",
   done: "Done",
 };
+
+/**
+ * An earlier build carried a fourth status, off_track. It is gone, and any rock still
+ * holding it reads as At Risk rather than failing to load: a status that no longer exists
+ * should not make a rock uneditable.
+ */
+const RETIRED_STATUSES = { off_track: "at_risk" };
 
 export class RockValidationError extends Error {
   constructor(message, field) {
@@ -128,9 +134,13 @@ export function normalizeRock(input, existing = null) {
     throw new RockValidationError(`state must be one of ${STATES.join(", ")}.`, "state");
   }
 
-  const status = input.status ?? existing?.status ?? "on_track";
+  const rawStatus = input.status ?? existing?.status ?? "on_track";
+  const status = RETIRED_STATUSES[rawStatus] ?? rawStatus;
   if (!STATUSES.includes(status)) {
-    throw new RockValidationError(`status must be one of ${STATUSES.join(", ")}.`, "status");
+    throw new RockValidationError(
+      `status must be one of ${STATUSES.map((s) => STATUS_LABELS[s]).join(", ")}.`,
+      "status",
+    );
   }
 
   const shippedAt = input.shippedAt ?? existing?.shippedAt ?? null;
@@ -219,7 +229,7 @@ export class RocksStore {
     if (doc.version === 0 && doc.rocks.length === 0 && Array.isArray(seed) && seed.length) {
       const importable = seed.filter((item) => !String(item.id ?? "").startsWith("example"));
       if (importable.length) {
-        this.logger?.info("rocks.seeded_from_config", { count: importable.length });
+        this.logger?.info?.("rocks.seeded_from_config", { count: importable.length });
         doc = await this.writeAll(importable.map((item) => normalizeRock({ ...item, updatedBy: "config-import" })), {
           expectedVersion: 0,
           reason: "imported from config/leadership-queue.json on first read",
@@ -322,7 +332,7 @@ export class RocksStore {
 
     const entry = { at: nowIso(), version, actor, reason: reason ?? null, changes };
     await this.backend.set(`${AUDIT_PREFIX}/${entry.at}-v${version}.json`, entry);
-    this.logger?.info("rocks.written", { version, actor, reason, changed: changes.length });
+    this.logger?.info?.("rocks.written", { version, actor, reason, changed: changes.length });
     return entry;
   }
 

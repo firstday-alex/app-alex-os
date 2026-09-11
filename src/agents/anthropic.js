@@ -60,7 +60,7 @@ export async function ask({
   const stream = anthropic.beta.messages.stream(request);
   const response = await stream.finalMessage();
 
-  logger?.info("anthropic.call", {
+  logger?.info?.("anthropic.call", {
     model: response.model,
     stopReason: response.stop_reason,
     durationMs: Date.now() - startedAt,
@@ -72,7 +72,7 @@ export async function ask({
   // Check stop_reason before reading content. A refusal is a 200 with no useful answer.
   if (response.stop_reason === "refusal") {
     const category = response.stop_details?.category ?? null;
-    logger?.warn("anthropic.refused", { category });
+    logger?.warn?.("anthropic.refused", { category });
     return { refused: true, category, text: null, parsed: null, response };
   }
 
@@ -90,7 +90,7 @@ export async function ask({
     try {
       parsed = JSON.parse(text);
     } catch (err) {
-      logger?.warn("anthropic.parse_failed", { err, chars: text.length });
+      logger?.warn?.("anthropic.parse_failed", { err, chars: text.length });
     }
   }
 

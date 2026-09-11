@@ -45,6 +45,6 @@ export function sortFlags(flags) {
 
 /** Logs every flag with its rule and values. Called once, centrally, so none is missed. */
 export function logFlags(flags, logger) {
-  for (const flag of flags) logger?.flag(flag);
+  for (const flag of flags) logger?.flag?.(flag);
   return flags;
 }

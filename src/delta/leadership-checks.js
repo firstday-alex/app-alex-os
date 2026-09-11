@@ -66,15 +66,17 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
     }
   }
 
-  /* --- a rock the owner says is in trouble --- */
+  /* --- a rock the owner says is in trouble ---
+     At Risk is now the only warning status, so it carries the weight the retired
+     off_track used to. A leadership priority its own owner says is at risk is a P1. */
   for (const item of queue.filter((i) => i.state === "active")) {
-    if (item.status === "off_track" || item.status === "at_risk") {
+    if (item.status === "at_risk") {
       add({
         layer: 1,
-        rule: item.status === "off_track" ? "leadership.rock_off_track" : "leadership.rock_at_risk",
-        severity: item.status === "off_track" ? "p1" : "attention",
+        rule: "leadership.rock_at_risk",
+        severity: "p1",
         subject: { type: "priority", id: `${item.id}:status`, label: item.title },
-        message: `"${item.title}" is marked ${item.status === "off_track" ? "off track" : "at risk"} by ${item.owner?.name ?? "its owner"}${item.kpi ? `. The KPI it is meant to move is ${item.kpi}` : ""}.`,
+        message: `"${item.title}" is marked At Risk by ${item.owner?.name ?? "its owner"}${item.kpi ? `. The KPI it is meant to move is ${item.kpi}` : ""}.`,
         values: { status: item.status, owner: item.owner?.name ?? null, kpi: item.kpi ?? null, startDate: item.startDate, checkInDate: item.checkInDate },
       });
     }

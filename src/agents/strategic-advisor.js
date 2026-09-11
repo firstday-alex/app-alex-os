@@ -59,7 +59,7 @@ export function gatherContext({ flag, report, config }) {
 export async function advise({ flagId, store, config, env = process.env, logger, reuseCached = true }) {
   const cached = reuseCached ? await store.getAdvice(flagId) : null;
   if (cached) {
-    logger?.info("advisor.cache_hit", { flagId });
+    logger?.info?.("advisor.cache_hit", { flagId });
     return { ...cached, cached: true };
   }
 
@@ -118,6 +118,6 @@ export async function advise({ flagId, store, config, env = process.env, logger,
   };
 
   await store.putAdvice(flagId, advice);
-  logger?.info("advisor.answered", { flagId, rule: flag.rule, chars: result.text?.length ?? 0 });
+  logger?.info?.("advisor.answered", { flagId, rule: flag.rule, chars: result.text?.length ?? 0 });
   return advice;
 }

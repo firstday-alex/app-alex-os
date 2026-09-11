@@ -71,7 +71,7 @@ export function checkTestP1Bands(test, baselineTest, config, logger) {
     for (const name of p1Names) {
       const result = checkP1Band(name, group.metrics?.[name], before.metrics?.[name], p1Config);
       if (result.skipped) {
-        logger?.info("p1band.skipped", { testId: test.id, group: group.name, metric: name, reason: result.reason });
+        logger?.info?.("p1band.skipped", { testId: test.id, group: group.name, metric: name, reason: result.reason });
       }
       if (result.checked && result.outOfBand) {
         results.push({ ...result, groupId: group.id, groupName: group.name });

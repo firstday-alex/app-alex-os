@@ -63,6 +63,7 @@ Connect the repo. Build settings come from `netlify.toml`; there is no build ste
 | Variable | Notes |
 |---|---|
 | `CLICKUP_TOKEN` | personal API token, `pk_...` |
+| `SHOPIFY_ADMIN_TOKEN` | `shpat_...`, scopes `read_reports` + `read_analytics` only |
 | `INTELLIGEMS_TOKEN` | External API key |
 | `SLACK_BOT_TOKEN` | `xoxb-...`, scope `chat:write` |
 | `SLACK_SIGNING_SECRET` | verifies inbound Slack requests |

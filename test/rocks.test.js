@@ -150,18 +150,23 @@ test("a store outage falls back to config rather than emptying Layer 1", async (
 
 /* ------------------------- the fields Alex asked for ------------------------- */
 
-test("status is the health field and is constrained", () => {
+test("status is the health field and is constrained to the three real options", () => {
   assert.throws(() => normalizeRock({ title: "A", status: "going ok" }), /status must be one of/);
-  assert.equal(normalizeRock({ title: "A" }).status, "on_track", "defaults to on track");
-  for (const s of ["on_track", "at_risk", "off_track", "done"]) {
+  assert.equal(normalizeRock({ title: "A" }).status, "on_track", "defaults to On Track");
+  for (const s of ["on_track", "at_risk", "done"]) {
     assert.equal(normalizeRock({ title: "A", status: s }).status, s);
   }
 });
 
-test("status and state are independent: a rock can be active and off track", () => {
-  const rock = normalizeRock({ title: "Redesigned Homepage", state: "active", status: "off_track" });
+test("a rock still holding the retired off_track status loads as At Risk", () => {
+  // A status that no longer exists must not make an existing rock uneditable.
+  assert.equal(normalizeRock({ title: "A", status: "off_track" }).status, "at_risk");
+});
+
+test("status and state are independent: a rock can be active and At Risk", () => {
+  const rock = normalizeRock({ title: "Redesigned Homepage", state: "active", status: "at_risk" });
   assert.equal(rock.state, "active");
-  assert.equal(rock.status, "off_track");
+  assert.equal(rock.status, "at_risk");
 });
 
 test("check-in date and the spec's mini readout are the same field", () => {

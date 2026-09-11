@@ -88,7 +88,7 @@ export async function fetchFieldMap({ config, token, store, logger, fetchImpl, s
     const wantsButLacks = WANTED_FIELDS.some((key) => cu.customFields?.[key] && !cached?.[key]);
     if (cached && !wantsButLacks) return cached;
     if (cached && wantsButLacks) {
-      logger?.info("clickup.field_map_refetch", {
+      logger?.info?.("clickup.field_map_refetch", {
         reason: "a configured field is absent from the cached map",
         missing: WANTED_FIELDS.filter((key) => cu.customFields?.[key] && !cached?.[key]),
       });
@@ -109,13 +109,13 @@ export async function fetchFieldMap({ config, token, store, logger, fetchImpl, s
 
   const map = buildFieldMap(body?.fields ?? [], cu);
   if (!map.taskOwner) {
-    logger?.warn("clickup.field_missing", { field: "taskOwner", looked_for: cu.customFields?.taskOwner?.matchName });
+    logger?.warn?.("clickup.field_missing", { field: "taskOwner", looked_for: cu.customFields?.taskOwner?.matchName });
   }
   if (!map.leadershipPriority) {
-    logger?.warn("clickup.field_missing", { field: "leadershipPriority", looked_for: cu.customFields?.leadershipPriority?.matchName });
+    logger?.warn?.("clickup.field_missing", { field: "leadershipPriority", looked_for: cu.customFields?.leadershipPriority?.matchName });
   }
   if (!map.bigSwing) {
-    logger?.warn("clickup.field_missing", { field: "bigSwing", looked_for: cu.customFields?.bigSwing?.matchName });
+    logger?.warn?.("clickup.field_missing", { field: "bigSwing", looked_for: cu.customFields?.bigSwing?.matchName });
   }
   if (store) await store.setCached(FIELD_MAP_CACHE_KEY, map);
   return map;
@@ -130,7 +130,7 @@ export function statusBucket(statusName, statusMap, logger) {
     const names = (statusMap[bucket] ?? []).map((n) => String(n).trim().toLowerCase());
     if (names.includes(name)) return bucket;
   }
-  logger?.warn("clickup.status_unmapped", { status: statusName, defaulted_to: "notStarted" });
+  logger?.warn?.("clickup.status_unmapped", { status: statusName, defaulted_to: "notStarted" });
   return "notStarted";
 }
 
@@ -255,7 +255,7 @@ export async function fetchCommentsForChanged({ config, token, tasks, baselineTa
 
   const target = moved.slice(0, cap);
   if (moved.length > cap) {
-    logger?.warn("clickup.comment_fetch_capped", { moved: moved.length, cap });
+    logger?.warn?.("clickup.comment_fetch_capped", { moved: moved.length, cap });
   }
 
   const comments = {};
@@ -287,7 +287,7 @@ export async function fetchCommentsForChanged({ config, token, tasks, baselineTa
       };
     } catch (err) {
       // One task's comments failing must not sink the whole collector.
-      logger?.warn("clickup.comment_fetch_failed", { taskId: task.id, err });
+      logger?.warn?.("clickup.comment_fetch_failed", { taskId: task.id, err });
       comments[task.id] = { count: null, ids: [], latest: null, error: true };
     }
   }
@@ -313,7 +313,7 @@ export async function fetchTeamMembers({ config, token, logger, fetchImpl, sleep
     );
     return members;
   } catch (err) {
-    logger?.warn("clickup.team_fetch_failed", { err });
+    logger?.warn?.("clickup.team_fetch_failed", { err });
     return [];
   }
 }

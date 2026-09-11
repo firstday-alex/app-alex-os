@@ -108,7 +108,7 @@ export async function openProposalPr({
     config,
   });
 
-  logger?.info("github.pr_opened", { repo, branch, filePath, number: pr.number, url: pr.html_url });
+  logger?.info?.("github.pr_opened", { repo, branch, filePath, number: pr.number, url: pr.html_url });
   return { number: pr.number, url: pr.html_url, branch, filePath };
 }
 

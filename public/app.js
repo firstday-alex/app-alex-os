@@ -5,7 +5,7 @@
 // away and the caller cannot wait for its result.
 
 const $ = (id) => document.getElementById(id);
-const layerLabel = (layer) => (layer === "cross" ? "CROSS" : `L${layer}`);
+const layerLabel = (layer) => (layer === "cross" ? "CROSS" : layer === 0 ? "STORE" : `L${layer}`);
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -101,6 +101,7 @@ function render() {
   renderFlags($("prompts"), flags.filter((f) => f.severity === "prompt"), "No quiet tests waiting on an owner.");
   renderFlags($("hygiene"), flags.filter((f) => f.severity === "info"), "Nothing outstanding.");
 
+  renderStoreMetrics(report);
   renderLayer1(report);
   renderCross(report);
   renderLayer2(report);
@@ -108,6 +109,54 @@ function render() {
   renderOpenItems();
   $("report-text").textContent = report.text ?? "";
   loadRocks();
+}
+
+/* ------------------------- Layer 0. store metrics ------------------------- */
+
+const MONEY = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const COUNT = new Intl.NumberFormat();
+
+function formatMetric(value, format) {
+  if (value == null) return "—";
+  if (format === "money") return MONEY.format(value);
+  if (format === "percent") return `${(value * 100).toFixed(2)}%`;
+  return COUNT.format(Math.round(value));
+}
+
+function renderStoreMetrics(report) {
+  const section = report.sections?.shopify;
+  const data = report.detail?.shopify;
+  const host = $("store-metrics");
+
+  if (!section?.present) {
+    host.innerHTML = `<div class="note"><strong>Store metrics unavailable.</strong> ${esc(section?.reason ?? "not collected")}</div>`;
+    return;
+  }
+
+  host.innerHTML = (data?.tiles ?? [])
+    .map((t) => {
+      if (!t.available) {
+        return `<div class="metric"><div class="metric-label">${esc(t.label)}</div><div class="metric-value muted">—</div><div class="metric-delta">${esc(t.reason ?? "unavailable")}</div></div>`;
+      }
+      // Direction is not the same as good: discounts rising is not sales rising.
+      const up = (t.changePct ?? 0) > 0;
+      const good = t.changePct == null ? null : (t.goodDirection === "down" ? !up : up);
+      const tone = good == null ? "" : good ? "good" : "bad";
+      return `<div class="metric">
+        <div class="metric-label">${esc(t.label)}</div>
+        <div class="metric-value">${esc(formatMetric(t.value, t.format))}</div>
+        <div class="metric-delta ${tone}">${
+          t.changePct == null
+            ? "no prior period"
+            : `${up ? "▲" : "▼"} ${Math.abs(t.changePct).toFixed(1)}% vs prev · ${esc(formatMetric(t.previous, t.format))}`
+        }</div>
+      </div>`;
+    })
+    .join("");
+
+  $("store-sub").textContent = data?.shopDomain
+    ? `${data.shopDomain} · against the previous period. Context for everything below: a sitewide move is not a test result.`
+    : $("store-sub").textContent;
 }
 
 function tile(n, k) {

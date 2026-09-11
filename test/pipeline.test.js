@@ -86,6 +86,29 @@ function fakeUpstreams({ fail = [], slackCalls = [] } = {}) {
       return reply({});
     }
 
+    if (target.includes("myshopify.com")) {
+      if (fail.includes("shopify")) return reply({ errors: [{ message: "access denied" }] });
+      // The real Admin GraphQL shape: tableData.columns + rows, values as strings, and a
+      // comparison_<metric>__previous_period column per metric from COMPARE TO.
+      return reply({
+        data: {
+          shopifyqlQuery: {
+            __typename: "TableResponse",
+            parseErrors: [],
+            tableData: {
+              columns: [
+                { name: "orders", dataType: "INTEGER" },
+                { name: "total_sales", dataType: "MONEY" },
+                { name: "comparison_orders__previous_period", dataType: "INTEGER" },
+                { name: "comparison_total_sales__previous_period", dataType: "MONEY" },
+              ],
+              rows: [["3327", "240397.18", "3748", "270289.98"]],
+            },
+          },
+        },
+      });
+    }
+
     if (target.includes("slack.com")) {
       slackCalls.push(JSON.parse(options.body));
       return reply({ ok: true, ts: `17${slackCalls.length}.0001`, channel: "C1" });
@@ -96,6 +119,7 @@ function fakeUpstreams({ fail = [], slackCalls = [] } = {}) {
 }
 
 const baseEnv = {
+  SHOPIFY_ADMIN_TOKEN: "shpat_TESTTOKENVALUE0000",
   CLICKUP_TOKEN: TOKEN,
   INTELLIGEMS_TOKEN: IG_TOKEN,
   SLACK_BOT_TOKEN: "xoxb-slack-secret-token-value",
@@ -188,7 +212,7 @@ test("partial failure leaves the good baseline untouched", async () => {
 });
 
 test("every collector failing is reported as failed, not as an empty success", async () => {
-  const ctx = await setup({ fail: ["clickup", "intelligems"] });
+  const ctx = await setup({ fail: ["clickup", "intelligems", "shopify"] });
   const result = await runPipeline({ ...ctx, mode: "official", now: new Date("2026-09-10T13:00:00Z"), env: baseEnv });
   assert.equal(result.report.sections.clickup.present, false);
   assert.equal(result.report.sections.intelligems.present, false);

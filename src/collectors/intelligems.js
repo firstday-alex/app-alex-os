@@ -284,7 +284,7 @@ export function rosterArray(body, logger) {
 
   const arrayKeys = Object.entries(body).filter(([, v]) => Array.isArray(v));
   if (arrayKeys.length === 1) {
-    logger?.warn("intelligems.roster_key_unexpected", {
+    logger?.warn?.("intelligems.roster_key_unexpected", {
       usedKey: arrayKeys[0][0],
       knownKeys: ["experiencesList", "experiences", "data", "results", "items"],
       note: "The roster envelope changed shape. Add this key to the known list.",
@@ -292,7 +292,7 @@ export function rosterArray(body, logger) {
     return arrayKeys[0][1];
   }
 
-  logger?.error("intelligems.roster_unreadable", { keys: Object.keys(body).slice(0, 12) });
+  logger?.error?.("intelligems.roster_unreadable", { keys: Object.keys(body).slice(0, 12) });
   return [];
 }
 
@@ -384,7 +384,7 @@ export async function collectIntelligems({ config, token, store, logger, fetchIm
         });
         test.timeseriesStabilized = assessStability(timeseries);
       } catch (err) {
-        logger?.warn("intelligems.timeseries_failed", { experienceId, err });
+        logger?.warn?.("intelligems.timeseries_failed", { experienceId, err });
         test.timeseriesStabilized = { stabilized: null, reason: "timeseries call failed" };
       }
 
@@ -403,14 +403,14 @@ export async function collectIntelligems({ config, token, store, logger, fetchIm
             body: { view: "post_test", includeInTestOrders: config.intelligems.postTest.includeInTestOrders ?? true },
           });
         } catch (err) {
-          logger?.warn("intelligems.post_test_failed", { experienceId, err });
+          logger?.warn?.("intelligems.post_test_failed", { experienceId, err });
         }
       }
 
       tests.push(test);
     } catch (err) {
       // One test failing must not lose the other tests.
-      logger?.warn("intelligems.test_failed", { experienceId, err });
+      logger?.warn?.("intelligems.test_failed", { experienceId, err });
       failures.push({ experienceId, name: experiment.name ?? null, error: err.message });
     }
   }
@@ -421,7 +421,7 @@ export async function collectIntelligems({ config, token, store, logger, fetchIm
   // like, and the two are indistinguishable downstream. Say so loudly rather than
   // reporting "0 tests running" as though it were verified.
   if (roster.length === 0) {
-    logger?.warn("intelligems.roster_empty", {
+    logger?.warn?.("intelligems.roster_empty", {
       note: "No started experiences came back. Either nothing is running, or the roster envelope changed shape.",
     });
   }

@@ -139,7 +139,12 @@ test("the repo root is discovered by finding config, not by counting directories
     fs.existsSync(path.join(repoRoot, "config", "system.json")),
     "repoRoot must actually contain config/system.json, whatever layout this file is running in",
   );
-  assert.equal(Object.keys(loadConfig()).length, 7);
+  // Assert the sections by name, not by count: adding a config file should not break a
+  // test about path resolution.
+  const config = loadConfig();
+  for (const section of ["system", "clickup", "intelligems", "leadership", "leadershipQueue", "people", "references", "shopify"]) {
+    assert.ok(config[section], `config.${section} must load`);
+  }
 });
 
 test("every function bundle can reach the config and the skill files", async () => {
@@ -155,4 +160,14 @@ test("every function bundle can reach the config and the skill files", async () 
       `skills/${skill}/SKILL.md must be reachable from repoRoot`,
     );
   }
+});
+
+test("a partial logger cannot crash a request", async () => {
+  // A caller passing { warn() {} } and nothing else used to take down the whole HTTP
+  // layer: logger?.apiCall(...) guards a null logger, not a missing method. Every
+  // logger call is now optional-called.
+  const { httpJson } = await import("../src/lib/http.js");
+  const fetchImpl = async () => ({ status: 200, headers: new Headers(), text: async () => "{}" });
+  const result = await httpJson("https://x/y", { fetchImpl, sleep: async () => {}, logger: { warn() {} } });
+  assert.equal(result.status, 200);
 });

@@ -14,6 +14,7 @@ import { dateKey as toDateKey, zonedParts, baselineCandidateKeys } from "./lib/t
 import { collectClickUp } from "./collectors/clickup.js";
 import { collectIntelligems } from "./collectors/intelligems.js";
 import { collectLeadership } from "./collectors/leadership.js";
+import { collectShopify } from "./collectors/shopify.js";
 import { computeFlags } from "./delta/index.js";
 import { buildReport } from "./render/report.js";
 import { sendReadout } from "./send/slack.js";
@@ -60,7 +61,7 @@ export async function runPipeline(opts = {}) {
   const { candidates } = baselineCandidateKeys(now, config);
 
   const baselines = {};
-  for (const source of ["clickup", "intelligems", "leadership"]) {
+  for (const source of ["clickup", "intelligems", "leadership", "shopify"]) {
     baselines[source] = await store.getBaseline(source, candidates);
   }
 
@@ -101,6 +102,16 @@ export async function runPipeline(opts = {}) {
         fetchImpl,
         sleep,
         baseline: baselines.clickup.snapshot,
+        now,
+      }),
+    ),
+    runCollector("shopify", () =>
+      collectShopify({
+        config,
+        token: env.SHOPIFY_ADMIN_TOKEN,
+        logger: logger.child({ collector: "shopify" }),
+        fetchImpl,
+        sleep,
         now,
       }),
     ),

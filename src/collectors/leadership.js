@@ -69,7 +69,7 @@ export async function collectLeadership({ config, clickupSnapshot = null, rocksS
       source = "store";
       version = stored.version;
     } catch (err) {
-      logger?.warn("leadership.store_unavailable", { err, fallback: "config/leadership-queue.json" });
+      logger?.warn?.("leadership.store_unavailable", { err, fallback: "config/leadership-queue.json" });
     }
   }
 
@@ -104,7 +104,7 @@ export async function collectLeadership({ config, clickupSnapshot = null, rocksS
       : [];
 
   if (rosterFallback.length) {
-    logger?.warn("leadership.roster_fallback", {
+    logger?.warn?.("leadership.roster_fallback", {
       reason: "people.json has no real entries; using the ClickUp workspace member list",
       count: rosterFallback.length,
     });

@@ -176,19 +176,14 @@ const rock = (over = {}) => ({
   startDate: "2026-09-08", checkInDate: "2026-09-09", clickupOptionId: "opt_sub", ...over,
 });
 
-test("a rock its owner marked off track is a P1", () => {
-  const result = run(leadership({ queue: [rock({ status: "off_track" })] }));
-  const flag = result.flags.find((f) => f.rule === "leadership.rock_off_track");
-  assert.ok(flag);
-  assert.equal(flag.severity, "p1");
-  assert.match(flag.message, /off track/);
-  assert.equal(flag.values.kpi, "pct_subscription_orders");
-});
-
-test("at risk is flagged, but below a P1", () => {
+test("a rock its owner marked At Risk is a P1", () => {
+  // At Risk is the only warning status, so it carries the weight the retired off_track had.
   const result = run(leadership({ queue: [rock({ status: "at_risk" })] }));
   const flag = result.flags.find((f) => f.rule === "leadership.rock_at_risk");
-  assert.equal(flag.severity, "attention");
+  assert.ok(flag);
+  assert.equal(flag.severity, "p1");
+  assert.match(flag.message, /At Risk/);
+  assert.equal(flag.values.kpi, "pct_subscription_orders");
 });
 
 test("an on-track rock checked in on recently is quiet", () => {

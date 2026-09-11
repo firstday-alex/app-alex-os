@@ -110,7 +110,7 @@ export async function proposeChange({ feedback, reportContext, config, env = pro
     return { actionable: false, reasoning: proposal.reasoning };
   }
   if (!EDITABLE.includes(proposal.targetFile)) {
-    logger?.warn("learning.target_rejected", { targetFile: proposal.targetFile });
+    logger?.warn?.("learning.target_rejected", { targetFile: proposal.targetFile });
     return { actionable: false, error: `${proposal.targetFile} is not an editable file. Nothing proposed.` };
   }
   // A config file that no longer parses would take the pipeline down on the next run.
@@ -118,7 +118,7 @@ export async function proposeChange({ feedback, reportContext, config, env = pro
     try {
       JSON.parse(proposal.newContent);
     } catch (err) {
-      logger?.warn("learning.invalid_json", { targetFile: proposal.targetFile, err });
+      logger?.warn?.("learning.invalid_json", { targetFile: proposal.targetFile, err });
       return { actionable: false, error: `The proposed ${proposal.targetFile} is not valid JSON. Nothing proposed.` };
     }
   }
@@ -183,7 +183,7 @@ export async function handleFeedback({ feedback, reportContext, config, env = pr
       config,
     });
   } catch (err) {
-    logger?.error("learning.pr_failed", { err });
+    logger?.error?.("learning.pr_failed", { err });
     await reply(`I worked out the change but could not open the pull request: ${err.message}`);
     return { proposed: false, proposal, error: err.message };
   }
@@ -206,6 +206,6 @@ export async function handleFeedback({ feedback, reportContext, config, env = pr
       proposedAt: new Date().toISOString(),
     });
   }
-  logger?.info("learning.proposed", { pr: pr.number, targetFile: proposal.targetFile });
+  logger?.info?.("learning.proposed", { pr: pr.number, targetFile: proposal.targetFile });
   return { proposed: true, pr, proposal };
 }
