@@ -72,6 +72,12 @@ Connect the repo. Build settings come from `netlify.toml`; there is no build ste
 | `DASHBOARD_PASSWORD` | the shared dashboard password |
 | `DASHBOARD_COOKIE_SECRET` | `openssl rand -base64 32`. Also gates internal function calls. |
 
+**Never use a value that appears in the repo.** Netlify scans the build output for every
+environment value and fails the build when it finds one. That is not a nuisance to be
+suppressed: a `DASHBOARD_PASSWORD` of `turnpups-mos` is the package name, the Blobs store
+name and the GitHub user-agent, and is guessable from the repo in one try. Generate
+passwords and secrets, never name them after the project.
+
 **Only secrets go here.** The repo and branch the learning skill targets live in
 `config/system.json` → `github`, not in the environment. Netlify runs a secrets scanner
 over the build output and fails the build on any string matching an environment value —

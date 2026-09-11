@@ -41,3 +41,18 @@ for (const file of fs.readdirSync(path.join(root, "config")).filter((f) => f.end
 
 console.log(`${files.length} source file(s) checked, ${failed} failure(s).`);
 process.exit(failed ? 1 : 0);
+
+// Strings that must never double as a credential. A password equal to the project name,
+// the blob store name or the user-agent is guessable from the repo alone, and Netlify's
+// secrets scanner will refuse to publish when it finds an env value in the build output.
+// This lists the collisions so they are noticed here rather than by a failed deploy.
+const RESERVED = new Set();
+try {
+  RESERVED.add(JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).name);
+} catch {}
+RESERVED.add("turnpups-mos");
+RESERVED.add("app-alex-os");
+
+console.log(
+  `\nReminder: these strings appear throughout the repo and must NOT be used as a password or token value:\n  ${[...RESERVED].filter(Boolean).join(", ")}`,
+);
