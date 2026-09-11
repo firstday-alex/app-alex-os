@@ -69,11 +69,15 @@ export function buildQuery(config, queryName, windowName) {
   const where = spec.filter ? sc.filters?.[spec.filter] : null;
   if (spec.filter && !where) throw new Error(`Query "${queryName}" names filter "${spec.filter}", which does not exist`);
 
+  // A window is either a named range (DURING yesterday) or explicit bounds. DURING
+  // replaces SINCE and UNTIL and must not be combined with either.
+  const period = win.during ? `DURING ${win.during}` : `SINCE ${win.since} UNTIL ${win.until}`;
+
   return [
     `FROM ${spec.schema}`,
     `SHOW ${spec.show}`,
     where ? `WHERE ${where}` : null,
-    `SINCE ${win.since} UNTIL ${win.until}`,
+    period,
     spec.orderBy ? `ORDER BY ${spec.orderBy}` : null,
   ]
     .filter(Boolean)
@@ -155,6 +159,7 @@ export function compareWindows(primary, other, { kind, primaryDays, otherDays })
 /** Days elapsed in a window. MTD has no fixed length, so it is counted. */
 export function windowDays(win, now) {
   if (win.days) return win.days;
+  if (win.during === "yesterday" || win.during === "today") return 1;
   if (String(win.since).startsWith("startOfMonth")) {
     return now.getUTCDate(); // days elapsed this month, including today
   }
@@ -268,6 +273,16 @@ export async function collectShopify({ config, token, logger, fetchImpl, sleep, 
     // The plain-language definition, for the info hover. A metric nobody can check the
     // definition of is a metric nobody should act on.
     const description = sc.derived?.[tile.metric]?.description ?? tile.description ?? null;
+
+    // A derived metric may name companions: other derived values worth seeing beside it,
+    // shown in the info hover rather than as tiles of their own.
+    const companions = (sc.derived?.[tile.metric]?.companions ?? []).map((name) => ({
+      name,
+      label: sc.derived?.[name]?.label ?? name,
+      value: results[primaryName]?.derived?.metrics?.[name] ?? null,
+      format: sc.derived?.[name]?.format ?? "percent",
+      description: sc.derived?.[name]?.description ?? null,
+    }));
     const filterName = sc.queries?.[tile.from]?.filter ?? sc.queries?.[sc.derived?.[tile.metric]?.from]?.filter ?? null;
 
     return {
@@ -278,14 +293,62 @@ export async function collectShopify({ config, token, logger, fetchImpl, sleep, 
       available: value != null,
       reason,
       description,
+      companions,
       formula: sc.derived?.[tile.metric]?.formula ?? null,
       filter: filterName ? sc.filters?.[filterName] ?? null : null,
     };
   });
 
+  // The conversion funnel, step by step, for the primary window and each comparison.
+  // Reported as counts plus two rates: share of the step above (where the drop-off is)
+  // and share of all sessions (how much of the top of the funnel survives).
+  const funnelSpec = sc.funnel;
+  const funnel = funnelSpec
+    ? (() => {
+        const stepsFor = (windowName) => {
+          const metrics = results[windowName]?.[funnelSpec.from]?.metrics ?? {};
+          const first = metrics[funnelSpec.steps[0]?.metric] ?? null;
+          let previous = null;
+          return funnelSpec.steps.map((step) => {
+            const count = metrics[step.metric] ?? null;
+            const ofPrevious = count != null && previous != null && previous !== 0 ? count / previous : null;
+            const ofTop = count != null && first != null && first !== 0 ? count / first : null;
+            previous = count;
+            return { ...step, count, ofPrevious, ofTop };
+          });
+        };
+
+        const primarySteps = stepsFor(primaryName);
+        const others = Object.fromEntries(comparisonWindows.map((w) => [w, stepsFor(w)]));
+
+        return {
+          label: funnelSpec.label ?? "Conversion funnel",
+          window: { key: primaryName, label: sc.windows[primaryName].label },
+          steps: primarySteps.map((step, index) => ({
+            ...step,
+            comparisons: comparisonWindows.map((windowName) => {
+              const other = others[windowName][index];
+              // Compare the RATE, not the count: a window of a different length has a
+              // different number of sessions, so only the conversion between steps is
+              // comparable.
+              const cmp = compareWindows(step.ofPrevious, other.ofPrevious, { kind: "rate" });
+              return {
+                window: windowName,
+                label: sc.windows[windowName].label,
+                ofPrevious: other.ofPrevious,
+                count: other.count,
+                changePct: cmp.changePct == null ? null : Number(cmp.changePct.toFixed(1)),
+              };
+            }),
+          })),
+        };
+      })()
+    : null;
+
   return {
     source: "shopify",
     takenAt: now.toISOString(),
+    funnel,
     shopDomain: sc.shopDomain,
     currency: sc.currency ?? null,
     primaryWindow: { key: primaryName, label: sc.windows[primaryName].label, days: daysFor[primaryName] },

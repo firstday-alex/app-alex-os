@@ -7,7 +7,8 @@
   "filters": {
     "newCustomerOnlineStore": "new_or_returning_customer = 'New' AND is_canceled_order = false AND sales_channel = 'Online Store' AND excludes_post_order_adjustments = true",
     "_comment": "Reused across every window so the three numbers are genuinely comparable. The subscription filter is the acquisition filter plus one clause, so the opt-in numerator and denominator share an identical base. subscription_or_one_time takes the values 'subscription' and 'one_time', lowercase.",
-    "newCustomerOnlineStoreSubscription": "new_or_returning_customer = 'New' AND is_canceled_order = false AND sales_channel = 'Online Store' AND excludes_post_order_adjustments = true AND subscription_or_one_time = 'subscription'"
+    "newCustomerOnlineStoreSubscription": "new_or_returning_customer = 'New' AND is_canceled_order = false AND sales_channel = 'Online Store' AND excludes_post_order_adjustments = true AND subscription_or_one_time = 'subscription'",
+    "newCustomerOnlineStoreOneTime": "new_or_returning_customer = 'New' AND is_canceled_order = false AND sales_channel = 'Online Store' AND excludes_post_order_adjustments = true AND subscription_or_one_time = 'one_time'"
   },
   "windows": {
     "mtd": {
@@ -16,6 +17,11 @@
       "until": "today",
       "days": null,
       "primary": true
+    },
+    "yesterday": {
+      "label": "Yest",
+      "during": "yesterday",
+      "days": 1
     },
     "d7": {
       "label": "7D",
@@ -29,7 +35,7 @@
       "until": "today",
       "days": 30
     },
-    "_comment": "The primary window is the number shown. The others are what it is compared against. `days` is used to put TOTALS on a per-day footing before comparing; a rate or an average needs no such adjustment."
+    "_comment": "The primary window is the number shown; the rest are what it is compared against, nearest first. A window is either a named range (DURING yesterday) or explicit SINCE/UNTIL bounds; DURING replaces both and must not be combined with either. `days` puts TOTALS on a per-day footing before comparing, which a rate does not need."
   },
   "queries": {
     "acquisition": {
@@ -40,9 +46,10 @@
     },
     "sessions": {
       "schema": "sessions",
-      "show": "sessions, sessions_that_completed_checkout, conversion_rate",
+      "show": "sessions, sessions_with_cart_additions, sessions_that_reached_checkout, sessions_that_completed_checkout, conversion_rate",
       "filter": null,
-      "orderBy": null
+      "orderBy": null,
+      "_comment": "The closed funnel, per the sessions schema: sessions, cart additions, reached checkout, completed checkout. These are session counts, not order counts, so they do not tie to the sales schema figures above."
     },
     "_comment": "A query is run once per window. The collector assembles FROM <schema> SHOW <show> WHERE <filter> SINCE <since> UNTIL <until>.",
     "subscription": {
@@ -51,6 +58,13 @@
       "filter": "newCustomerOnlineStoreSubscription",
       "orderBy": null,
       "_comment": "The numerator for Sub. Opt-In. Deliberately NOT a GROUP BY subscription_or_one_time: an order containing both a subscription line and a one-time line appears in both groups, so the groups sum to 12,968 against 9,902 distinct orders. Dividing by that sum understates opt-in by about 18 points."
+    },
+    "oneTime": {
+      "schema": "sales",
+      "show": "orders",
+      "filter": "newCustomerOnlineStoreOneTime",
+      "orderBy": null,
+      "_comment": "Only used to reconstruct the mix denominator the Shopify report's stacked bar uses, so both readings of opt-in can be shown side by side."
     }
   },
   "derived": {
@@ -68,10 +82,23 @@
       "label": "Sub. Opt-In",
       "from": null,
       "formula": "subscription.orders / acquisition.orders",
-      "description": "New Customer Subscription Opt-in. The share of new-customer orders that contain a subscription line. The denominator is the same order count ncAOV is built on, so the two tiles describe the same population. It is NOT the subscription share of a GROUP BY subscription_or_one_time: an order can contain both a subscription and a one-time line and is counted in both groups, so that denominator double-counts and understates opt-in by roughly 18 points.",
+      "description": "New Customer Subscription Opt-in. The share of distinct new-customer orders that contain a subscription line: subscription orders over the same order count ncAOV is built on, so both tiles describe one population. NOTE this differs from the Shopify report's stacked bar, which groups by subscription_or_one_time. An order containing both a subscription line and a one-time line is counted in BOTH groups, so the groups sum to more than the number of orders and the bar's share is lower. Both figures are shown here: 'of orders' is this tile, 'of mix' is what the report shows. Neither is wrong; they answer different questions. Of orders: did this customer opt in at all. Of mix: what share of the subscription/one-time split is subscription.",
       "format": "percent",
       "kind": "rate",
-      "goodDirection": "up"
+      "goodDirection": "up",
+      "companions": [
+        "sub_mix"
+      ]
+    },
+    "sub_mix": {
+      "label": "Sub. mix",
+      "from": null,
+      "formula": "subscription.orders / (subscription.orders + oneTime.orders)",
+      "description": "The subscription share of the subscription/one-time split, matching the stacked bar in the Shopify report. Lower than Sub. Opt-In because an order containing both kinds of line is counted in both halves of the split.",
+      "format": "percent",
+      "kind": "rate",
+      "goodDirection": "up",
+      "_comment": "Not a tile by default. It is surfaced in the Sub. Opt-In info hover so the two readings can be compared. Promote it to a tile if the mix view is the one that should lead."
     }
   },
   "tiles": [
@@ -89,6 +116,22 @@
       "label": "Sub. Opt-In",
       "format": "percent",
       "kind": "rate",
+      "goodDirection": "up"
+    },
+    {
+      "metric": "conversion_rate",
+      "from": "sessions",
+      "label": "Conversion",
+      "format": "percent",
+      "kind": "rate",
+      "goodDirection": "up"
+    },
+    {
+      "metric": "sessions",
+      "from": "sessions",
+      "label": "Sessions",
+      "format": "integer",
+      "kind": "total",
       "goodDirection": "up"
     },
     {
@@ -114,30 +157,6 @@
       "format": "money",
       "kind": "total",
       "goodDirection": "up"
-    },
-    {
-      "metric": "shipping_charges",
-      "from": "acquisition",
-      "label": "Shipping",
-      "format": "money",
-      "kind": "total",
-      "goodDirection": "up"
-    },
-    {
-      "metric": "conversion_rate",
-      "from": "sessions",
-      "label": "Conversion",
-      "format": "percent",
-      "kind": "rate",
-      "goodDirection": "up"
-    },
-    {
-      "metric": "sessions",
-      "from": "sessions",
-      "label": "Sessions",
-      "format": "integer",
-      "kind": "total",
-      "goodDirection": "up"
     }
   ],
   "_comment_kind": "kind is how a metric may be compared across windows of different lengths. A 'rate' (an average or a ratio) is already normalized and compares directly. A 'total' is not: MTD gross sales against a 7 day total measures the length of the window, not the business, so totals are compared per day. Discounts are goodDirection up because the value is negative, so a rise is less discounting.",
@@ -145,5 +164,28 @@
     "movePercentThreshold": 15,
     "compareAgainst": "d30",
     "_comment": "A tile moving more than this against the named window is flagged in the readout. Deliberately blunt: this is a sanity check that the store has not moved under a test, not a statistical claim. Layer 3 owns the statistics."
+  },
+  "funnel": {
+    "label": "Conversion funnel",
+    "from": "sessions",
+    "steps": [
+      {
+        "metric": "sessions",
+        "label": "Sessions"
+      },
+      {
+        "metric": "sessions_with_cart_additions",
+        "label": "Added to cart"
+      },
+      {
+        "metric": "sessions_that_reached_checkout",
+        "label": "Reached checkout"
+      },
+      {
+        "metric": "sessions_that_completed_checkout",
+        "label": "Purchased"
+      }
+    ],
+    "_comment": "Each step shows its count, its share of the step above (where the drop-off is) and its share of all sessions. Comparisons are on the STEP RATE, not the count: a window of a different length has a different number of sessions, so only the conversion between steps is comparable across windows."
   }
 }

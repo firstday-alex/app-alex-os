@@ -102,6 +102,7 @@ function render() {
   renderFlags($("hygiene"), flags.filter((f) => f.severity === "info"), "Nothing outstanding.");
 
   renderStoreMetrics(report);
+  renderFunnel(report);
   renderLayer1(report);
   renderCross(report);
   renderLayer2(report);
@@ -157,6 +158,9 @@ function renderStoreMetrics(report) {
       // An info affordance only where there is something to explain.
       const detail = [
         t.description,
+        ...(t.companions ?? []).map(
+          (c) => `${c.label}: ${c.value == null ? "unavailable" : formatMetric(c.value, c.format, { precise: true })}${c.description ? ` — ${c.description}` : ""}`,
+        ),
         t.formula ? `Formula: ${t.formula}` : null,
         t.filter ? `Filter: ${t.filter}` : null,
         t.kind === "total" ? "Compared per day, because the windows are different lengths." : null,
@@ -182,6 +186,61 @@ function renderStoreMetrics(report) {
     `${esc(data?.shopDomain ?? "")} · showing <strong>${esc(win?.label ?? "")}</strong>${win?.days ? ` (${esc(win.days)} days elapsed)` : ""} against ${esc(others)}. ` +
     `Totals are compared per day, marked <span class="basis">/d</span>, because a month-to-date total against a 7 day total measures the window, not the business. ` +
     `Context for everything below: a sitewide move is not a test result.`;
+}
+
+/**
+ * The conversion funnel.
+ *
+ * Bar width is the share of all sessions, so the collapse from sessions to purchases is
+ * visible at a glance. The number that actually matters per row is the step rate — the
+ * share of the row above — because that is where a drop-off lives and it is the only
+ * figure comparable across windows of different lengths.
+ */
+function renderFunnel(report) {
+  const host = $("funnel");
+  const f = report.detail?.shopify?.funnel;
+  if (!f || !report.sections?.shopify?.present) {
+    host.innerHTML = "";
+    return;
+  }
+
+  const pct = (v, digits = 1) => (v == null ? "—" : `${(v * 100).toFixed(digits)}%`);
+
+  const rows = (f.steps ?? [])
+    .map((step, index) => {
+      const width = step.ofTop == null ? 0 : Math.max(step.ofTop * 100, 0.4);
+      const cmps = (step.comparisons ?? [])
+        .map((c) => {
+          if (c.changePct == null) return `<span class="cmp">${esc(c.label)} —</span>`;
+          const good = c.changePct > 0; // a higher step rate is always better
+          return `<span class="cmp ${good ? "good" : "bad"}" title="${esc(c.label)} step rate ${esc(pct(c.ofPrevious))}">${esc(c.label)} ${c.changePct > 0 ? "+" : ""}${esc(c.changePct)}%</span>`;
+        })
+        .join("");
+
+      // The drop-off between this row and the one above, which is the actionable number.
+      const lost = index === 0 || step.ofPrevious == null ? null : 1 - step.ofPrevious;
+
+      return `<div class="funnel-row">
+        <div class="funnel-head">
+          <span class="funnel-label">${esc(step.label)}</span>
+          <span class="funnel-count">${esc(COUNT.format(step.count ?? 0))}</span>
+        </div>
+        <div class="funnel-track"><div class="funnel-bar" style="width:${width}%"></div></div>
+        <div class="funnel-meta">
+          ${index === 0
+            ? `<span class="funnel-step">top of funnel</span>`
+            : `<span class="funnel-step">${esc(pct(step.ofPrevious))} of ${esc(f.steps[index - 1].label.toLowerCase())}</span>
+               <span class="funnel-lost">${esc(pct(lost))} lost</span>`}
+          <span class="funnel-oftop">${esc(pct(step.ofTop, 2))} of sessions</span>
+          ${cmps}
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  host.innerHTML = `
+    <h3 class="funnel-title">${esc(f.label)} <span class="meta">${esc(f.window.label)} · comparisons are on the step rate, not the count</span></h3>
+    <div class="funnel">${rows}</div>`;
 }
 
 function tile(n, k) {

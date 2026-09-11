@@ -263,3 +263,72 @@ test("every tile carries the definition that explains it", async () => {
   assert.ok(aov.formula, "the formula is surfaced for the info hover");
   assert.ok(aov.filter, "so is the filter it was computed under");
 });
+
+/* ------------------------------- the funnel ------------------------------- */
+
+const FUNNEL = {
+  mtd: { sessions: 534091, sessions_with_cart_additions: 38258, sessions_that_reached_checkout: 27925, sessions_that_completed_checkout: 12142, conversion_rate: 0.02273 },
+  yesterday: { sessions: 52219, sessions_with_cart_additions: 4076, sessions_that_reached_checkout: 3027, sessions_that_completed_checkout: 1339, conversion_rate: 0.025642 },
+};
+
+test("a DURING window is built as a named range, never combined with SINCE or UNTIL", () => {
+  const config = testConfig({
+    shopify: {
+      ...testConfig().shopify,
+      windows: { yesterday: { label: "Yest", during: "yesterday", days: 1, primary: true } },
+      queries: { sessions: { schema: "sessions", show: "sessions", filter: null } },
+    },
+  });
+  const q = buildQuery(config, "sessions", "yesterday");
+  assert.match(q, /DURING yesterday$/);
+  assert.ok(!/SINCE|UNTIL/.test(q), "DURING replaces both bounds");
+});
+
+test("yesterday is one day long, so totals compare per day correctly", () => {
+  assert.equal(windowDays({ during: "yesterday", days: 1 }), 1);
+  assert.equal(windowDays({ during: "yesterday" }), 1, "even without an explicit days");
+});
+
+test("the funnel reports each step's share of the one above and of all sessions", () => {
+  // Live MTD: 534,091 sessions -> 38,258 carts -> 27,925 checkouts -> 12,142 purchases.
+  const steps = FUNNEL.mtd;
+  const cartRate = steps.sessions_with_cart_additions / steps.sessions;
+  const checkoutRate = steps.sessions_that_reached_checkout / steps.sessions_with_cart_additions;
+  const purchaseRate = steps.sessions_that_completed_checkout / steps.sessions_that_reached_checkout;
+
+  assert.ok(Math.abs(cartRate - 0.0716) < 0.001, "7.2% of sessions add to cart");
+  assert.ok(Math.abs(checkoutRate - 0.7299) < 0.001, "73% of carts reach checkout");
+  assert.ok(Math.abs(purchaseRate - 0.4348) < 0.001, "43.5% of checkouts purchase");
+
+  // The end-to-end product must equal the reported conversion rate, or a step is wrong.
+  const endToEnd = steps.sessions_that_completed_checkout / steps.sessions;
+  assert.ok(Math.abs(endToEnd - steps.conversion_rate) < 0.0001, "the funnel ties out to conversion_rate");
+});
+
+test("funnel steps are compared on the step rate, not the count", () => {
+  // MTD has 534,091 sessions and yesterday has 52,219. Comparing counts would say every
+  // step collapsed by 90%; comparing rates says what actually changed.
+  const mtdCart = FUNNEL.mtd.sessions_with_cart_additions / FUNNEL.mtd.sessions;
+  const yCart = FUNNEL.yesterday.sessions_with_cart_additions / FUNNEL.yesterday.sessions;
+  const cmp = compareWindows(mtdCart, yCart, { kind: "rate" });
+
+  assert.equal(cmp.basis, "direct");
+  assert.ok(Math.abs(cmp.changePct) < 15, `step rates are within a few points, got ${cmp.changePct}`);
+
+  const naive = compareWindows(FUNNEL.mtd.sessions_with_cart_additions, FUNNEL.yesterday.sessions_with_cart_additions, { kind: "rate" });
+  assert.ok(naive.changePct > 500, "comparing raw counts across these windows is meaningless");
+});
+
+test("both readings of subscription opt-in are computed, and they differ materially", () => {
+  const scope = {
+    acquisition: { metrics: { orders: 9902 } },
+    subscription: { metrics: { orders: 7385 } },
+    oneTime: { metrics: { orders: 5582 } },
+  };
+  const ofOrders = evaluateFormula("subscription.orders / acquisition.orders", scope);
+  const ofMix = evaluateFormula("subscription.orders / (subscription.orders + oneTime.orders)", scope);
+
+  assert.ok(Math.abs(ofOrders - 0.746) < 0.002, "share of distinct orders");
+  assert.ok(Math.abs(ofMix - 0.5696) < 0.002, "share of the subscription/one-time split, as the Shopify report shows");
+  assert.ok(ofOrders - ofMix > 0.17, "the two answer different questions and differ by 17+ points");
+});
