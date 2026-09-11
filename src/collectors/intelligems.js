@@ -265,6 +265,37 @@ export function assessStability(timeseries, { window = 3, tolerancePct = 2 } = {
  * GET /experiences-list. Pagination is 1-based here, not 0-based like ClickUp's, and the
  * envelope reports totalPages, so termination is explicit rather than inferred.
  */
+/**
+ * Pull the list of experiences out of the roster envelope.
+ *
+ * The real key is `experiencesList`. An earlier version guessed `experiences`, matched
+ * nothing, and returned an empty roster — which is a legitimate answer, so the run
+ * reported success while silently reporting no tests at all. Hence the fallback: if no
+ * known key matches, take the only array-valued property and say so in the log, rather
+ * than quietly reporting that nothing is running.
+ */
+export function rosterArray(body, logger) {
+  if (Array.isArray(body)) return body;
+  if (!body || typeof body !== "object") return [];
+
+  for (const key of ["experiencesList", "experiences", "data", "results", "items"]) {
+    if (Array.isArray(body[key])) return body[key];
+  }
+
+  const arrayKeys = Object.entries(body).filter(([, v]) => Array.isArray(v));
+  if (arrayKeys.length === 1) {
+    logger?.warn("intelligems.roster_key_unexpected", {
+      usedKey: arrayKeys[0][0],
+      knownKeys: ["experiencesList", "experiences", "data", "results", "items"],
+      note: "The roster envelope changed shape. Add this key to the known list.",
+    });
+    return arrayKeys[0][1];
+  }
+
+  logger?.error("intelligems.roster_unreadable", { keys: Object.keys(body).slice(0, 12) });
+  return [];
+}
+
 export async function fetchRoster({ config, token, logger, fetchImpl, sleep }) {
   const maxPages = config.system.http.maxPages ?? 50;
   const all = [];
@@ -281,7 +312,7 @@ export async function fetchRoster({ config, token, logger, fetchImpl, sleep }) {
       endpointName: "experiencesList",
       query: { page: String(page), limit: "50", status: "started" },
     });
-    const batch = body?.experiences ?? body?.data ?? (Array.isArray(body) ? body : []);
+    const batch = rosterArray(body, logger);
     all.push(...batch);
     totalPages = Number(body?.totalPages ?? 1) || 1;
     if (batch.length === 0) break;
@@ -385,6 +416,15 @@ export async function collectIntelligems({ config, token, store, logger, fetchIm
   }
 
   const cogsConfigured = tests.length ? tests.every((t) => t.cogsConfigured === true) : null;
+
+  // An empty roster is a real answer, but it is also what a misparsed envelope looks
+  // like, and the two are indistinguishable downstream. Say so loudly rather than
+  // reporting "0 tests running" as though it were verified.
+  if (roster.length === 0) {
+    logger?.warn("intelligems.roster_empty", {
+      note: "No started experiences came back. Either nothing is running, or the roster envelope changed shape.",
+    });
+  }
 
   return {
     source: "intelligems",

@@ -190,3 +190,27 @@ test("trade-off analysis reads the real uplift interval and finds no confident m
   assert.equal(variant.conflict, false);
   assert.ok(variant.flat.some((f) => f.note === "interval spans zero"));
 });
+
+/* ------------------------------ roster envelope ------------------------------ */
+
+test("the roster is read from experiencesList, the key the API actually uses", async () => {
+  const { rosterArray } = await import("../src/collectors/intelligems.js");
+  const { EXPERIENCES_LIST } = await import("./fixtures/intelligems-real.js");
+
+  // Guessing `experiences` matched nothing and returned []. An empty roster is a valid
+  // answer, so the run reported success while reporting no tests at all.
+  assert.equal(rosterArray(EXPERIENCES_LIST).length, 1);
+  assert.equal(rosterArray(EXPERIENCES_LIST)[0].name, "[KCM-PDP] Price per Gummy");
+});
+
+test("an unrecognised envelope is used but reported, never silently emptied", async () => {
+  const { rosterArray } = await import("../src/collectors/intelligems.js");
+  const warned = [];
+  const rows = rosterArray({ renamedAgain: [{ id: "a" }, { id: "b" }] }, { warn: (e) => warned.push(e) });
+  assert.equal(rows.length, 2, "the only array is used rather than returning nothing");
+  assert.ok(warned.includes("intelligems.roster_key_unexpected"));
+
+  const errored = [];
+  assert.equal(rosterArray({ a: 1 }, { error: (e) => errored.push(e) }).length, 0);
+  assert.ok(errored.includes("intelligems.roster_unreadable"), "unreadable is an error, not a quiet zero");
+});

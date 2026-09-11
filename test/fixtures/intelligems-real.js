@@ -129,13 +129,17 @@ export const EXPERIENCE_DETAIL = {
   ],
 };
 
-/** GET /v25-10-beta/experiences-list — the roster envelope. */
+/**
+ * GET /v25-10-beta/experiences-list — the real roster envelope, captured live.
+ * The array is under `experiencesList`. Guessing `experiences` returned an empty roster
+ * and a run that reported success while seeing no tests at all.
+ */
 export const EXPERIENCES_LIST = {
   page: 1,
-  limit: 20,
-  total: 7,
+  limit: 50,
+  total: 9,
   totalPages: 1,
-  experiences: [EXPERIENCE_DETAIL],
+  experiencesList: [EXPERIENCE_DETAIL],
 };
 
 /** The real status set on the Current Sprint list, and the real custom fields. */
