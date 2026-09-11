@@ -1,9 +1,11 @@
 [build]
   publish = "public"
   functions = "netlify/functions"
-  # No build command on purpose. This is plain ESM with no compile step: Netlify just
-  # publishes public/ and bundles the functions. A no-op build command is a thing that
-  # can fail for no benefit, and it did.
+  # An explicit command that cannot fail. There is no compile step here, but leaving
+  # build.command unset does not mean "do nothing": Netlify's framework detection picks a
+  # command on our behalf, and a guessed `npm run build` against a package.json with no
+  # build script exits non-zero. Saying "do nothing" out loud is not the same as silence.
+  command = "echo 'no build step: plain ESM, nothing to compile'"
 
 [functions]
   node_bundler = "esbuild"
