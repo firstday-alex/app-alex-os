@@ -196,3 +196,53 @@ test("settings round-trip with an audit trail and reject a stale write", async (
 
   await assert.rejects(() => settings.write({ subscriptionLtv6mo: 300 }, { expectedVersion: 0 }), /changed since you loaded/);
 });
+
+/* ------------------------------- test notes ------------------------------- */
+
+import { normalizeNote, TestNotesStore, TestNoteError } from "../src/store/test-notes.js";
+
+test("an empty note is stored as nothing at all", () => {
+  // Storing "" for every field on every test is how a small document stops being small.
+  assert.equal(normalizeNote({ hypothesis: "", notes: "  ", decision: "" }), null);
+  assert.equal(normalizeNote({}), null);
+});
+
+test("only the fields that have content are kept", () => {
+  const note = normalizeNote({ hypothesis: "Bundle framing lifts AOV", notes: "", decision: "" });
+  assert.equal(note.hypothesis, "Bundle framing lifts AOV");
+  assert.equal("notes" in note, false, "absent, not empty");
+  assert.equal("decision" in note, false);
+});
+
+test("tags are de-duplicated, validated and capped", () => {
+  assert.deepEqual(normalizeNote({ hypothesis: "x", tags: ["pdp", "pdp", " aov "] }).tags, ["pdp", "aov"]);
+  assert.throws(() => normalizeNote({ hypothesis: "x", tags: ["has/slash"] }), /not a usable tag/);
+  assert.throws(() => normalizeNote({ hypothesis: "x", tags: ["a", "b", "c", "d", "e", "f", "g", "h", "i"] }), /At most 8/);
+});
+
+test("an oversized field is refused rather than silently truncated", () => {
+  assert.throws(() => normalizeNote({ notes: "x".repeat(4001) }), TestNoteError);
+});
+
+test("notes round-trip, and clearing one removes its key entirely", async () => {
+  const backing = await Store.open({ config: testConfig(), mode: "memory" });
+  const notes = new TestNotesStore(backing.backend, null);
+
+  await notes.put("exp-1", { hypothesis: "Price per gummy reads cheaper", tags: ["pdp"] });
+  assert.equal((await notes.get("exp-1")).hypothesis, "Price per gummy reads cheaper");
+
+  // Every note lives in one document, so reading them all costs one fetch.
+  const all = await notes.readAll();
+  assert.equal(Object.keys(all.notes).length, 1);
+
+  await notes.put("exp-1", { hypothesis: "", notes: "", decision: "", tags: [] });
+  assert.equal(await notes.get("exp-1"), null);
+  assert.equal(Object.keys((await notes.readAll()).notes).length, 0, "cleared means gone, not an empty husk");
+});
+
+test("a stale note write is refused rather than clobbering a newer one", async () => {
+  const backing = await Store.open({ config: testConfig(), mode: "memory" });
+  const notes = new TestNotesStore(backing.backend, null);
+  await notes.put("exp-1", { hypothesis: "first" });
+  await assert.rejects(() => notes.put("exp-1", { hypothesis: "second" }, { expectedVersion: 0 }), /changed since you loaded/);
+});

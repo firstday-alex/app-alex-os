@@ -11,7 +11,7 @@ const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 const FN = "/.netlify/functions";
-let state = { report: null, openItems: [], advisorButtonText: "Ask for recommendation", rocks: null, settings: null, openTests: new Set() };
+let state = { report: null, openItems: [], advisorButtonText: "Ask for recommendation", rocks: null, settings: null, testNotes: null, openTests: new Set(), showQuiet: false };
 
 /* ---------------------------------- auth ---------------------------------- */
 
@@ -373,68 +373,96 @@ function renderLayer2(report) {
     ${changeLines.length ? `<ul>${changeLines.map((l) => `<li>${l}</li>`).join("")}</ul>` : '<p class="sub">No changes since the baseline.</p>'}`;
 }
 
-/* ------------------------- Layer 3. experiment trees ------------------------- */
+/* ------------------------- Layer 3. experiment trees -------------------------
+   Quiet by default. A tree where every row shouts is a tree nobody reads: the
+   inconclusive rows are the majority and they are exactly the ones that should
+   not draw the eye. They stay, dimmed and compact, and can be hidden entirely. */
 
 const SIG_TONE = { win: "win", loss: "loss", flat: "flat", none: "none" };
+const QUIET_LEVELS = new Set(["inconclusive", "no_data"]);
 
 function fmtMetric(value, format) {
   if (value == null) return "—";
   if (format === "money") return `$${Number(value).toFixed(2)}`;
-  if (format === "percent") return `${(Number(value) * 100).toFixed(2)}%`;
-  return Number(value).toFixed(3);
+  if (format === "percent") return `${(Number(value) * 100).toFixed(1)}%`;
+  return Number(value).toFixed(2);
 }
 
+/** Only significant nodes get a chip. Labelling noise "Inconclusive" IS the noise. */
 function sigChip(sig) {
-  if (!sig) return "";
+  if (!sig || QUIET_LEVELS.has(sig.level)) return "";
   const tone = SIG_TONE[sig.tone] ?? "flat";
-  const detail = sig.probability != null ? ` · p(beat control) ${(sig.probability * 100).toFixed(0)}%` : "";
-  return `<span class="sig-chip ${tone}" title="${esc(sig.reason ?? "")}${esc(detail)}">${esc(sig.label)}</span>`;
+  const p = sig.probability != null ? ` · p ${(sig.probability * 100).toFixed(0)}%` : "";
+  return `<span class="sig-chip ${tone}" title="${esc(sig.reason ?? "")}${esc(p)}">${esc(sig.label)}</span>`;
 }
 
-/** One node and its children, collapsed until clicked. */
+function nodeIsQuiet(node) {
+  const own = QUIET_LEVELS.has(node.significance?.level);
+  const anyChildLoud = (node.children ?? []).some((c) => !nodeIsQuiet(c));
+  return own && !anyChildLoud;
+}
+
 function renderNode(node, depth, path) {
+  const quiet = nodeIsQuiet(node);
+  if (quiet && !state.showQuiet && depth > 0) return "";
+
   const hasChildren = (node.children ?? []).length > 0;
   const open = state.openTests.has(path);
-  // Direction is not the same as good: abandonment rising is not an improvement.
   const up = (node.upliftPct ?? 0) > 0;
   const good = node.upliftPct == null ? null : node.goodDirection === "down" ? !up : up;
   const upliftText = node.upliftPct == null ? "—" : `${up ? "+" : ""}${node.upliftPct.toFixed(1)}%`;
-  const caret = hasChildren ? `<span class="caret ${open ? "open" : ""}">▸</span>` : `<span class="caret leafdot">·</span>`;
-  const headAttrs = hasChildren ? `data-node="${esc(path)}"` : "disabled";
+  const caret = hasChildren ? `<span class="caret ${open ? "open" : ""}">▸</span>` : `<span class="caret leafdot"></span>`;
 
-  const attribution = node.attribution
-    ? `<div class="attribution">${node.attribution
-        .map((a) => `<span class="attr"><strong>${esc(a.label)}</strong> ${a.contributionPct > 0 ? "+" : ""}${a.contributionPct.toFixed(1)}pp of the move</span>`)
-        .join("")}</div>`
-    : "";
+  // Attribution is a sentence, not a row of chips. "AOV carried it" is the finding.
+  let attribution = "";
+  if (node.attribution && node.attribution.length) {
+    const sorted = [...node.attribution].sort((a, b) => Math.abs(b.contributionPct) - Math.abs(a.contributionPct));
+    const lead = sorted[0];
+    const rest = sorted.slice(1);
+    attribution = `<div class="attribution">${esc(lead.label)} accounts for ${lead.contributionPct > 0 ? "+" : ""}${lead.contributionPct.toFixed(1)}pp of this${
+      rest.length ? `, ${esc(rest.map((r) => `${r.label} ${r.contributionPct > 0 ? "+" : ""}${r.contributionPct.toFixed(1)}pp`).join(", "))}` : ""
+    }</div>`;
+  }
 
   const weaker = node.childrenSignificance && node.childrenSignificance.rank < (node.significance?.rank ?? 0);
-  const rollup = weaker
-    ? `<span class="rollup" title="The components beneath this are weaker than the headline. Treat the headline with the confidence of its parts.">components: ${esc(node.childrenSignificance.label)}</span>`
-    : "";
+  const rollup = weaker ? `<span class="rollup" title="The components beneath this are weaker than the headline.">components weaker</span>` : "";
 
   const children = hasChildren && open
     ? `<div class="tchildren">${node.children.map((c, i) => renderNode(c, depth + 1, `${path}.${i}`)).join("")}</div>`
     : "";
 
-  return `<div class="tnode depth-${depth}">
-      <button class="tnode-head${hasChildren ? "" : " leaf"}" ${headAttrs}>
+  const hiddenCount = hasChildren && open && !state.showQuiet
+    ? node.children.filter((c) => nodeIsQuiet(c)).length
+    : 0;
+
+  return `<div class="tnode${quiet ? " quiet" : ""}">
+      <button class="tnode-head${hasChildren ? "" : " leaf"}" ${hasChildren ? `data-node="${esc(path)}"` : "disabled"}
+        title="control ${esc(fmtMetric(node.control, node.format))}">
         ${caret}
         <span class="tnode-label">${esc(node.label)}</span>
         <span class="tnode-value">${esc(fmtMetric(node.value, node.format))}</span>
-        <span class="tnode-vs">vs ${esc(fmtMetric(node.control, node.format))}</span>
         <span class="tnode-uplift ${good === null ? "" : good ? "good" : "bad"}">${esc(upliftText)}</span>
         ${sigChip(node.significance)}
         ${rollup}
       </button>
       ${attribution}
       ${children}
+      ${hiddenCount ? `<div class="tnode-hidden">${hiddenCount} inconclusive hidden</div>` : ""}
     </div>`;
 }
 
-function renderFutureValue(fv) {
+/* --------------------------- future value, on demand --------------------------- */
+
+function renderFutureValue(testId, fv) {
+  const key = `fv:${testId}`;
+  if (!state.openTests.has(key)) {
+    return `<div class="fv-ask">
+        <button class="ghost" data-node="${esc(key)}">Project ${esc(fv?.horizonMonths ?? 6)} month value</button>
+        <span class="meta">Values each variant on the customer mix it produces, not on this order alone.</span>
+      </div>`;
+  }
   if (!fv) return "";
-  if (!fv.available) return `<div class="note"><strong>Future value not projected.</strong> ${esc(fv.reason)}</div>`;
+  if (!fv.available) return `<div class="note"><strong>Cannot project.</strong> ${esc(fv.reason)}</div>`;
 
   const money = (v) => (v == null ? "—" : `$${Number(v).toFixed(2)}`);
   const pct = (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`);
@@ -445,58 +473,106 @@ function renderFutureValue(fv) {
         <td>${esc(v.name)}</td>
         <td>${esc(money(v.valuePerVisitor))}</td>
         <td class="${v.upliftPct == null ? "" : v.upliftPct > 0 ? "good" : "bad"}">${esc(pct(v.upliftPct))}</td>
-        <td>${esc(money(v.immediateRpv))}</td>
         <td class="${v.immediateUpliftPct == null ? "" : v.immediateUpliftPct > 0 ? "good" : "bad"}">${esc(pct(v.immediateUpliftPct))}</td>
         <td>${esc(share(v.subscriptionShare))}</td>
       </tr>`)
     .join("");
 
   const conflict = fv.variants.filter((v) => v.disagreesWithImmediate);
-  const conflictNote = conflict.length
-    ? `<div class="note"><strong>The two views disagree on ${esc(conflict.map((v) => v.name).join(", "))}.</strong> Immediate revenue and ${esc(fv.horizonMonths)} month value point in opposite directions, which is the whole reason this projection exists. Which one wins is a decision, not a calculation.</div>`
-    : "";
-
-  return `<h4 class="form-head">Future value, ${esc(fv.horizonMonths)} months</h4>
-    <p class="meta">Subscriber ${esc(money(fv.subscriptionLtv))} against one-time ${esc(money(fv.oneTimeLtv))}, a spread of ${esc(money(fv.spread))}. Value per visitor is conversion rate times the blended worth of the mix it produces.</p>
-    ${fv.references.stale ? `<div class="note">${esc(fv.references.note)}</div>` : ""}
-    ${conflictNote}
-    <div class="scroll"><table>
-      <thead><tr><th>Variation</th><th>Value / visitor</th><th>vs control</th><th>Immediate RPV</th><th>vs control</th><th>Sub share</th></tr></thead>
-      <tbody>
-        <tr class="control-row"><td>${esc(fv.control.name)} (control)</td><td>${esc(money(fv.control.valuePerVisitor))}</td><td>—</td><td>—</td><td>—</td><td>${esc(share(fv.control.subscriptionShare))}</td></tr>
-        ${rows}
-      </tbody>
-    </table></div>`;
+  return `<div class="fv">
+      <div class="bar">
+        <strong>${esc(fv.horizonMonths)} month value</strong>
+        <span class="meta">subscriber ${esc(money(fv.subscriptionLtv))} · one-time ${esc(money(fv.oneTimeLtv))}</span>
+        <span class="grow"></span>
+        <button class="ghost" data-node="${esc(key)}">Hide</button>
+      </div>
+      ${fv.references.stale ? `<div class="note">${esc(fv.references.note)}</div>` : ""}
+      ${conflict.length ? `<div class="note"><strong>Lifetime and immediate disagree on ${esc(conflict.map((v) => v.name).join(", "))}.</strong> That disagreement is the decision.</div>` : ""}
+      <div class="scroll"><table>
+        <thead><tr><th>Variation</th><th>Value / visitor</th><th>Lifetime</th><th>Immediate</th><th>Sub share</th></tr></thead>
+        <tbody>
+          <tr class="control-row"><td>${esc(fv.control.name)} (control)</td><td>${esc(money(fv.control.valuePerVisitor))}</td><td>—</td><td>—</td><td>${esc(share(fv.control.subscriptionShare))}</td></tr>
+          ${rows}
+        </tbody>
+      </table></div>
+    </div>`;
 }
 
+/* ------------------------------- test notes ------------------------------- */
+
+function renderNotes(testId) {
+  const all = state.testNotes?.notes ?? {};
+  const note = all[testId] ?? {};
+  const fields = state.testNotes?.fields ?? {};
+  const key = `notes:${testId}`;
+  const open = state.openTests.has(key);
+  const filled = Object.keys(fields).filter((f) => note[f]).length;
+
+  if (!open) {
+    const summary = note.hypothesis || note.decision || note.notes;
+    return `<div class="notes-peek">
+        <button class="ghost" data-node="${esc(key)}">${filled ? "Notes" : "Add notes"}</button>
+        ${summary ? `<span class="meta">${esc(String(summary).slice(0, 110))}${String(summary).length > 110 ? "…" : ""}</span>` : '<span class="meta">hypothesis, observations, the decision and why</span>'}
+        ${(note.tags ?? []).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}
+      </div>`;
+  }
+
+  const inputs = Object.entries(fields)
+    .map(([k, spec]) => `<label class="wide">${esc(spec.label)}
+        <textarea class="nt" data-f="${esc(k)}" rows="${k === "notes" ? 3 : 2}" placeholder="${esc(spec.help)}">${esc(note[k] ?? "")}</textarea>
+      </label>`)
+    .join("");
+
+  return `<div class="notes-edit" data-test="${esc(testId)}">
+      ${inputs}
+      <label class="wide">Tags<input class="nt" data-f="tags" value="${esc((note.tags ?? []).join(", "))}" placeholder="comma separated"></label>
+      <div class="bar">
+        <button class="note-save" data-test="${esc(testId)}">Save notes</button>
+        <button class="ghost" data-node="${esc(key)}">Close</button>
+        <span class="meta note-msg"></span>
+        ${note.updatedAt ? `<span class="meta">last saved ${esc(new Date(note.updatedAt).toLocaleString())}</span>` : ""}
+      </div>
+    </div>`;
+}
+
+/* -------------------------------- test card -------------------------------- */
+
 function renderTestCard(test, ti) {
-  const openKey = `t${ti}`;
+  const openKey = `t${test.id ?? ti}`;
   const open = state.openTests.has(openKey);
-  const gate = test.recommendation.gate.ready ? "" : " · gate not met";
+  const headline = (test.trees ?? [])[0]?.headline;
+  const gate = test.recommendation.gate.ready ? "" : "gate not met";
 
   const trees = (test.trees ?? [])
     .map((tree, gi) => {
       const roots = tree.roots.map((r, ri) => renderNode(r, 0, `${openKey}.g${gi}.r${ri}`)).join("");
-      return `<h4 class="form-head">${esc(tree.groupName)} vs control</h4>
-        <p class="meta">Click a row to open its components. A parent is never reported as more certain than the branch beneath it.</p>
-        ${roots}`;
+      return `<div class="tree-block"><div class="tree-head">${esc(tree.groupName)} vs control</div>${roots}</div>`;
     })
     .join("");
 
   const body = open
     ? `<div class="test-body">
         <p class="meta">${esc(test.recommendation.reason)}</p>
-        ${renderFutureValue(test.futureValue)}
+        ${renderNotes(test.id)}
         ${trees}
+        <div class="bar tree-controls">
+          <button class="ghost" id="toggle-quiet-${esc(openKey)}" data-quiet="1">${state.showQuiet ? "Hide inconclusive" : "Show all rows"}</button>
+        </div>
+        ${renderFutureValue(test.id, test.futureValue)}
       </div>`
+    : "";
+
+  const headlineChip = headline && !QUIET_LEVELS.has(headline.level)
+    ? `<span class="sig-chip ${SIG_TONE[headline.tone] ?? "flat"}">${esc(headline.label)} on ${esc(headline.label === "Strong" || headline.label === "Directional" ? headline.metric ?? "" : "")}</span>`
     : "";
 
   return `<div class="test-card">
       <button class="test-head" data-node="${esc(openKey)}">
         <span class="caret ${open ? "open" : ""}">▸</span>
         <span class="test-name">${esc(test.name)}</span>
-        <span class="chip">${esc(test.recommendation.recommendation)}</span>
-        <span class="meta">${esc(test.daysRunning ?? "?")}d · ${esc(test.minOrdersPerGroup ?? "?")} orders${esc(gate)}</span>
+        <span class="chip ${test.recommendation.recommendation === "Kill" ? "bad" : test.recommendation.recommendation === "Ship" ? "good" : ""}">${esc(test.recommendation.recommendation)}</span>
+        ${headlineChip}
+        <span class="meta">${esc(test.daysRunning ?? "?")}d · ${esc(test.minOrdersPerGroup ?? "?")} orders${gate ? ` · ${esc(gate)}` : ""}</span>
       </button>
       ${body}
     </div>`;
@@ -524,7 +600,44 @@ function renderTests() {
     ${ended}`;
 }
 
-document.addEventListener("click", (event) => {
+async function loadTestNotes() {
+  const res = await fetch(`${FN}/test-notes`).then((r) => r.json()).catch(() => null);
+  if (res) state.testNotes = res;
+}
+
+document.addEventListener("click", async (event) => {
+  const quiet = event.target.closest("[data-quiet]");
+  if (quiet) {
+    state.showQuiet = !state.showQuiet;
+    renderTests();
+    return;
+  }
+
+  const save = event.target.closest("button.note-save");
+  if (save) {
+    const wrap = save.closest(".notes-edit");
+    const msg = wrap.querySelector(".note-msg");
+    const note = {};
+    for (const el of wrap.querySelectorAll(".nt")) {
+      note[el.dataset.f] = el.dataset.f === "tags" ? el.value.split(",").map((s) => s.trim()).filter(Boolean) : el.value;
+    }
+    msg.textContent = "saving…";
+    const res = await fetch(`${FN}/test-notes`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ experienceId: save.dataset.test, note, version: state.testNotes?.version }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      msg.textContent = body.error ?? `HTTP ${res.status}`;
+      if (res.status === 409) await loadTestNotes();
+      return;
+    }
+    await loadTestNotes();
+    renderTests();
+    return;
+  }
+
   const head = event.target.closest("[data-node]");
   if (!head) return;
   const key = head.dataset.node;
@@ -1002,6 +1115,7 @@ function showView(name) {
   closeDrawer();
   if (name === "rocks" && !state.rocks) loadRocks();
   if (name === "setup" && !state.settings) loadSettings();
+  if (name === "tests" && !state.testNotes) loadTestNotes().then(renderTests);
 }
 
 function openDrawer() {
