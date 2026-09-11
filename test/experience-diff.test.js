@@ -101,3 +101,26 @@ test("control and variants are separated, so the difference reads as a compariso
   assert.equal(d.variants.length, 1);
   assert.equal(d.variants[0].name, "New");
 });
+
+/* ------------------------------ cache validity ------------------------------ */
+
+test("an experience detail with no variations is not usable, however truthy it is", async () => {
+  // `if (!detail)` passes on {}, which is what a partial or wrapped response leaves
+  // behind — and then the test type, the key metrics and the whole difference view
+  // silently read empty for a week, because the cache happily served it.
+  const usable = (d) => Boolean(d && Array.isArray(d.variations) && d.variations.length > 0);
+
+  assert.equal(usable({}), false, "the exact value that slipped through");
+  assert.equal(usable({ variations: [] }), false);
+  assert.equal(usable(null), false);
+  assert.equal(usable({ variations: [{ id: "a" }] }), true);
+});
+
+test("describeExperience degrades honestly on a thin object rather than inventing", () => {
+  const d = describeExperience({});
+  assert.deepEqual(d.types, []);
+  assert.equal(d.control, null);
+  assert.deepEqual(d.variants, []);
+  assert.equal(d.summary, null);
+  assert.equal(d.descriptionMissing, true);
+});

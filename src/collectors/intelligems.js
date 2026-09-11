@@ -355,9 +355,23 @@ export async function collectIntelligems({ config, token, store, logger, fetchIm
     try {
       // The per-test metric config rides on the experience object; there is no separate
       // metrics-config endpoint. Cached, because it changes far less often than results.
+      // A cache that can hold a useless value and serve it for a week is a bug, not a
+      // cache. `if (!detail)` passes on `{}`, which is exactly what a partial or wrapped
+      // response leaves behind — and then every downstream field silently reads empty.
+      // Validate the shape, not merely the presence.
+      const usable = (d) => Boolean(d && Array.isArray(d.variations) && d.variations.length > 0);
+
       let detail = await store?.getCached(`intelligems/experience/${experienceId}`, {
         ttlSeconds: METRICS_CONFIG_TTL_SECONDS,
       });
+      if (detail && !usable(detail)) {
+        logger?.warn?.("intelligems.experience_cache_unusable", {
+          experienceId,
+          keys: Object.keys(detail).slice(0, 10),
+          note: "cached experience detail has no variations; refetching",
+        });
+        detail = null;
+      }
       if (!detail) {
         detail = await call({
           config,
@@ -368,7 +382,15 @@ export async function collectIntelligems({ config, token, store, logger, fetchIm
           endpointName: "experience",
           params: { experienceId },
         });
-        if (store) await store.setCached(`intelligems/experience/${experienceId}`, detail);
+        // Only cache something worth reading back.
+        if (store && usable(detail)) await store.setCached(`intelligems/experience/${experienceId}`, detail);
+        else if (!usable(detail)) {
+          logger?.warn?.("intelligems.experience_detail_thin", {
+            experienceId,
+            keys: detail ? Object.keys(detail).slice(0, 10) : null,
+            note: "the experience endpoint returned no variations; not cached, and the difference view will be empty for this test",
+          });
+        }
       }
 
       // The main results call. POST, not GET. `testResult: true` is what makes the
