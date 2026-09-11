@@ -15,7 +15,29 @@
 const DOC_KEY = "rocks/index.json";
 const AUDIT_PREFIX = "rocks/audit";
 
+/** Where a rock sits in the queue. Drives the Layer 1 rules. */
 export const STATES = ["active", "shipped", "backlog"];
+
+/**
+ * How a rock is actually going. This is the EOS-style health field, and it is separate
+ * from `state` on purpose:
+ *
+ *   state  - structural. Is this on the board, has it shipped, is it parked? The capacity
+ *            rule, the backlog-overflow rule and the mini readout check all read this.
+ *   status - editorial. Is it going well? A rock can be `active` and `off_track` at the
+ *            same time, and that combination is the single most useful thing Layer 1 can
+ *            tell Alex.
+ *
+ * Collapsing them would mean losing either "this shipped" or "this is in trouble".
+ */
+export const STATUSES = ["on_track", "at_risk", "off_track", "done"];
+
+export const STATUS_LABELS = {
+  on_track: "On track",
+  at_risk: "At risk",
+  off_track: "Off track",
+  done: "Done",
+};
 
 export class RockValidationError extends Error {
   constructor(message, field) {
@@ -37,6 +59,13 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function isoOrNull(value, field) {
+  if (value == null || value === "") return null;
+  const asDate = new Date(value);
+  if (Number.isNaN(asDate.getTime())) throw new RockValidationError(`${field} is not a date.`, field);
+  return asDate.toISOString().slice(0, 10);
+}
+
 /** Everything the rest of the system is allowed to assume about a rock. */
 export function normalizeRock(input, existing = null) {
   const title = String(input.title ?? existing?.title ?? "").trim();
@@ -47,35 +76,51 @@ export function normalizeRock(input, existing = null) {
     throw new RockValidationError(`state must be one of ${STATES.join(", ")}.`, "state");
   }
 
+  const status = input.status ?? existing?.status ?? "on_track";
+  if (!STATUSES.includes(status)) {
+    throw new RockValidationError(`status must be one of ${STATUSES.join(", ")}.`, "status");
+  }
+
   const shippedAt = input.shippedAt ?? existing?.shippedAt ?? null;
   if (state === "shipped" && !shippedAt) {
-    // The mini readout window is measured from this date. Without it the check cannot
-    // run, and a shipped rock with no date would silently never be chased.
+    // The check-in window is measured from this date. Without it the overdue check can
+    // never fire, and a shipped rock would go unchased forever.
     throw new RockValidationError("A rock marked shipped needs a shippedAt date.", "shippedAt");
   }
 
-  const isoOrNull = (value, field) => {
-    if (value == null || value === "") return null;
-    const asDate = new Date(value);
-    if (Number.isNaN(asDate.getTime())) throw new RockValidationError(`${field} is not a date.`, field);
-    return asDate.toISOString().slice(0, 10);
-  };
+  const startDate = isoOrNull(input.startDate ?? existing?.startDate, "startDate");
+  // "Check-In Date" and the spec's "mini readout" are the same thing: the last time a
+  // human looked at this rock and said something about it. lastMiniReadoutAt is accepted
+  // as an alias so older data and the config seed still load.
+  const checkInDate = isoOrNull(
+    input.checkInDate ?? input.lastMiniReadoutAt ?? existing?.checkInDate ?? existing?.lastMiniReadoutAt,
+    "checkInDate",
+  );
+
+  if (startDate && shippedAt && startDate > shippedAt) {
+    throw new RockValidationError("startDate is after shippedAt.", "startDate");
+  }
+
+  const str = (v, fallback = null) => (v == null || v === "" ? fallback : String(v));
 
   return {
     id: String(input.id ?? existing?.id ?? slugify(title)),
     title,
-    type: input.type ?? existing?.type ?? null,
+    status,
     state,
-    owner: input.owner == null || input.owner === "" ? null : String(input.owner),
-    clickupOptionId:
-      input.clickupOptionId == null || input.clickupOptionId === "" ? null : String(input.clickupOptionId),
-    intelligemsExperienceId:
-      input.intelligemsExperienceId == null || input.intelligemsExperienceId === ""
-        ? null
-        : String(input.intelligemsExperienceId),
-    shippedAt: isoOrNull(shippedAt, "shippedAt"),
-    lastMiniReadoutAt: isoOrNull(input.lastMiniReadoutAt ?? existing?.lastMiniReadoutAt, "lastMiniReadoutAt"),
-    notes: input.notes ?? existing?.notes ?? null,
+    owner: str(input.owner ?? existing?.owner),
+    // What number this rock is supposed to move. Free text, but naming an Intelligems
+    // metric key here lets a recommendation talk about the right number.
+    kpi: str(input.kpi ?? existing?.kpi),
+    startDate,
+    checkInDate,
+    shippedAt,
+    notes: str(input.notes ?? existing?.notes),
+    // The link to ClickUp. `clickupOptionId` is the option id on the Rock Reference
+    // dropdown; the id is stable across renames, which is why the label is not stored.
+    clickupOptionId: str(input.clickupOptionId ?? existing?.clickupOptionId),
+    clickupFieldId: str(input.clickupFieldId ?? existing?.clickupFieldId),
+    intelligemsExperienceId: str(input.intelligemsExperienceId ?? existing?.intelligemsExperienceId),
     createdAt: existing?.createdAt ?? nowIso(),
     updatedAt: nowIso(),
     updatedBy: input.updatedBy ?? "dashboard",
@@ -195,7 +240,7 @@ export class RocksStore {
         changes.push({ id, change: "created", title: rock.title });
         continue;
       }
-      const fields = ["title", "state", "owner", "type", "clickupOptionId", "shippedAt", "lastMiniReadoutAt", "intelligemsExperienceId", "notes"];
+      const fields = ["title", "status", "state", "owner", "kpi", "startDate", "checkInDate", "shippedAt", "clickupOptionId", "intelligemsExperienceId", "notes"];
       const diff = {};
       for (const field of fields) {
         if (prior[field] !== rock[field]) diff[field] = { from: prior[field], to: rock[field] };

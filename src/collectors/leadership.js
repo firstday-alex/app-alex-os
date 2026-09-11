@@ -38,7 +38,14 @@ export async function collectLeadership({ config, clickupSnapshot = null, rocksS
     owner: resolveOwner(item.owner, people),
     clickupOptionId: item.clickupOptionId == null ? null : String(item.clickupOptionId),
     shippedAt: item.shippedAt ?? null,
-    lastMiniReadoutAt: item.lastMiniReadoutAt ?? null,
+    // Check-In Date is the mini readout. lastMiniReadoutAt is kept as an alias so the
+    // config seed and any older stored rock still load.
+    checkInDate: item.checkInDate ?? item.lastMiniReadoutAt ?? null,
+    lastMiniReadoutAt: item.checkInDate ?? item.lastMiniReadoutAt ?? null,
+    status: item.status ?? "on_track",
+    kpi: item.kpi ?? null,
+    startDate: item.startDate ?? null,
+    clickupFieldId: item.clickupFieldId ?? null,
     intelligemsExperienceId: item.intelligemsExperienceId == null ? null : String(item.intelligemsExperienceId),
     notes: item.notes ?? null,
     // Everything in the leadership queue is a P1 by definition.

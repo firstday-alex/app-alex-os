@@ -30,7 +30,8 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
   /* --- shipped tests owe a mini readout inside the tolerance window --- */
   for (const item of queue.filter((i) => i.state === "shipped")) {
     const tolerance = toleranceFor(item, lc);
-    const since = daysBetween(item.lastMiniReadoutAt ?? item.shippedAt, nowIso);
+    // 'Check-In Date' and the spec's 'mini readout' are the same event.
+    const since = daysBetween(item.checkInDate ?? item.lastMiniReadoutAt ?? item.shippedAt, nowIso);
 
     if (!item.shippedAt) {
       add({
@@ -60,7 +61,67 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
         severity: "p1",
         subject: { type: "priority", id: item.id, label: item.title },
         message: `"${item.title}" shipped and was last checked ${since} days ago. The tolerance window is ${tolerance} days.`,
-        values: { daysSinceLastCheck: since, toleranceWindowDays: tolerance, lastMiniReadoutAt: item.lastMiniReadoutAt, shippedAt: item.shippedAt },
+        values: { daysSinceLastCheck: since, toleranceWindowDays: tolerance, checkInDate: item.checkInDate ?? item.lastMiniReadoutAt, shippedAt: item.shippedAt },
+      });
+    }
+  }
+
+  /* --- a rock the owner says is in trouble --- */
+  for (const item of queue.filter((i) => i.state === "active")) {
+    if (item.status === "off_track" || item.status === "at_risk") {
+      add({
+        layer: 1,
+        rule: item.status === "off_track" ? "leadership.rock_off_track" : "leadership.rock_at_risk",
+        severity: item.status === "off_track" ? "p1" : "attention",
+        subject: { type: "priority", id: `${item.id}:status`, label: item.title },
+        message: `"${item.title}" is marked ${item.status === "off_track" ? "off track" : "at risk"} by ${item.owner?.name ?? "its owner"}${item.kpi ? `. The KPI it is meant to move is ${item.kpi}` : ""}.`,
+        values: { status: item.status, owner: item.owner?.name ?? null, kpi: item.kpi ?? null, startDate: item.startDate, checkInDate: item.checkInDate },
+      });
+    }
+  }
+
+  /* --- an active rock nobody has checked in on --- */
+  for (const item of queue.filter((i) => i.state === "active")) {
+    const tolerance = toleranceFor(item, lc);
+    const since = daysBetween(item.checkInDate ?? item.startDate, nowIso);
+    if (since != null && since > tolerance) {
+      add({
+        layer: 1,
+        rule: "leadership.check_in_overdue",
+        severity: "attention",
+        subject: { type: "priority", id: `${item.id}:checkin`, label: item.title },
+        message: `"${item.title}" has not been checked in on for ${since} days. The window is ${tolerance}.`,
+        values: { daysSinceCheckIn: since, toleranceWindowDays: tolerance, checkInDate: item.checkInDate, startDate: item.startDate, owner: item.owner?.name ?? null },
+      });
+    }
+  }
+
+  /* --- a rock with no KPI cannot be judged --- */
+  for (const item of queue.filter((i) => i.state === "active")) {
+    if (!item.kpi) {
+      add({
+        layer: 1,
+        rule: "leadership.rock_without_kpi",
+        severity: "info",
+        advisable: false,
+        subject: { type: "priority", id: `${item.id}:kpi`, label: item.title },
+        message: `"${item.title}" names no KPI, so there is no agreed number that says whether it worked.`,
+        values: { owner: item.owner?.name ?? null },
+      });
+    }
+  }
+
+  /* --- a rock not linked to the ClickUp dropdown cannot be laddered up to --- */
+  for (const item of queue.filter((i) => i.state === "active")) {
+    if (!item.clickupOptionId) {
+      add({
+        layer: 1,
+        rule: "leadership.rock_not_linked",
+        severity: "attention",
+        advisable: false,
+        subject: { type: "priority", id: `${item.id}:link`, label: item.title },
+        message: `"${item.title}" is not linked to a ClickUp option, so no ticket can be tied to it and the cross layer check will never see it.`,
+        values: { owner: item.owner?.name ?? null },
       });
     }
   }

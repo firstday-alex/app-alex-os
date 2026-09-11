@@ -46,6 +46,8 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   const bauMarkers = (config.clickup.bauMarkers ?? []).map((s) => s.toLowerCase());
 
   const activeItems = (leadership.queue ?? []).filter((i) => i.state === "active");
+  // The option id is the real link. Matching on title is a fallback for a rock that has
+  // not been linked yet, and it breaks the moment somebody renames the dropdown option.
   const activeOptionIds = new Set(activeItems.map((i) => i.clickupOptionId).filter(Boolean).map(String));
   const activeTitles = new Set(activeItems.map((i) => String(i.title).toLowerCase()));
 

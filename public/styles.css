@@ -104,3 +104,16 @@ pre { background: var(--code); padding: 12px; border-radius: 4px; overflow-x: au
 #rocks-audit-wrap { margin-top: 14px; }
 #rocks-audit-wrap summary { cursor: pointer; color: var(--green); font-size: 13px; }
 #rocks-audit { margin-top: 10px; }
+
+/* rocks editor */
+.rock { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--green); border-radius: 4px; padding: 12px 14px; margin-bottom: 10px; }
+.rock-head { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.rk-title { font-size: 15px; font-weight: 600; }
+.rock-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 12px; }
+.rock label, .rock-notes { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+.rock-notes { margin-top: 10px; }
+.rock textarea.rk { resize: vertical; font-family: inherit; }
+.sig.on_track { background: #eef4ef; color: var(--green); border: 1px solid var(--green); }
+.sig.at_risk  { background: var(--amber-bg); color: var(--amber-ink); border: 1px solid var(--amber); }
+.sig.off_track{ background: var(--red-bg); color: var(--red); border: 1px solid var(--red); }
+.sig.done     { background: var(--code); color: var(--muted); }

@@ -147,3 +147,50 @@ test("a store outage falls back to config rather than emptying Layer 1", async (
   assert.equal(snapshot.queue[0].title, "From config");
   assert.ok(warnings.includes("leadership.store_unavailable"));
 });
+
+/* ------------------------- the fields Alex asked for ------------------------- */
+
+test("status is the health field and is constrained", () => {
+  assert.throws(() => normalizeRock({ title: "A", status: "going ok" }), /status must be one of/);
+  assert.equal(normalizeRock({ title: "A" }).status, "on_track", "defaults to on track");
+  for (const s of ["on_track", "at_risk", "off_track", "done"]) {
+    assert.equal(normalizeRock({ title: "A", status: s }).status, s);
+  }
+});
+
+test("status and state are independent: a rock can be active and off track", () => {
+  const rock = normalizeRock({ title: "Redesigned Homepage", state: "active", status: "off_track" });
+  assert.equal(rock.state, "active");
+  assert.equal(rock.status, "off_track");
+});
+
+test("check-in date and the spec's mini readout are the same field", () => {
+  // lastMiniReadoutAt is accepted as an alias so the config seed and older stored rocks load.
+  assert.equal(normalizeRock({ title: "A", checkInDate: "2026-09-05" }).checkInDate, "2026-09-05");
+  assert.equal(normalizeRock({ title: "A", lastMiniReadoutAt: "2026-09-05" }).checkInDate, "2026-09-05");
+});
+
+test("start date, KPI and notes round-trip", () => {
+  const rock = normalizeRock({
+    title: "Sub opt-in for NC",
+    startDate: "2026-07-01",
+    kpi: "pct_subscription_orders",
+    notes: "Blocked on the subscription platform RFP",
+  });
+  assert.equal(rock.startDate, "2026-07-01");
+  assert.equal(rock.kpi, "pct_subscription_orders");
+  assert.match(rock.notes, /RFP/);
+});
+
+test("a start date after the shipped date is rejected", () => {
+  assert.throws(
+    () => normalizeRock({ title: "A", state: "shipped", startDate: "2026-09-01", shippedAt: "2026-08-01" }),
+    /startDate is after shippedAt/,
+  );
+});
+
+test("the ClickUp link is stored by option id, which survives a rename", () => {
+  const rock = normalizeRock({ title: "Sub opt-in for NC", clickupOptionId: "f094b171-a5f8-4f88-904f-1bf17573bce5" });
+  assert.equal(rock.clickupOptionId, "f094b171-a5f8-4f88-904f-1bf17573bce5");
+  assert.equal(rock.title in rock, false, "the label is never stored as the link");
+});

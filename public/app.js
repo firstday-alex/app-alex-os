@@ -407,29 +407,48 @@ function renderRocks() {
   const data = state.rocks;
   if (!data) return;
   const people = data.people ?? [];
-  const ownerOptions = (selected) =>
-    [`<option value="">no owner</option>`]
-      .concat(people.map((p) => `<option value="${esc(p.id)}"${String(selected) === p.id ? " selected" : ""}>${esc(p.name)}</option>`))
-      .join("");
-  const stateOptions = (selected) =>
-    (data.states ?? []).map((s) => `<option value="${esc(s)}"${s === selected ? " selected" : ""}>${esc(s)}</option>`).join("");
+  const cu = data.clickupOptions ?? { available: false, options: [] };
 
-  const row = (r) => `
-    <tr data-id="${esc(r.id)}">
-      <td class="wrap"><input class="rk" data-f="title" value="${esc(r.title)}"></td>
-      <td><select class="rk" data-f="state">${stateOptions(r.state)}</select></td>
-      <td><select class="rk" data-f="owner">${ownerOptions(r.owner)}</select></td>
-      <td><input class="rk narrow" data-f="type" value="${esc(r.type ?? "")}" placeholder="test / initiative"></td>
-      <td><input class="rk narrow" data-f="shippedAt" value="${esc(r.shippedAt ?? "")}" placeholder="YYYY-MM-DD"></td>
-      <td><input class="rk narrow" data-f="lastMiniReadoutAt" value="${esc(r.lastMiniReadoutAt ?? "")}" placeholder="YYYY-MM-DD"></td>
-      <td><button class="ghost rock-save">Save</button> <button class="ghost rock-del">Remove</button></td>
-    </tr>`;
+  const opts = (list, selected, blank) =>
+    [`<option value="">${esc(blank)}</option>`]
+      .concat(list.map((o) => `<option value="${esc(o.id)}"${String(selected ?? "") === String(o.id) ? " selected" : ""}>${esc(o.label)}</option>`))
+      .join("");
+
+  const statusList = (data.statuses ?? []).map((s) => ({ id: s, label: (data.statusLabels ?? {})[s] ?? s }));
+  const stateList = (data.states ?? []).map((s) => ({ id: s, label: s }));
+
+  const card = (r) => `
+    <div class="rock" data-id="${esc(r.id)}">
+      <div class="rock-head">
+        <input class="rk rk-title" data-f="title" value="${esc(r.title)}">
+        <span class="sig ${esc(r.status)}">${esc((data.statusLabels ?? {})[r.status] ?? r.status)}</span>
+      </div>
+      <div class="rock-grid">
+        <label>Status<select class="rk" data-f="status">${opts(statusList, r.status, "on track").replace('<option value="">on track</option>', "")}</select></label>
+        <label>Queue<select class="rk" data-f="state">${opts(stateList, r.state, "").replace('<option value=""></option>', "")}</select></label>
+        <label>Owner<select class="rk" data-f="owner">${opts(people.map((p) => ({ id: p.id, label: p.name })), r.owner, "no owner")}</select></label>
+        <label>KPI<input class="rk" data-f="kpi" value="${esc(r.kpi ?? "")}" placeholder="the number this moves"></label>
+        <label>Start date<input class="rk" data-f="startDate" value="${esc(r.startDate ?? "")}" placeholder="YYYY-MM-DD"></label>
+        <label>Check-in date<input class="rk" data-f="checkInDate" value="${esc(r.checkInDate ?? "")}" placeholder="YYYY-MM-DD"></label>
+        <label>Shipped<input class="rk" data-f="shippedAt" value="${esc(r.shippedAt ?? "")}" placeholder="YYYY-MM-DD"></label>
+        <label>ClickUp ${esc(cu.fieldName ?? "link")}${
+          cu.available
+            ? `<select class="rk" data-f="clickupOptionId">${opts(cu.options, r.clickupOptionId, "not linked")}</select>`
+            : `<input class="rk" data-f="clickupOptionId" value="${esc(r.clickupOptionId ?? "")}" placeholder="option id">`
+        }</label>
+      </div>
+      <label class="rock-notes">Notes / details<textarea class="rk" data-f="notes" rows="2" placeholder="context, links, what done looks like">${esc(r.notes ?? "")}</textarea></label>
+      <div class="bar">
+        <button class="rock-save">Save</button>
+        <button class="ghost rock-del">Remove</button>
+        ${r.clickupOptionId ? "" : '<span class="chip warn">not linked to ClickUp</span>'}
+        ${r.kpi ? "" : '<span class="chip">no KPI</span>'}
+      </div>
+    </div>`;
 
   $("rocks-editor").innerHTML = `
-    <div class="scroll"><table>
-      <thead><tr><th>Rock</th><th>State</th><th>Owner</th><th>Type</th><th>Shipped</th><th>Last mini readout</th><th></th></tr></thead>
-      <tbody>${(data.rocks ?? []).map(row).join("") || '<tr><td colspan="7">No rocks yet. Add the first one below.</td></tr>'}</tbody>
-    </table></div>
+    ${cu.available ? "" : `<div class="note"><strong>ClickUp link unavailable.</strong> ${esc(cu.reason ?? "")} Rocks can still be linked by pasting an option id.</div>`}
+    ${(data.rocks ?? []).map(card).join("") || '<p class="sub">No rocks yet. Add the first one below.</p>'}
     <p class="sub">Version ${esc(data.version)}${data.updatedAt ? ` · last changed ${new Date(data.updatedAt).toLocaleString()}` : ""}</p>
     <div class="bar">
       <input id="new-rock" placeholder="New rock title" style="flex:1;min-width:220px;padding:6px 10px;border:1px solid var(--line);border-radius:4px;font:inherit">
@@ -466,10 +485,10 @@ document.addEventListener("click", async (event) => {
       res = await fetch(`${FN}/rocks`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ rock: rowPayload(save.closest("tr")), version: state.rocks.version }),
+        body: JSON.stringify({ rock: rowPayload(save.closest(".rock")), version: state.rocks.version }),
       });
     } else {
-      const id = del.closest("tr").dataset.id;
+      const id = del.closest(".rock").dataset.id;
       if (!confirm(`Remove "${id}"? The change is recorded, but the rock is gone from the queue.`)) return;
       res = await fetch(`${FN}/rocks?id=${encodeURIComponent(id)}&version=${state.rocks.version}`, { method: "DELETE" });
     }

@@ -11,8 +11,35 @@
 import { loadConfig } from "../../src/config.js";
 import { createLogger } from "../../src/lib/logger.js";
 import { Store } from "../../src/lib/storage.js";
-import { RocksStore, RockValidationError, STATES } from "../../src/store/rocks.js";
+import { RocksStore, RockValidationError, STATES, STATUSES, STATUS_LABELS } from "../../src/store/rocks.js";
+import { fetchFieldMap } from "../../src/collectors/clickup.js";
 import { isAuthorized, unauthorized, json } from "../../src/lib/dashboard-auth.js";
+
+/**
+ * The options on the ClickUp dropdown a rock can be linked to.
+ *
+ * Read through the cached field map, so this costs one ClickUp request a day rather than
+ * one per dashboard load. Failure is not fatal: without the options the editor falls back
+ * to a plain text id, which is worse but still works.
+ */
+async function clickupRockOptions({ config, store, logger }) {
+  try {
+    const map = await fetchFieldMap({ config, token: process.env.CLICKUP_TOKEN, store, logger });
+    const field = map.leadershipPriority;
+    if (!field) return { available: false, reason: "No Leadership Priority or Rock Reference field found on the sprint list.", fieldId: null, options: [] };
+    return {
+      available: true,
+      fieldId: field.id,
+      fieldName: field.name,
+      options: Object.values(map.options?.[field.id] ?? {})
+        .sort((a, b) => (a.orderindex ?? 0) - (b.orderindex ?? 0))
+        .map((o) => ({ id: String(o.id), label: o.label })),
+    };
+  } catch (err) {
+    logger?.warn("rocks.clickup_options_failed", { err });
+    return { available: false, reason: err.message, fieldId: null, options: [] };
+  }
+}
 
 export default async (req) => {
   const auth = isAuthorized(req);
@@ -34,9 +61,12 @@ export default async (req) => {
       return json({
         ...listed,
         states: STATES,
-        // The roster and the ClickUp dropdown options, so the dashboard can offer real
-        // choices instead of free text.
+        statuses: STATUSES,
+        statusLabels: STATUS_LABELS,
+        // Real choices instead of free text: the roster for owners, and the live Rock
+        // Reference options for the ClickUp link.
         people: (config.people?.team ?? []).filter((p) => p.clickupUserId).map((p) => ({ id: String(p.clickupUserId), name: p.name })),
+        clickupOptions: await clickupRockOptions({ config, store, logger }),
       });
     }
 

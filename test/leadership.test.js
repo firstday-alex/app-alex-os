@@ -167,3 +167,52 @@ test("the roster falls back to the ClickUp workspace members when people.json is
   assert.equal(snapshot.meta.rosterFromFallback, true);
   assert.deepEqual(snapshot.roster, [{ clickupUserId: "9", name: "sam", slackUserId: null }]);
 });
+
+/* ----------------- the rock fields, once they reach Layer 1 ----------------- */
+
+const rock = (over = {}) => ({
+  id: "r1", title: "Sub opt-in for NC", state: "active", status: "on_track",
+  owner: { clickupUserId: "u1", name: "dana" }, kpi: "pct_subscription_orders",
+  startDate: "2026-09-08", checkInDate: "2026-09-09", clickupOptionId: "opt_sub", ...over,
+});
+
+test("a rock its owner marked off track is a P1", () => {
+  const result = run(leadership({ queue: [rock({ status: "off_track" })] }));
+  const flag = result.flags.find((f) => f.rule === "leadership.rock_off_track");
+  assert.ok(flag);
+  assert.equal(flag.severity, "p1");
+  assert.match(flag.message, /off track/);
+  assert.equal(flag.values.kpi, "pct_subscription_orders");
+});
+
+test("at risk is flagged, but below a P1", () => {
+  const result = run(leadership({ queue: [rock({ status: "at_risk" })] }));
+  const flag = result.flags.find((f) => f.rule === "leadership.rock_at_risk");
+  assert.equal(flag.severity, "attention");
+});
+
+test("an on-track rock checked in on recently is quiet", () => {
+  // The dropdown option has to exist too, or the sync check speaks up — correctly.
+  const result = run(leadership({ queue: [rock()], dropdownOptions: [{ id: "opt_sub", label: "Sub opt-in for NC" }] }));
+  assert.deepEqual(rules(result), [], "nothing to say about a healthy, linked, recently checked rock");
+});
+
+test("an active rock nobody has checked in on is flagged against the tolerance window", () => {
+  const result = run(leadership({ queue: [rock({ checkInDate: "2026-08-01" })] }));
+  const flag = result.flags.find((f) => f.rule === "leadership.check_in_overdue");
+  assert.ok(flag);
+  assert.ok(flag.values.daysSinceCheckIn > 7);
+  assert.equal(flag.values.toleranceWindowDays, 7);
+});
+
+test("a rock with no KPI is noted, because nothing says whether it worked", () => {
+  const result = run(leadership({ queue: [rock({ kpi: null })] }));
+  const flag = result.flags.find((f) => f.rule === "leadership.rock_without_kpi");
+  assert.ok(flag);
+  assert.equal(flag.severity, "info");
+});
+
+test("a rock not linked to ClickUp is flagged, since no ticket can ladder up to it", () => {
+  const result = run(leadership({ queue: [rock({ clickupOptionId: null })] }));
+  assert.ok(rules(result).includes("leadership.rock_not_linked"));
+});
