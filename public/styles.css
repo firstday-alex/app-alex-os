@@ -62,9 +62,12 @@ button:disabled { opacity: 0.5; cursor: default; }
   background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line);
   border-radius: 4px; padding: 10px 14px; margin-bottom: 8px;
 }
-.flag.p1 { border-left-color: var(--red); background: var(--red-bg); }
-.flag.attention { border-left-color: var(--amber); background: var(--amber-bg); }
-.flag.prompt { border-left-color: var(--green); }
+/* Namespaced. These come from flag.severity, which is data rather than a class name
+   anyone chose, so an unprefixed `info` once collided with the tooltip button below and
+   rendered every hygiene flag as a 14px circle. sev- makes that collision impossible. */
+.flag.sev-p1 { border-left-color: var(--red); background: var(--red-bg); }
+.flag.sev-attention { border-left-color: var(--amber); background: var(--amber-bg); }
+.flag.sev-prompt { border-left-color: var(--green); }
 .flag .msg { margin: 0 0 6px; }
 .flag .meta { font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .flag .row { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; }
@@ -227,13 +230,13 @@ main { max-width: 940px; margin: 0 auto; padding: 22px 18px 80px; }
 
 /* metric info affordance */
 .metric { position: relative; }
-.info {
+.info-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 14px; height: 14px; margin-left: 5px; padding: 0; vertical-align: middle;
   border-radius: 50%; border: 1px solid var(--line); background: #fff;
   color: var(--muted); font-size: 9px; font-style: italic; font-weight: 700; line-height: 1; cursor: pointer;
 }
-.info:hover { border-color: var(--green); color: var(--green); }
+.info-btn:hover { border-color: var(--green); color: var(--green); }
 .info-pop {
   position: absolute; z-index: 20; top: 26px; left: 10px; right: 10px;
   background: #fff; border: 1px solid var(--green); border-radius: 4px;

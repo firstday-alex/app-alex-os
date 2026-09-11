@@ -169,7 +169,7 @@ function renderStoreMetrics(report) {
         .join("\n\n");
 
       const info = detail
-        ? `<button class="info" data-detail="${esc(detail)}" data-title="${esc(t.label)}" aria-label="What is ${esc(t.label)}?">i</button>`
+        ? `<button class="info-btn" data-detail="${esc(detail)}" data-title="${esc(t.label)}" aria-label="What is ${esc(t.label)}?">i</button>`
         : "";
 
       return `<div class="metric">
@@ -255,7 +255,7 @@ function renderFlags(container, flags, emptyText) {
   container.innerHTML = flags
     .map(
       (flag) => `
-      <div class="flag ${esc(flag.severity)}" data-flag="${esc(flag.id)}">
+      <div class="flag sev-${esc(flag.severity)}" data-flag="${esc(flag.id)}">
         <div class="row">
           <div>
             <p class="msg">${esc(flag.message)}</p>
@@ -1110,7 +1110,7 @@ function renderRockReadout(readout) {
     ).join("");
 
     return `
-      <div class="flag ${t.gateMet ? "" : "prompt"}">
+      <div class="flag ${t.gateMet ? "" : "sev-prompt"}">
         <p class="msg"><strong>${esc(t.name ?? t.experienceId)}</strong> — ${esc(t.recommendation)}</p>
         <p class="meta">${esc(t.reason)}</p>
         <p class="meta">${esc(t.daysRunning ?? "?")} days · ${esc(t.ordersInSmallestGroup ?? "?")} orders in the smallest group${
@@ -1167,7 +1167,7 @@ document.addEventListener("click", (event) => {
 });
 // The info popover on a metric tile. Click rather than hover only, so it works on touch.
 document.addEventListener("click", (event) => {
-  const button = event.target.closest("button.info");
+  const button = event.target.closest("button.info-btn");
   document.querySelectorAll(".info-pop").forEach((n) => n.remove());
   if (!button) return;
   event.stopPropagation();
