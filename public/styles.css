@@ -238,10 +238,15 @@ main { max-width: 940px; margin: 0 auto; padding: 22px 18px 80px; }
 }
 .info-btn:hover { border-color: var(--green); color: var(--green); }
 .info-pop {
-  position: absolute; z-index: 20; top: 26px; left: 10px; right: 10px;
+  /* Deliberately wider than the tile it hangs off. Metric tiles are as narrow as 140px,
+     and pinning the popover to left:10px/right:10px made it that narrow too — a column
+     of two-word lines. It is allowed to overhang the tile; the click handler nudges it
+     back inside the viewport afterwards, which is the part CSS alone cannot do. */
+  position: absolute; z-index: 20; top: 28px; left: 0;
+  width: 340px; max-width: calc(100vw - 24px);
   background: #fff; border: 1px solid var(--green); border-radius: 4px;
-  padding: 10px 12px; box-shadow: 0 6px 20px rgba(28,43,42,.14);
-  font-size: 12px; line-height: 1.45; text-transform: none; letter-spacing: 0; color: var(--ink);
+  padding: 12px 14px; box-shadow: 0 6px 20px rgba(28,43,42,.14);
+  font-size: 12px; line-height: 1.5; text-transform: none; letter-spacing: 0; color: var(--ink);
 }
 .info-pop strong { display: block; margin-bottom: 4px; color: var(--green); }
 .info-pop p { margin: 0 0 6px; }

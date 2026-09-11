@@ -1176,6 +1176,17 @@ document.addEventListener("click", (event) => {
   pop.className = "info-pop";
   pop.innerHTML = `<strong>${esc(button.dataset.title)}</strong><p>${esc(button.dataset.detail).replace(/\n\n/g, "</p><p>")}</p>`;
   button.closest(".metric").appendChild(pop);
+
+  // The popover is wider than its tile on purpose, so on the right-hand tiles it would
+  // hang off the screen. Measure once it is in the DOM and pull it back inside. Right
+  // edge first, then left, so a popover wider than a narrow viewport ends up pinned to
+  // the left rather than yanked off the other side.
+  const margin = 12;
+  const room = document.documentElement.clientWidth;
+  const overflowRight = pop.getBoundingClientRect().right - (room - margin);
+  if (overflowRight > 0) pop.style.left = `${-overflowRight}px`;
+  const shortfallLeft = margin - pop.getBoundingClientRect().left;
+  if (shortfallLeft > 0) pop.style.left = `${(parseFloat(pop.style.left) || 0) + shortfallLeft}px`;
 });
 
 $("new-rock-btn").addEventListener("click", () => openRock(null));

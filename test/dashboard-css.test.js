@@ -66,3 +66,53 @@ test("every class the stylesheet styles under .flag is one a flag can actually h
     assert.ok(SEVERITIES.includes(match[1]), `.flag.sev-${match[1]} matches no severity the pipeline emits`);
   }
 });
+
+/* --------------------------- the info popover clamp ---------------------------
+   The popover is deliberately wider than the metric tile it hangs off, which means it
+   can run off the right edge of the screen. Headless Chrome will not give a true narrow
+   layout viewport, so the arithmetic is tested directly — against the block lifted out
+   of the shipped file, so the test cannot drift from the code. */
+
+function clampBlock() {
+  const marker = "  // The popover is wider than its tile on purpose";
+  const start = app.indexOf(marker);
+  assert.ok(start > 0, "the clamp block is still in app.js");
+  const end = app.indexOf("$(\"new-rock-btn\")");
+  const body = app.slice(start, end).replace(/\}\);\s*$/, "");
+
+  // `pop` and `document` are the only things the block touches.
+  return new Function("pop", "document", body);
+}
+
+/** A popover `width` wide whose tile sits `tileLeft` from the left of a `room`-wide page. */
+function runClamp({ room, tileLeft, width }) {
+  const style = { left: "" };
+  const pop = {
+    style,
+    getBoundingClientRect() {
+      const offset = parseFloat(style.left) || 0;
+      return { left: tileLeft + offset, right: tileLeft + offset + width };
+    },
+  };
+  clampBlock()(pop, { documentElement: { clientWidth: room } });
+  return pop.getBoundingClientRect();
+}
+
+test("a popover on a right-hand tile is pulled back inside the viewport", () => {
+  // 340px popover hanging off a tile near the right edge of a 1000px page.
+  const rect = runClamp({ room: 1000, tileLeft: 820, width: 340 });
+  assert.ok(rect.right <= 1000 - 12, `right edge ${rect.right} is inside the 12px margin`);
+  assert.ok(rect.left >= 0, "and it did not get yanked off the left");
+});
+
+test("a popover wider than the viewport pins to the left rather than off the other side", () => {
+  // The order of the two corrections is the point: right first, then left. Reversed,
+  // this case ends up hanging off the left edge instead of the right.
+  const rect = runClamp({ room: 360, tileLeft: 150, width: 400 });
+  assert.equal(rect.left, 12, "pinned to the left margin");
+});
+
+test("a popover with room to spare is left where it is", () => {
+  const rect = runClamp({ room: 1400, tileLeft: 100, width: 340 });
+  assert.equal(rect.left, 100, "no needless nudging");
+});
