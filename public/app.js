@@ -1067,10 +1067,23 @@ function openRock(id) {
   $("rock-delete").classList.toggle("hidden", !r);
   $("rock-form-error").classList.add("hidden");
 
-  const opts = (list, selected, blank) =>
-    (blank == null ? [] : [`<option value="">${esc(blank)}</option>`])
+  // A <select> can only select what it contains. If a rock points at an option that is
+  // no longer on the ClickUp dropdown — deleted, or on a list we failed to refresh — the
+  // browser silently falls back to the first entry, and merely opening the rock and
+  // saving it would relink it to a different Big Swing without anyone touching that
+  // field. So an unrecognised current value is kept as an option of its own, selected,
+  // and labelled for what it is.
+  const opts = (list, selected, blank) => {
+    const has = list.some((o) => String(o.id) === String(selected ?? ""));
+    const orphan =
+      selected && !has
+        ? [`<option value="${esc(selected)}" selected>⚠ linked to an option that is no longer on this field (${esc(String(selected).slice(0, 8))}…)</option>`]
+        : [];
+    return (blank == null ? [] : [`<option value=""${!selected ? " selected" : ""}>${esc(blank)}</option>`])
+      .concat(orphan)
       .concat(list.map((o) => `<option value="${esc(o.id)}"${String(selected ?? "") === String(o.id) ? " selected" : ""}>${esc(o.label)}</option>`))
       .join("");
+  };
 
   const statuses = (data.statuses ?? []).map((s) => ({ id: s, label: (data.statusLabels ?? {})[s] ?? s }));
   const states = (data.states ?? []).map((s) => ({ id: s, label: s }));

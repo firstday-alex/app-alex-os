@@ -17,17 +17,41 @@ import { isAuthorized, unauthorized, json } from "../../src/lib/dashboard-auth.j
 import { buildRockReadout } from "../../src/store/rock-readout.js";
 
 /**
- * The options on the ClickUp dropdown a rock can be linked to.
+ * The options on the ClickUp dropdowns a rock can be linked to.
  *
- * Read through the cached field map, so this costs one ClickUp request a day rather than
- * one per dashboard load. Failure is not fatal: without the options the editor falls back
- * to a plain text id, which is worse but still works.
+ * Fetched LIVE, not from the cache, and both dropdowns come out of the one request.
+ *
+ * Everywhere else in this system the cached field map is right: a readout runs on a
+ * schedule and one stale label for an hour costs little. This is the opposite case. It
+ * is a person sitting in front of the editor choosing which ClickUp option a rock
+ * belongs to, usually within a minute of having created or renamed that option — and an
+ * option missing from this list is not a cosmetic problem, it is a link that cannot be
+ * made at all. One ClickUp request when someone opens the Rocks screen is a fair price.
+ *
+ * Failure is not fatal: without the options the editor falls back to a plain text id,
+ * which is worse but still works.
  */
-async function clickupOptionsFor(which, { config, store, logger }) {
+async function clickupDropdowns({ config, store, logger }) {
+  const empty = (reason) => ({ available: false, reason, fieldId: null, options: [] });
+
+  let map;
   try {
-    const map = await fetchFieldMap({ config, token: process.env.CLICKUP_TOKEN, store, logger });
+    map = await fetchFieldMap({
+      config,
+      token: process.env.CLICKUP_TOKEN,
+      store,
+      logger,
+      forceRefresh: true,
+    });
+  } catch (err) {
+    logger?.warn("rocks.clickup_options_failed", { err });
+    const failed = empty(err.message);
+    return { leadershipPriority: failed, bigSwing: failed };
+  }
+
+  const listFor = (which) => {
     const field = map[which];
-    if (!field) return { available: false, reason: `No ${which} field found on the sprint list.`, fieldId: null, options: [] };
+    if (!field) return empty(`No ${which} field found on the sprint list.`);
     return {
       available: true,
       fieldId: field.id,
@@ -37,10 +61,9 @@ async function clickupOptionsFor(which, { config, store, logger }) {
         .sort((a, b) => (a.orderindex ?? 0) - (b.orderindex ?? 0))
         .map((o) => ({ id: String(o.id), label: o.label })),
     };
-  } catch (err) {
-    logger?.warn("rocks.clickup_options_failed", { which, err });
-    return { available: false, reason: err.message, fieldId: null, options: [] };
-  }
+  };
+
+  return { leadershipPriority: listFor("leadershipPriority"), bigSwing: listFor("bigSwing") };
 }
 
 export default async (req) => {
@@ -81,8 +104,10 @@ export default async (req) => {
         // Real choices instead of free text: the roster for owners, and the live Rock
         // Reference options for the ClickUp link.
         people: (config.people?.team ?? []).filter((p) => p.clickupUserId).map((p) => ({ id: String(p.clickupUserId), name: p.name })),
-        clickupOptions: await clickupOptionsFor("leadershipPriority", { config, store, logger }),
-        bigSwingOptions: await clickupOptionsFor("bigSwing", { config, store, logger }),
+        ...(await (async () => {
+          const { leadershipPriority, bigSwing } = await clickupDropdowns({ config, store, logger });
+          return { clickupOptions: leadershipPriority, bigSwingOptions: bigSwing };
+        })()),
       });
     }
 

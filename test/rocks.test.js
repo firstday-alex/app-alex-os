@@ -6,6 +6,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RocksStore, RockValidationError, normalizeRock, experienceIdFromUrl } from "../src/store/rocks.js";
 import { Store } from "../src/lib/storage.js";
+import fs from "node:fs";
+import path from "node:path";
+import { repoRoot } from "../src/config.js";
 import { collectLeadership } from "../src/collectors/leadership.js";
 import { testConfig } from "./fixtures/config.js";
 
@@ -264,4 +267,38 @@ test("the readout says which of the three states it is in rather than showing no
   assert.equal(gone.state, "not_running");
   assert.equal(gone.tests[0].found, false);
   assert.match(gone.tests[0].message, /probably ended/);
+});
+
+/* ---------------------- the ClickUp link survives editing ---------------------- */
+
+test("the rock editor's option list keeps an unrecognised link instead of dropping it", () => {
+  // Lifted from the shipped file so the test cannot drift from the renderer.
+  const app = fs.readFileSync(path.join(repoRoot, "public", "app.js"), "utf8");
+  const start = app.indexOf("  const opts = (list, selected, blank) => {");
+  assert.ok(start > 0, "the option renderer is still where the test expects it");
+  const end = app.indexOf("\n  };", start) + "\n  };".length;
+  const esc = (s) => String(s ?? "");
+  const opts = new Function("esc", `${app.slice(start, end)}\n return opts;`)(esc);
+
+  const list = [
+    { id: "23eba93e", label: "Family Bundle Builder" },
+    { id: "00eaa598", label: "New Problem Based Bundle Buy Box" },
+  ];
+
+  // The happy path: the stored id is on the field, and it is the one selected.
+  const normal = opts(list, "23eba93e", "not linked");
+  assert.match(normal, /value="23eba93e" selected/);
+  assert.ok(!/no longer on this field/.test(normal));
+
+  // The dangerous path: the stored id is NOT on the field. Without the orphan option the
+  // browser would select the first entry, and saving would relink the rock to a
+  // different Big Swing without anyone touching that field.
+  const orphaned = opts(list, "deleted-option-id", "not linked");
+  assert.match(orphaned, /value="deleted-option-id" selected/);
+  assert.match(orphaned, /no longer on this field/);
+  assert.ok(!/value="23eba93e" selected/.test(orphaned), "the first real option must not steal the selection");
+
+  // And an unlinked rock still defaults to the blank entry rather than the first option.
+  const blank = opts(list, null, "not linked");
+  assert.match(blank, /<option value="" selected>not linked<\/option>/);
 });
