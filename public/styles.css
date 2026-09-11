@@ -179,3 +179,15 @@ main { max-width: 940px; margin: 0 auto; padding: 22px 18px 80px; }
 .sig.done     { background: var(--code); color: var(--muted); }
 
 @media (max-width: 640px) { #drawer { width: 82vw; } }
+
+/* rock links + readout */
+.form-head { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--green); margin: 16px 0 4px; }
+.link-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.lk { font: inherit; flex: 1; padding: 6px 9px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.lk.narrow { flex: 0 0 130px; }
+.rock-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.rock-links a {
+  font-size: 11px; padding: 2px 8px; border-radius: 10px; text-decoration: none;
+  background: var(--code); color: var(--green); border: 1px solid var(--line);
+}
+.rock-links a:hover { background: #fff; border-color: var(--green); }

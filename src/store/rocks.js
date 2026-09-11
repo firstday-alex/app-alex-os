@@ -59,6 +59,58 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+export const MAX_EXPERIMENT_LINKS = 3;
+export const MAX_REPORT_LINKS = 3;
+
+/**
+ * Intelligems identifies an experience by uuid, and its app URLs carry that uuid in the
+ * path. Pulling it out of a pasted link means the readout can be wired up by pasting the
+ * URL you were already looking at, rather than hunting for an id.
+ */
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
+
+export function experienceIdFromUrl(url) {
+  const match = String(url ?? "").match(UUID_RE);
+  return match ? match[0].toLowerCase() : null;
+}
+
+function cleanUrl(value, field) {
+  if (value == null || value === "") return null;
+  const raw = String(value).trim();
+  // Accept a bare domain; a link nobody can click is worse than a pedantic error.
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  let parsed;
+  try {
+    parsed = new URL(withScheme);
+  } catch {
+    throw new RockValidationError(`${field} is not a URL.`, field);
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new RockValidationError(`${field} must be an http or https URL.`, field);
+  }
+  return parsed.toString();
+}
+
+/** A list of {url,label}, capped, with blanks dropped rather than stored as empties. */
+function linkList(value, { max, field, deriveExperienceId = false }) {
+  const raw = Array.isArray(value) ? value : value == null ? [] : [value];
+  const out = [];
+  for (const entry of raw) {
+    const url = cleanUrl(typeof entry === "string" ? entry : entry?.url, field);
+    if (!url) continue;
+    const link = {
+      url,
+      label: (typeof entry === "object" && entry?.label ? String(entry.label).trim() : "") || null,
+    };
+    if (deriveExperienceId) link.experienceId = experienceIdFromUrl(url);
+    out.push(link);
+  }
+  if (out.length > max) {
+    throw new RockValidationError(`At most ${max} ${field} are allowed. You gave ${out.length}.`, field);
+  }
+  return out;
+}
+
 function isoOrNull(value, field) {
   if (value == null || value === "") return null;
   const asDate = new Date(value);
@@ -124,6 +176,20 @@ export function normalizeRock(input, existing = null) {
     // the outcome; a big swing is the project meant to produce it.
     clickupBigSwingOptionId: str(input.clickupBigSwingOptionId ?? existing?.clickupBigSwingOptionId),
     intelligemsExperienceId: str(input.intelligemsExperienceId ?? existing?.intelligemsExperienceId),
+
+    // Links. Up to three Intelligems experiments, one live page, and up to three other
+    // reports for quick reference. The experiment links carry the experience id pulled
+    // out of the URL, which is what the per-rock readout is built from.
+    experimentLinks: linkList(input.experimentLinks ?? existing?.experimentLinks, {
+      max: MAX_EXPERIMENT_LINKS,
+      field: "experimentLinks",
+      deriveExperienceId: true,
+    }),
+    websiteUrl: cleanUrl(input.websiteUrl ?? existing?.websiteUrl, "websiteUrl"),
+    reportLinks: linkList(input.reportLinks ?? existing?.reportLinks, {
+      max: MAX_REPORT_LINKS,
+      field: "reportLinks",
+    }),
     createdAt: existing?.createdAt ?? nowIso(),
     updatedAt: nowIso(),
     updatedBy: input.updatedBy ?? "dashboard",
@@ -243,7 +309,7 @@ export class RocksStore {
         changes.push({ id, change: "created", title: rock.title });
         continue;
       }
-      const fields = ["title", "status", "state", "owner", "kpi", "startDate", "checkInDate", "shippedAt", "clickupOptionId", "clickupBigSwingOptionId", "intelligemsExperienceId", "notes"];
+      const fields = ["title", "status", "state", "owner", "kpi", "startDate", "checkInDate", "shippedAt", "clickupOptionId", "clickupBigSwingOptionId", "intelligemsExperienceId", "websiteUrl", "notes"];
       const diff = {};
       for (const field of fields) {
         if (prior[field] !== rock[field]) diff[field] = { from: prior[field], to: rock[field] };

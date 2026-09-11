@@ -14,6 +14,7 @@ import { Store } from "../../src/lib/storage.js";
 import { RocksStore, RockValidationError, STATES, STATUSES, STATUS_LABELS } from "../../src/store/rocks.js";
 import { fetchFieldMap } from "../../src/collectors/clickup.js";
 import { isAuthorized, unauthorized, json } from "../../src/lib/dashboard-auth.js";
+import { buildRockReadout } from "../../src/store/rock-readout.js";
 
 /**
  * The options on the ClickUp dropdown a rock can be linked to.
@@ -59,8 +60,21 @@ export default async (req) => {
       }
       const seed = [...(config.leadershipQueue?.queue ?? []), ...(config.leadershipQueue?.backlog ?? [])];
       const listed = await rocks.list({ seed });
+
+      // The per-rock readout is joined from the latest Intelligems snapshot on every
+      // read, so it cannot drift from what Layer 3 reports.
+      const { snapshot: intelligems } = await store.getLatestSnapshot("intelligems");
+      const withReadouts = listed.rocks.map((rock) => ({
+        ...rock,
+        readout: buildRockReadout(rock, intelligems, config),
+      }));
+
       return json({
         ...listed,
+        rocks: withReadouts,
+        queue: withReadouts.filter((r) => r.state === "active" || r.state === "shipped"),
+        backlog: withReadouts.filter((r) => r.state === "backlog"),
+        intelligemsSnapshotAt: intelligems?.takenAt ?? null,
         states: STATES,
         statuses: STATUSES,
         statusLabels: STATUS_LABELS,

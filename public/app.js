@@ -436,7 +436,12 @@ function renderRocks() {
           ${r.kpi ? `· KPI ${esc(r.kpi)}` : ""}
           ${r.checkInDate ? `· checked in ${esc(r.checkInDate)}` : "· never checked in"}
           ${r.clickupBigSwingOptionId ? `· swing: ${esc(swingById.get(r.clickupBigSwingOptionId) ?? "linked")}` : ""}
-          ${r.clickupOptionId ? `· rock: ${esc(cuById.get(r.clickupOptionId) ?? "linked")}` : ""}
+          ${r.readout?.headline ? `· <strong>${esc(r.readout.headline)}</strong>` : ""}
+        </span>
+        <span class="rock-links" data-stop>
+          ${(r.experimentLinks ?? []).map((l, i) => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label || `experiment ${i + 1}`)}</a>`).join("")}
+          ${r.websiteUrl ? `<a href="${esc(r.websiteUrl)}" target="_blank" rel="noreferrer">site</a>` : ""}
+          ${(r.reportLinks ?? []).map((l, i) => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label || `report ${i + 1}`)}</a>`).join("")}
         </span>
       </span>
       <span class="rock-row-gaps">${gaps(r).map((g) => `<span class="chip warn">${esc(g)}</span>`).join("")}</span>
@@ -492,8 +497,28 @@ function openRock(id) {
           : `<input class="rk" data-f="clickupOptionId" value="${esc(r?.clickupOptionId ?? "")}" placeholder="option id">`
       }</label>
     </div>
-    <label class="wide">Notes / details<textarea class="rk" data-f="notes" rows="4" placeholder="context, links, what done looks like">${esc(r?.notes ?? "")}</textarea></label>
-    <p class="meta">${r ? `Linking to a ClickUp option is what lets tickets ladder up to this rock.` : "A new rock starts active and on track."}</p>`;
+    <h4 class="form-head">Links</h4>
+    <p class="meta">Up to three Intelligems experiments, the live page, and up to three reports. Paste an Intelligems URL and the experiment id is read out of it.</p>
+    ${[0, 1, 2].map((i) => {
+      const link = r?.experimentLinks?.[i];
+      return `<div class="link-row">
+        <input class="lk" data-lk="experiment" data-i="${i}" data-p="url" value="${esc(link?.url ?? "")}" placeholder="Intelligems experiment URL">
+        <input class="lk narrow" data-lk="experiment" data-i="${i}" data-p="label" value="${esc(link?.label ?? "")}" placeholder="label">
+        ${link?.experienceId ? `<span class="chip">id ${esc(link.experienceId.slice(0, 8))}</span>` : ""}
+      </div>`;
+    }).join("")}
+    <label class="wide">Website URL<input class="rk" data-f="websiteUrl" value="${esc(r?.websiteUrl ?? "")}" placeholder="the page this rock changes"></label>
+    ${[0, 1, 2].map((i) => {
+      const link = r?.reportLinks?.[i];
+      return `<div class="link-row">
+        <input class="lk" data-lk="report" data-i="${i}" data-p="url" value="${esc(link?.url ?? "")}" placeholder="Report or doc URL">
+        <input class="lk narrow" data-lk="report" data-i="${i}" data-p="label" value="${esc(link?.label ?? "")}" placeholder="label">
+      </div>`;
+    }).join("")}
+
+    <label class="wide">Notes / details<textarea class="rk" data-f="notes" rows="4" placeholder="context, what done looks like">${esc(r?.notes ?? "")}</textarea></label>
+
+    ${r ? renderRockReadout(r.readout) : '<p class="meta">A new rock starts active and on track.</p>'}`;
 
   $("rock-modal").hidden = false;
 }
@@ -506,7 +531,64 @@ function closeRock() {
 function formPayload() {
   const out = editingId ? { id: editingId } : {};
   for (const el of $("rock-form").querySelectorAll(".rk")) out[el.dataset.f] = el.value.trim();
+
+  // Collect the link rows, dropping any with no URL so an empty row is not an error.
+  for (const kind of ["experiment", "report"]) {
+    const rows = new Map();
+    for (const el of $("rock-form").querySelectorAll(`.lk[data-lk="${kind}"]`)) {
+      const row = rows.get(el.dataset.i) ?? {};
+      row[el.dataset.p] = el.value.trim();
+      rows.set(el.dataset.i, row);
+    }
+    out[kind === "experiment" ? "experimentLinks" : "reportLinks"] =
+      [...rows.values()].filter((row) => row.url);
+  }
   return out;
+}
+
+/** The rock's own readout, joined from the latest Intelligems snapshot. */
+function renderRockReadout(readout) {
+  if (!readout) return "";
+  if (readout.state === "no_experiments") {
+    return `<h4 class="form-head">Readout</h4><p class="meta">${esc(readout.message)}</p>`;
+  }
+  if (readout.state === "no_snapshot") {
+    return `<h4 class="form-head">Readout</h4><div class="note">${esc(readout.message)}</div>`;
+  }
+
+  const pct = (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${Number(v).toFixed(1)}%`);
+  const num = (v) => (v == null ? "not configured" : Number(v).toFixed(3));
+
+  const test = (t) => {
+    if (!t.found) {
+      return `<div class="flag"><p class="msg">${esc(t.experienceId.slice(0, 8))}</p><p class="meta">${esc(t.message)}</p></div>`;
+    }
+    const rows = (t.metrics ?? []).flatMap((g) =>
+      g.values.map((v) => `<tr>
+        <td>${esc(g.group)}</td>
+        <td>${esc(v.metric)}</td>
+        <td>${esc(num(v.value))}</td>
+        <td>${esc(num(v.control))}</td>
+        <td>${v.confident ? "<strong>" + esc(pct(v.upliftPct)) + "</strong>" : esc(pct(v.upliftPct))}</td>
+        <td>${v.probBeatControl == null ? "—" : esc((v.probBeatControl * 100).toFixed(0) + "%")}</td>
+      </tr>`),
+    ).join("");
+
+    return `
+      <div class="flag ${t.gateMet ? "" : "prompt"}">
+        <p class="msg"><strong>${esc(t.name ?? t.experienceId)}</strong> — ${esc(t.recommendation)}</p>
+        <p class="meta">${esc(t.reason)}</p>
+        <p class="meta">${esc(t.daysRunning ?? "?")} days · ${esc(t.ordersInSmallestGroup ?? "?")} orders in the smallest group${
+          t.estMonthlyRevenueImpact != null ? ` · est. monthly impact ${esc(t.estMonthlyRevenueImpact)}` : ""
+        }${t.stabilized === false ? " · still swinging" : ""}</p>
+        ${rows ? `<div class="scroll"><table><thead><tr><th>Group</th><th>Metric</th><th>Value</th><th>Control</th><th>Uplift</th><th>Beat control</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
+      </div>`;
+  };
+
+  return `
+    <h4 class="form-head">Readout${readout.headline ? ` — ${esc(readout.headline)}` : ""}</h4>
+    <p class="meta">From the Intelligems snapshot${readout.takenAt ? ` taken ${new Date(readout.takenAt).toLocaleString()}` : ""}. Bold uplift means the interval does not span zero.</p>
+    ${(readout.tests ?? []).map(test).join("")}`;
 }
 
 async function saveRock() {
@@ -543,6 +625,8 @@ async function deleteRock() {
 }
 
 document.addEventListener("click", (event) => {
+  // Clicking a link in a row opens the link, not the editor.
+  if (event.target.closest("[data-stop]")) return;
   const open = event.target.closest("[data-open]");
   if (open) return openRock(open.dataset.open);
 });

@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { RocksStore, RockValidationError, normalizeRock } from "../src/store/rocks.js";
+import { RocksStore, RockValidationError, normalizeRock, experienceIdFromUrl } from "../src/store/rocks.js";
 import { Store } from "../src/lib/storage.js";
 import { collectLeadership } from "../src/collectors/leadership.js";
 import { testConfig } from "./fixtures/config.js";
@@ -193,4 +193,70 @@ test("the ClickUp link is stored by option id, which survives a rename", () => {
   const rock = normalizeRock({ title: "Sub opt-in for NC", clickupOptionId: "f094b171-a5f8-4f88-904f-1bf17573bce5" });
   assert.equal(rock.clickupOptionId, "f094b171-a5f8-4f88-904f-1bf17573bce5");
   assert.equal(rock.title in rock, false, "the label is never stored as the link");
+});
+
+/* ------------------------------ links + readout ------------------------------ */
+
+test("an Intelligems experiment id is read out of a pasted URL", () => {
+  assert.equal(
+    experienceIdFromUrl("https://app.intelligems.io/experiments/5aacbb4f-c08e-49f0-853f-dce08fd83446/results"),
+    "5aacbb4f-c08e-49f0-853f-dce08fd83446",
+  );
+  assert.equal(experienceIdFromUrl("https://example.com/nothing-here"), null);
+});
+
+test("links accept a bare domain and are normalized, because an unclickable link is worse", () => {
+  const rock = normalizeRock({ title: "A", websiteUrl: "first-day-inc.netlify.app" });
+  assert.equal(rock.websiteUrl, "https://first-day-inc.netlify.app/");
+});
+
+test("a non-URL is rejected rather than stored", () => {
+  assert.throws(() => normalizeRock({ title: "A", websiteUrl: "not a url at all" }), /is not a URL/);
+});
+
+test("the three-link caps are enforced", () => {
+  assert.throws(() => normalizeRock({ title: "A", experimentLinks: ["a.com", "b.com", "c.com", "d.com"] }), /At most 3/);
+  assert.throws(() => normalizeRock({ title: "A", reportLinks: ["a.com", "b.com", "c.com", "d.com"] }), /At most 3/);
+  assert.equal(normalizeRock({ title: "A", experimentLinks: ["a.com", "b.com", "c.com"] }).experimentLinks.length, 3);
+});
+
+test("empty link rows are dropped, not stored as blanks", () => {
+  const rock = normalizeRock({ title: "A", experimentLinks: [{ url: "", label: "x" }, { url: "a.com" }] });
+  assert.equal(rock.experimentLinks.length, 1);
+});
+
+test("the per-rock readout joins the latest Intelligems snapshot", async () => {
+  const { buildRockReadout } = await import("../src/store/rock-readout.js");
+  const { snapshot, test: makeTest } = await import("./fixtures/tests.js");
+  const config = testConfig();
+
+  const rock = normalizeRock({
+    title: "Price per gummy",
+    experimentLinks: ["https://app.intelligems.io/experiments/5aacbb4f-c08e-49f0-853f-dce08fd83446"],
+  });
+  const snap = snapshot([makeTest({ id: "5aacbb4f-c08e-49f0-853f-dce08fd83446", name: "Price per Gummy", daysRunning: 42, minOrdersPerGroup: 238 })]);
+
+  const readout = buildRockReadout(rock, snap, config);
+  assert.equal(readout.state, "ok");
+  assert.equal(readout.tests[0].found, true);
+  assert.equal(readout.tests[0].name, "Price per Gummy");
+  assert.equal(readout.tests[0].gateMet, false, "238 orders is short of 300");
+  assert.equal(readout.headline, "Keep Running");
+});
+
+test("the readout says which of the three states it is in rather than showing nothing", async () => {
+  const { buildRockReadout } = await import("../src/store/rock-readout.js");
+  const { snapshot } = await import("./fixtures/tests.js");
+  const config = testConfig();
+
+  assert.equal(buildRockReadout(normalizeRock({ title: "A" }), snapshot([]), config).state, "no_experiments");
+
+  const linked = normalizeRock({ title: "A", experimentLinks: ["https://app.intelligems.io/x/5aacbb4f-c08e-49f0-853f-dce08fd83446"] });
+  assert.equal(buildRockReadout(linked, null, config).state, "no_snapshot");
+
+  // Linked but absent from the running roster: reported as such, not silently empty.
+  const gone = buildRockReadout(linked, snapshot([]), config);
+  assert.equal(gone.state, "not_running");
+  assert.equal(gone.tests[0].found, false);
+  assert.match(gone.tests[0].message, /probably ended/);
 });

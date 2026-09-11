@@ -82,7 +82,17 @@ export async function fetchFieldMap({ config, token, store, logger, fetchImpl, s
   const cu = config.clickup;
   if (!forceRefresh && store) {
     const cached = await store.getCached(FIELD_MAP_CACHE_KEY, { ttlSeconds: FIELD_MAP_TTL_SECONDS });
-    if (cached) return cached;
+    // A cached map that is missing a field we want is stale in the way that matters:
+    // someone just created the field in ClickUp and we would otherwise ignore it for a
+    // day. Refetch instead of serving a map that cannot see it.
+    const wantsButLacks = WANTED_FIELDS.some((key) => cu.customFields?.[key] && !cached?.[key]);
+    if (cached && !wantsButLacks) return cached;
+    if (cached && wantsButLacks) {
+      logger?.info("clickup.field_map_refetch", {
+        reason: "a configured field is absent from the cached map",
+        missing: WANTED_FIELDS.filter((key) => cu.customFields?.[key] && !cached?.[key]),
+      });
+    }
   }
 
   const url = `${cu.apiBase}/list/${cu.sprintListId}/field`;
