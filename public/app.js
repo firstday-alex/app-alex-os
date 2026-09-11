@@ -106,6 +106,7 @@ function render() {
   renderLayer1(report);
   renderCross(report);
   renderLayer2(report);
+  renderStaleness(report);
   renderTests();
   renderOpenItems();
   $("report-text").textContent = report.text ?? "";
@@ -324,6 +325,71 @@ function renderCross(report) {
     </table></div>`;
 }
 
+/* ------------------------------- staleness -------------------------------
+   One label, used by both the sprint table and the staleness view, so the two cannot
+   drift on what "at least" means.
+
+   `exact` is the whole point. A ticket first seen mid-flight has been in its status
+   longer than we watched, so its number is a floor taken from its last activity date,
+   and it says "at least". Once we have seen the transition ourselves it is a
+   measurement and drops the qualifier. Unknown renders as a dash, never as 0d, which
+   would read as "just moved". */
+
+function stalenessLabel(task) {
+  const age = task.statusAge;
+  if (!age) return '<span class="age-unknown" title="Not tracked yet. The clock starts the first time the 8 AM run sees this ticket.">—</span>';
+
+  const qualifier = age.exact ? "" : "≥";
+  const tone = task.stale ? (age.days >= task.stale.threshold * 2 ? "age-bad" : "age-warn") : "";
+  const title = age.exact
+    ? `In ${task.status} since ${new Date(age.since).toLocaleDateString()}, watched by this system.`
+    : `At least ${age.days} days: nothing has touched this ticket since ${new Date(age.since).toLocaleDateString()}, so it has been in ${task.status} at least that long.${
+        age.ceilingDays ? ` Created ${age.ceilingDays} days ago, so that is the upper bound.` : ""
+      }`;
+
+  return `<span class="age ${tone}" title="${esc(title)}">${esc(qualifier)}${esc(age.days)}d</span>`;
+}
+
+function renderStaleness(report) {
+  const section = report.sections.clickup;
+  const delta = report.detail?.clickup;
+  const host = $("staleness");
+  if (!section?.present) {
+    host.innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
+    return;
+  }
+
+  const rows = delta.byStaleness ?? [];
+  if (!rows.length) {
+    host.innerHTML = '<p class="sub">Nothing in flight.</p>';
+    return;
+  }
+
+  const anySeeded = rows.some((t) => t.statusAge && !t.statusAge.exact);
+  const stale = rows.filter((t) => t.stale);
+
+  host.innerHTML = `
+    <p class="sub">${plural(rows.length, "ticket", "tickets")} in flight · ${
+      stale.length ? `<strong>${plural(stale.length, "past its limit", "past their limit")}</strong>` : "none past its limit"
+    }</p>
+    ${anySeeded ? '<div class="note"><strong>Some of these are floors, not measurements.</strong> ClickUp does not expose time in status on this plan, so the clock is kept from this system\'s own daily snapshots. A ticket already in flight when tracking started shows <strong>≥</strong> and is dated from its last activity, which is a true lower bound. Once this system watches a status change itself, the number becomes exact and the ≥ goes away.</div>' : ""}
+    <div class="scroll"><table>
+      <thead><tr><th>In status</th><th>Status</th><th>Task</th><th>Assignees</th><th>Signal</th><th>Limit</th></tr></thead>
+      <tbody>${rows
+        .map(
+          (task) => `<tr class="${task.stale ? "stale-row" : ""}">
+            <td>${stalenessLabel(task)}</td>
+            <td>${esc(task.status)}</td>
+            <td class="wrap">${task.url ? `<a href="${esc(task.url)}" target="_blank" rel="noreferrer">${esc(task.name)}</a>` : esc(task.name)}</td>
+            <td>${esc(task.assignees.map((u) => u.username).join(", ") || "unassigned")}</td>
+            <td><span class="sig ${esc(task.signal)}">${esc(task.signal)}</span></td>
+            <td>${task.stale ? `${esc(task.stale.threshold)}d, over by ${esc(task.stale.over)}` : task.staleThresholdDays ? `${esc(task.staleThresholdDays)}d` : "—"}</td>
+          </tr>`,
+        )
+        .join("")}</tbody>
+    </table></div>`;
+}
+
 function renderLayer2(report) {
   const section = report.sections.clickup;
   const delta = report.detail?.clickup;
@@ -343,11 +409,12 @@ function renderLayer2(report) {
           <td>${esc(task.assignees.map((u) => u.username).join(", ") || "unassigned")}</td>
           <td>${esc(task.leadershipPriority?.label ?? "none")}</td>
           <td>${task.idleDays == null ? "—" : `${esc(task.idleDays)}d`}</td>
+          <td>${stalenessLabel(task)}</td>
         </tr>`,
       )
       .join("");
 
-  const head = `<thead><tr><th>Signal</th><th>Task</th><th>Status</th><th>Owner</th><th>Assignees</th><th>Leadership priority</th><th>Untouched</th></tr></thead>`;
+  const head = `<thead><tr><th>Signal</th><th>Task</th><th>Status</th><th>Owner</th><th>Assignees</th><th>Leadership priority</th><th>Untouched</th><th>In status</th></tr></thead>`;
 
   const ch = delta.changes;
   const changeLines = [
@@ -1216,7 +1283,7 @@ $("rocks-audit-wrap")?.addEventListener("toggle", async (event) => {
 
 /* ----------------------------------- nav ----------------------------------- */
 
-const VIEW_TITLES = { readout: "Readout", rocks: "Rocks", sprint: "Sprint", tests: "Tests", setup: "Setup" };
+const VIEW_TITLES = { readout: "Readout", rocks: "Rocks", sprint: "Sprint", staleness: "Staleness", tests: "Tests", setup: "Setup" };
 
 /* -------------------------------- settings -------------------------------- */
 

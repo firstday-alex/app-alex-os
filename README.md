@@ -228,6 +228,15 @@ Severities: **p1** (Layer 1 items and material test movement), **attention**,
   the per-date Slack key. A test send therefore cannot leave tomorrow comparing against
   this afternoon, and cannot suppress the real readout. It arms on the first click and
   posts on the second, because it goes to a channel other people read.
+- **Time in status is measured, and says when it is only a bound.** ClickUp's
+  `time_in_status` endpoint returns an empty history on this plan (verified live), so the
+  clock is kept from this system's own daily snapshots and the ledger is rebuilt from
+  them if it is ever lost. A ticket already in flight when tracking started shows
+  **≥ N days**, floored at its last activity — a true lower bound, since any activity
+  including a status change moves that date. Once a transition is witnessed between two
+  snapshots the number is exact and the ≥ goes away. Limits are per status, not per
+  bucket: a week in progress is work, a week in QA is a queue. Not Started has no limit,
+  because a backlog is supposed to sit.
 - **Nothing is compared against a value that was not returned.** A missing confidence
   interval skips its band check and says so. A null profit metric renders as "not
   configured", never as zero. Unknown days or orders is unknown, not zero.

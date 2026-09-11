@@ -6,6 +6,8 @@
 // classifyMovement does, and it is the reason the delta carries a per-task signal rather
 // than just a list of changed fields.
 
+import { statusAge, isStale, stalenessThreshold } from "../store/status-ledger.js";
+
 const DAY_MS = 86400000;
 
 function idsOf(list) {
@@ -64,7 +66,7 @@ export function classifyMovement(current, before, { stalledAfterDays = 3, now = 
  * @param {object|null} baseline previous working day's 8 AM snapshot, or null on a first run
  * @param {object} current this morning's snapshot
  */
-export function clickupDelta(baseline, current, { config, now = Date.now(), comments = null } = {}) {
+export function clickupDelta(baseline, current, { config, now = Date.now(), comments = null, statusLedger = null } = {}) {
   const stalledAfterDays = config?.clickup?.rules?.stalledAfterDays ?? 3;
   const beforeById = new Map((baseline?.items ?? []).map((t) => [t.id, t]));
   const currentById = new Map((current?.items ?? []).map((t) => [t.id, t]));
@@ -85,7 +87,22 @@ export function clickupDelta(baseline, current, { config, now = Date.now(), comm
   for (const task of current?.items ?? []) {
     const before = beforeById.get(task.id) ?? null;
     const movement = classifyMovement(task, before, { stalledAfterDays, now });
-    const entry = { ...task, before: before ? { status: before.status, bucket: before.bucket } : null, ...movement };
+
+    // How long it has sat where it is, which is a different question from whether it
+    // moved since yesterday. A ticket can be "waiting" every single day for a month.
+    const age = statusAge(statusLedger?.entries?.[String(task.id)], new Date(now));
+    const stale = isStale(task, age, config);
+
+    const entry = {
+      ...task,
+      before: before ? { status: before.status, bucket: before.bucket } : null,
+      ...movement,
+      statusAge: age,
+      stale,
+      // Carried so the dashboard can show a healthy ticket's limit too. It has the
+      // delta but not config.
+      staleThresholdDays: stalenessThreshold(task, config),
+    };
     tasks.push(entry);
 
     if (!before) {
@@ -123,6 +140,12 @@ export function clickupDelta(baseline, current, { config, now = Date.now(), comm
     if (!currentById.has(id)) changes.disappeared.push(before);
   }
 
+  // Worst first, not-started excluded. A backlog is supposed to sit, so including it
+  // would put a year-old idea above a ticket that has been in QA for a fortnight.
+  const byStaleness = tasks
+    .filter((t) => t.bucket !== "notStarted" && t.bucket !== "done" && t.statusAge)
+    .sort((a, b) => b.statusAge.days - a.statusAge.days || String(a.name).localeCompare(String(b.name)));
+
   const notStarted = tasks.filter((t) => t.bucket === "notStarted");
   const inProgress = tasks.filter((t) => t.bucket === "inProgress");
   const done = tasks.filter((t) => t.bucket === "done");
@@ -132,6 +155,7 @@ export function clickupDelta(baseline, current, { config, now = Date.now(), comm
     baselineDate: baseline?.takenAt ?? null,
     tasks,
     boards: { notStarted, inProgress, done },
+    byStaleness,
     changes,
     counts: {
       total: tasks.length,
@@ -139,6 +163,7 @@ export function clickupDelta(baseline, current, { config, now = Date.now(), comm
       inProgress: inProgress.length,
       done: done.length,
       stalled: tasks.filter((t) => t.signal === "stalled").length,
+      stale: tasks.filter((t) => t.stale).length,
       waiting: tasks.filter((t) => t.signal === "waiting").length,
       moving: tasks.filter((t) => t.signal === "moving").length,
       changed:

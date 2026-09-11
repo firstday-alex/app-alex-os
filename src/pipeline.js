@@ -11,6 +11,7 @@ import { createLogger, newRunId } from "./lib/logger.js";
 import { Store } from "./lib/storage.js";
 import { RocksStore } from "./store/rocks.js";
 import { SettingsStore } from "./store/settings.js";
+import { StatusLedger } from "./store/status-ledger.js";
 import { dateKey as toDateKey, zonedParts, baselineCandidateKeys } from "./lib/time.js";
 import { collectClickUp } from "./collectors/clickup.js";
 import { collectIntelligems } from "./collectors/intelligems.js";
@@ -158,6 +159,36 @@ export async function runPipeline(opts = {}) {
 
   /* --------------------------------- delta --------------------------------- */
 
+  // How long each open ticket has been in its status. Folded from this run's snapshot
+  // into a running ledger, because ClickUp will not tell us: its time_in_status endpoint
+  // returns an empty history on this plan.
+  //
+  // Only folded when the ClickUp pull actually succeeded. A failed collector must not
+  // teach the ledger that every ticket just changed status, which is what an empty item
+  // list would do — the same rule that stops a failed pull overwriting a good snapshot.
+  let statusLedger = null;
+  if (snapshots.clickup) {
+    try {
+      const ledger = new StatusLedger(store.backend, logger);
+
+      // An empty ledger is either the first ever run or a lost document. Either way the
+      // snapshots already in storage are a real record of where every ticket was on
+      // each past day, so rebuild from them rather than restarting every clock at zero.
+      if (!Object.keys((await ledger.read()).entries).length) {
+        await ledger.backfill(store, now);
+      }
+
+      statusLedger = await ledger.update(snapshots.clickup.items, now, {
+        // A refresh observes but does not record. Otherwise a mid-day refresh would
+        // restamp a transition the 8 AM run had already dated, and every ticket that
+        // moved overnight would read as having moved this afternoon.
+        persist: mode === "official",
+      });
+    } catch (err) {
+      logger.warn("status_ledger.unavailable", { err, note: "staleness renders as unknown, never as zero" });
+    }
+  }
+
   // App-level settings: the LTV references and significance thresholds the Layer 3 tree
   // and the future-value projection read.
   let settings = null;
@@ -172,6 +203,7 @@ export async function runPipeline(opts = {}) {
     baselines,
     config,
     settings,
+    statusLedger,
     dateKey,
     nowIso: now.toISOString(),
     logger,

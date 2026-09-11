@@ -349,3 +349,15 @@ td.bad { color: var(--red); font-weight: 600; }
 .aud-head { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--green); margin-bottom: 4px; }
 .aud-head .meta { text-transform: none; letter-spacing: 0; }
 tr.underpowered td { opacity: .5; }
+
+/* ------------------------------- staleness -------------------------------
+   The number is the point of the row, so it is set in tabular figures and reads left to
+   right without the eye having to hunt. Tone only when a limit is actually breached:
+   colouring every row would make the breached ones invisible, which is the same mistake
+   the metric tree made. */
+.age { font-variant-numeric: tabular-nums; font-weight: 600; }
+.age-warn { color: var(--amber-ink); }
+.age-bad { color: var(--red); }
+.age-unknown { color: var(--muted); }
+.stale-row td { background: var(--amber-bg); }
+.stale-row td:first-child { box-shadow: inset 3px 0 0 var(--amber); }

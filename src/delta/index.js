@@ -312,7 +312,7 @@ function intelligemsFlags(delta, { config, dateKey }) {
  * `sections` records which layers are present and which are missing and why. A partial
  * readout beats no readout, and the reader has to be able to see the difference.
  */
-export function computeFlags({ snapshots, baselines, config, settings = null, dateKey, nowIso, logger }) {
+export function computeFlags({ snapshots, baselines, config, settings = null, statusLedger = null, dateKey, nowIso, logger }) {
   const sections = {};
   const flags = [];
 
@@ -323,8 +323,28 @@ export function computeFlags({ snapshots, baselines, config, settings = null, da
       config,
       now: new Date(nowIso).getTime(),
       comments: snapshots.clickup.comments,
+      statusLedger,
     });
     flags.push(...clickupFlags(cuDelta, { config, dateKey, fieldMap: snapshots.clickup.fieldMap }));
+
+    // Sat too long where it is. Separate from the `stalled` signal, which asks whether
+    // anything touched the ticket: a ticket can be commented on daily for three weeks
+    // and never leave QA. This is the one that catches that.
+    for (const task of cuDelta.byStaleness) {
+      if (!task.stale) continue;
+      const qualifier = task.statusAge.exact ? "" : "at least ";
+      flags.push({
+        id: `clickup.stale_in_status:${task.id}`,
+        layer: 2,
+        severity: "attention",
+        rule: "clickup.stale_in_status",
+        message: `"${task.name}" has been in ${task.status} for ${qualifier}${task.statusAge.days} days, past the ${task.stale.threshold} day mark for that status.${
+          task.assignees?.length ? ` With ${task.assignees.map((a) => a.username).join(", ")}.` : ""
+        }`,
+        advisable: true,
+        url: task.url ?? null,
+      });
+    }
     sections.clickup = { present: true, baselineDate: baselines.clickup?.dateKey ?? null, counts: cuDelta.counts };
   } else {
     sections.clickup = { present: false, reason: snapshots.errors?.clickup ?? "collector did not run" };

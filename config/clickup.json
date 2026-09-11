@@ -64,6 +64,20 @@
     "_VERIFIED": "The Current Sprint list uses exactly: 'to do' (open), 'in-progress', 'vqa', 'qa', 'ready for deploy', 'complete' (closed). Note 'in-progress' is hyphenated, and vqa, qa and ready for deploy are all work in flight, not done. Matching is case-insensitive. An unmapped status falls through to notStarted and logs clickup.status_unmapped.",
     "_TODO": "Alex to confirm that 'ready for deploy' should count as in progress rather than done. It is the last state before shipping, so a ticket can sit there a long time and should still be visible as in-flight work."
   },
+  "staleness": {
+    "enabled": true,
+    "thresholdDaysByStatus": {
+      "in-progress": 7,
+      "vqa": 3,
+      "qa": 3,
+      "ready for deploy": 2
+    },
+    "thresholdDaysByBucket": {
+      "inProgress": 7
+    },
+    "_comment": "How long a ticket may sit in a status before the readout says so. Per status, because 'in-progress', 'vqa', 'qa' and 'ready for deploy' are all the inProgress bucket but mean different things: a week in progress is work, a week in QA is a queue nobody is looking at, and 'ready for deploy' is the last state before shipping so sitting there is pure delay. thresholdDaysByBucket is the fallback for a status nobody has set a number for. notStarted is excluded outright, not given a big number: a backlog is supposed to sit.",
+    "_comment_source": "Time in status is derived from this system's own daily snapshots, not from ClickUp. ClickUp's time_in_status endpoint returns current_status:{} and an empty history on this workspace, because it is a paid-tier feature that is not on this plan. Verified live 2026-09-11. A ticket first seen mid-flight reports 'at least N days', floored at its last activity date, which is a true bound rather than an estimate."
+  },
   "bauMarkers": [
     "BAU",
     "Business as usual",

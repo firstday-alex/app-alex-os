@@ -35,6 +35,7 @@
     <button class="nav" data-view="readout">Daily readout</button>
     <button class="nav" data-view="rocks">Rocks</button>
     <button class="nav" data-view="sprint">Sprint</button>
+    <button class="nav" data-view="staleness">Staleness</button>
     <button class="nav" data-view="tests">Tests</button>
     <button class="nav" data-view="setup">Setup &amp; open decisions</button>
 
@@ -113,6 +114,13 @@
     <section class="view hidden" id="view-sprint">
       <h2>Layer 2. ClickUp sprint</h2>
       <div id="layer2"></div>
+    </section>
+
+    <!-- ---------------------------------- staleness -------------------------------- -->
+    <section class="view hidden" id="view-staleness">
+      <h2>Staleness</h2>
+      <p class="sub">How long each ticket has sat in the status it is in, worst first. This is a different question from whether anything touched it: a ticket can be commented on every day for three weeks and never leave QA. Not Started is left out, because a backlog is supposed to sit.</p>
+      <div id="staleness"></div>
     </section>
 
     <!-- ------------------------------------ tests --------------------------------- -->
