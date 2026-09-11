@@ -19,63 +19,119 @@
   </form>
 </section>
 
-<main id="app" class="hidden">
-  <h1>Turnpups Management Operating System</h1>
-  <p class="sub" id="strap">Loading the latest readout.</p>
-
-  <div class="bar">
+<div id="shell" class="hidden">
+  <header id="topbar">
+    <button id="menu-toggle" aria-label="Menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <strong id="view-title">Readout</strong>
+    <span class="grow"></span>
     <span class="chip" id="chip-mode">—</span>
-    <span class="chip" id="chip-baseline">—</span>
-    <span class="chip" id="chip-generated">—</span>
-    <button id="refresh">Refresh now</button>
-    <button id="toggle-text" class="ghost">Plain text readout</button>
+    <button id="refresh">Refresh</button>
+  </header>
+
+  <nav id="drawer" aria-hidden="true">
+    <p class="drawer-brand">Turnpups MOS</p>
+    <button class="nav" data-view="readout">Daily readout</button>
+    <button class="nav" data-view="rocks">Rocks</button>
+    <button class="nav" data-view="sprint">Sprint</button>
+    <button class="nav" data-view="tests">Tests</button>
+    <button class="nav" data-view="setup">Setup &amp; open decisions</button>
+    <div class="drawer-foot">
+      <p class="meta" id="drawer-baseline">—</p>
+      <p class="meta" id="drawer-generated">—</p>
+    </div>
+  </nav>
+  <div id="scrim" hidden></div>
+
+  <main>
+    <!-- ---------------------------------- readout --------------------------------- -->
+    <section class="view" id="view-readout">
+      <div id="banners"></div>
+      <div class="tiles" id="tiles"></div>
+
+      <h2>Needs your attention</h2>
+      <div id="attention"></div>
+
+      <h2>Owner prompts</h2>
+      <p class="sub">Did not move, and need a next step or a decision from their owner.</p>
+      <div id="prompts"></div>
+
+      <h2>Layer 1. Leadership priorities</h2>
+      <div id="layer1"></div>
+
+      <h2>Cross layer</h2>
+      <div id="cross"></div>
+
+      <h2>Hygiene</h2>
+      <div id="hygiene"></div>
+
+      <details id="text-wrap">
+        <summary>Plain text readout, byte for byte what goes to Slack</summary>
+        <pre id="report-text"></pre>
+      </details>
+    </section>
+
+    <!-- ----------------------------------- rocks ---------------------------------- -->
+    <section class="view hidden" id="view-rocks">
+      <div class="bar">
+        <h2 style="margin:0;border:0;padding:0">Rocks</h2>
+        <span class="grow"></span>
+        <input id="rock-filter" placeholder="Filter by title or owner">
+        <select id="rock-state-filter">
+          <option value="">All queues</option>
+          <option value="active">Active</option>
+          <option value="shipped">Shipped</option>
+          <option value="backlog">Backlog</option>
+        </select>
+        <button id="new-rock-btn">New rock</button>
+      </div>
+      <p class="sub">The leadership queue. Every change is recorded with what it was before.</p>
+      <div id="rocks-error" class="missing hidden"></div>
+      <div id="rocks-list"></div>
+      <details id="rocks-audit-wrap">
+        <summary>Change history</summary>
+        <div id="rocks-audit"></div>
+      </details>
+    </section>
+
+    <!-- ----------------------------------- sprint --------------------------------- -->
+    <section class="view hidden" id="view-sprint">
+      <h2>Layer 2. ClickUp sprint</h2>
+      <div id="layer2"></div>
+    </section>
+
+    <!-- ------------------------------------ tests --------------------------------- -->
+    <section class="view hidden" id="view-tests">
+      <h2>Layer 3. Active tests</h2>
+      <div id="layer3"></div>
+    </section>
+
+    <!-- ------------------------------------ setup --------------------------------- -->
+    <section class="view hidden" id="view-setup">
+      <h2>Still to decide</h2>
+      <p class="sub">Open items the config carries. Each is a decision waiting on a person, not a bug.</p>
+      <div id="open-items"></div>
+    </section>
+  </main>
+</div>
+
+<!-- rock editor, opened from the rocks list -->
+<div id="rock-modal" hidden>
+  <div class="modal-card">
+    <div class="bar">
+      <strong id="rock-modal-title">Edit rock</strong>
+      <span class="grow"></span>
+      <button class="ghost" id="rock-close">Close</button>
+    </div>
+    <div id="rock-form"></div>
+    <div class="bar">
+      <button id="rock-save">Save</button>
+      <button class="ghost" id="rock-delete">Remove</button>
+      <span class="err hidden" id="rock-form-error"></span>
+    </div>
   </div>
-
-  <div id="banners"></div>
-
-  <div class="tiles" id="tiles"></div>
-
-  <h2>Needs your attention</h2>
-  <div id="attention"></div>
-
-  <h2>Owner prompts</h2>
-  <p class="sub">Items that did not move and need a next step or a decision from their owner.</p>
-  <div id="prompts"></div>
-
-  <h2>Layer 1. Leadership priorities</h2>
-  <div id="layer1"></div>
-
-  <h3>Manage rocks</h3>
-  <p class="sub">The leadership queue. Stored in the app, edited here. Every change is recorded with what it was before.</p>
-  <div id="rocks-error" class="missing hidden"></div>
-  <div id="rocks-editor"></div>
-  <details id="rocks-audit-wrap">
-    <summary>Change history</summary>
-    <div id="rocks-audit"></div>
-  </details>
-
-  <h2>Cross layer</h2>
-  <div id="cross"></div>
-
-  <h2>Layer 2. ClickUp sprint</h2>
-  <div id="layer2"></div>
-
-  <h2>Layer 3. Active tests</h2>
-  <div id="layer3"></div>
-
-  <h2>Hygiene</h2>
-  <div id="hygiene"></div>
-
-  <h2>Still to decide</h2>
-  <p class="sub">Open items the config carries. Every one of these is a decision waiting on a person, not a bug.</p>
-  <div id="open-items"></div>
-
-  <section id="text-view" class="hidden">
-    <h2>Plain text readout</h2>
-    <p class="sub">Byte for byte what goes to Slack at 8 AM.</p>
-    <pre id="report-text"></pre>
-  </section>
-</main>
+</div>
 
 <script src="/app.js" type="module"></script>
 </body>

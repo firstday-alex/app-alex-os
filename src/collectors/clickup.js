@@ -27,33 +27,55 @@ function authHeaders(token) {
  * Dropdowns return the selected option as an id, not a label. Labels get renamed and ids
  * do not, so everything downstream keys on the id and carries the label only for display.
  */
+/** The custom fields this system reads. Order matters only for readability. */
+export const WANTED_FIELDS = ["taskOwner", "leadershipPriority", "bigSwing"];
+
 export function buildFieldMap(fields, clickupConfig) {
   const wanted = clickupConfig.customFields ?? {};
-  const result = { taskOwner: null, leadershipPriority: null, options: {}, all: [] };
+  const result = { taskOwner: null, leadershipPriority: null, bigSwing: null, options: {}, all: [] };
 
   const normalize = (s) => String(s ?? "").trim().toLowerCase();
 
   for (const field of fields ?? []) {
     result.all.push({ id: field.id, name: field.name, type: field.type });
 
-    for (const key of ["taskOwner", "leadershipPriority"]) {
+    for (const key of WANTED_FIELDS) {
       const spec = wanted[key];
       if (!spec || result[key]) continue;
       const byId = spec.id && spec.id === field.id;
       const byName = (spec.matchName ?? []).some((n) => normalize(n) === normalize(field.name));
-      if (byId || byName) {
-        result[key] = { id: field.id, name: field.name, type: field.type };
-        const options = field.type_config?.options ?? [];
-        result.options[field.id] = Object.fromEntries(
-          options.map((opt) => [
-            String(opt.id ?? opt.orderindex),
-            { id: String(opt.id ?? opt.orderindex), label: opt.name ?? opt.label ?? String(opt.value ?? ""), orderindex: opt.orderindex },
-          ]),
-        );
+      if (!byId && !byName) continue;
+
+      result[key] = { id: field.id, name: field.name, type: field.type };
+
+      // A dropdown value comes back as EITHER the option's uuid OR its orderindex,
+      // depending on the field and how it was written. A real task in this workspace
+      // returns `value: 0`. Index both forms so either resolves, and always resolve to
+      // the uuid, which is the only part that survives a rename or a reorder.
+      const table = {};
+      for (const opt of field.type_config?.options ?? []) {
+        const canonicalId = String(opt.id ?? opt.orderindex);
+        const entry = {
+          id: canonicalId,
+          label: opt.name ?? opt.label ?? String(opt.value ?? ""),
+          orderindex: opt.orderindex,
+        };
+        table[canonicalId] = entry;
+        if (opt.orderindex != null) table[String(opt.orderindex)] = entry;
       }
+      result.options[field.id] = table;
     }
   }
   return result;
+}
+
+/** Resolves a raw dropdown value, in whichever form ClickUp sent it, to {optionId,label}. */
+export function resolveDropdown(rawValue, optionTable) {
+  if (rawValue == null || rawValue === "") return null;
+  const key = String(rawValue.id ?? rawValue);
+  const hit = optionTable?.[key];
+  // Carry the canonical uuid, never the orderindex, so the link is stable.
+  return hit ? { optionId: hit.id, label: hit.label } : { optionId: key, label: null, unresolved: true };
 }
 
 export async function fetchFieldMap({ config, token, store, logger, fetchImpl, sleep, forceRefresh = false }) {
@@ -81,6 +103,9 @@ export async function fetchFieldMap({ config, token, store, logger, fetchImpl, s
   }
   if (!map.leadershipPriority) {
     logger?.warn("clickup.field_missing", { field: "leadershipPriority", looked_for: cu.customFields?.leadershipPriority?.matchName });
+  }
+  if (!map.bigSwing) {
+    logger?.warn("clickup.field_missing", { field: "bigSwing", looked_for: cu.customFields?.bigSwing?.matchName });
   }
   if (store) await store.setCached(FIELD_MAP_CACHE_KEY, map);
   return map;
@@ -122,12 +147,18 @@ export function normalizeTask(task, { fieldMap, statusMap, logger }) {
       ? [{ id: String(rawOwner.id ?? rawOwner), username: rawOwner.username ?? null }]
       : [];
 
-  const rawPriority = customFieldValue(task, priorityFieldId);
-  const optionId = rawPriority == null ? null : String(rawPriority.id ?? rawPriority);
-  const optionTable = priorityFieldId ? (fieldMap.options?.[priorityFieldId] ?? {}) : {};
-  const leadershipPriority = optionId
-    ? { optionId, label: optionTable[optionId]?.label ?? null }
-    : null;
+  const leadershipPriority = resolveDropdown(
+    customFieldValue(task, priorityFieldId),
+    priorityFieldId ? fieldMap.options?.[priorityFieldId] : null,
+  );
+
+  // The Big Swing field is what the cross layer rule is actually about: "at least one,
+  // and really only one, big swing tied to a leadership priority".
+  const bigSwingFieldId = fieldMap.bigSwing?.id ?? null;
+  const bigSwing = resolveDropdown(
+    customFieldValue(task, bigSwingFieldId),
+    bigSwingFieldId ? fieldMap.options?.[bigSwingFieldId] : null,
+  );
 
   const statusName = task.status?.status ?? null;
 
@@ -143,6 +174,7 @@ export function normalizeTask(task, { fieldMap, statusMap, logger }) {
     assignees: (task.assignees ?? []).map((u) => ({ id: String(u.id), username: u.username ?? null })),
     taskOwners: owners,
     leadershipPriority,
+    bigSwing,
     priority: task.priority?.priority ?? null,
     dueDate: task.due_date ? Number(task.due_date) : null,
     dateUpdated: task.date_updated ? Number(task.date_updated) : null,
@@ -316,7 +348,7 @@ export async function collectClickUp({ config, token, store, logger, fetchImpl, 
     source: "clickup",
     takenAt: now.toISOString(),
     listId: config.clickup.sprintListId,
-    fieldMap: { taskOwner: fieldMap.taskOwner, leadershipPriority: fieldMap.leadershipPriority, options: fieldMap.options },
+    fieldMap: { taskOwner: fieldMap.taskOwner, leadershipPriority: fieldMap.leadershipPriority, bigSwing: fieldMap.bigSwing, options: fieldMap.options },
     items: tasks,
     comments,
     members,

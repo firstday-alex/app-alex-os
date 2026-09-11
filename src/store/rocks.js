@@ -120,6 +120,9 @@ export function normalizeRock(input, existing = null) {
     // dropdown; the id is stable across renames, which is why the label is not stored.
     clickupOptionId: str(input.clickupOptionId ?? existing?.clickupOptionId),
     clickupFieldId: str(input.clickupFieldId ?? existing?.clickupFieldId),
+    // The Big Swing option this rock is delivered through, when there is one. A rock is
+    // the outcome; a big swing is the project meant to produce it.
+    clickupBigSwingOptionId: str(input.clickupBigSwingOptionId ?? existing?.clickupBigSwingOptionId),
     intelligemsExperienceId: str(input.intelligemsExperienceId ?? existing?.intelligemsExperienceId),
     createdAt: existing?.createdAt ?? nowIso(),
     updatedAt: nowIso(),
@@ -240,7 +243,7 @@ export class RocksStore {
         changes.push({ id, change: "created", title: rock.title });
         continue;
       }
-      const fields = ["title", "status", "state", "owner", "kpi", "startDate", "checkInDate", "shippedAt", "clickupOptionId", "intelligemsExperienceId", "notes"];
+      const fields = ["title", "status", "state", "owner", "kpi", "startDate", "checkInDate", "shippedAt", "clickupOptionId", "clickupBigSwingOptionId", "intelligemsExperienceId", "notes"];
       const diff = {};
       for (const field of fields) {
         if (prior[field] !== rock[field]) diff[field] = { from: prior[field], to: rock[field] };

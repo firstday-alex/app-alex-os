@@ -22,21 +22,22 @@ import { isAuthorized, unauthorized, json } from "../../src/lib/dashboard-auth.j
  * one per dashboard load. Failure is not fatal: without the options the editor falls back
  * to a plain text id, which is worse but still works.
  */
-async function clickupRockOptions({ config, store, logger }) {
+async function clickupOptionsFor(which, { config, store, logger }) {
   try {
     const map = await fetchFieldMap({ config, token: process.env.CLICKUP_TOKEN, store, logger });
-    const field = map.leadershipPriority;
-    if (!field) return { available: false, reason: "No Leadership Priority or Rock Reference field found on the sprint list.", fieldId: null, options: [] };
+    const field = map[which];
+    if (!field) return { available: false, reason: `No ${which} field found on the sprint list.`, fieldId: null, options: [] };
     return {
       available: true,
       fieldId: field.id,
       fieldName: field.name,
-      options: Object.values(map.options?.[field.id] ?? {})
+      // The option table is indexed by uuid AND orderindex, so de-duplicate.
+      options: [...new Map(Object.values(map.options?.[field.id] ?? {}).map((o) => [String(o.id), o])).values()]
         .sort((a, b) => (a.orderindex ?? 0) - (b.orderindex ?? 0))
         .map((o) => ({ id: String(o.id), label: o.label })),
     };
   } catch (err) {
-    logger?.warn("rocks.clickup_options_failed", { err });
+    logger?.warn("rocks.clickup_options_failed", { which, err });
     return { available: false, reason: err.message, fieldId: null, options: [] };
   }
 }
@@ -66,7 +67,8 @@ export default async (req) => {
         // Real choices instead of free text: the roster for owners, and the live Rock
         // Reference options for the ClickUp link.
         people: (config.people?.team ?? []).filter((p) => p.clickupUserId).map((p) => ({ id: String(p.clickupUserId), name: p.name })),
-        clickupOptions: await clickupRockOptions({ config, store, logger }),
+        clickupOptions: await clickupOptionsFor("leadershipPriority", { config, store, logger }),
+        bigSwingOptions: await clickupOptionsFor("bigSwing", { config, store, logger }),
       });
     }
 

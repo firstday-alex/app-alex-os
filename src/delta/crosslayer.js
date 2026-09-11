@@ -24,20 +24,50 @@ export function accountableFor(task) {
   return [];
 }
 
-export function classifyTicketLink(task, { activeOptionIds, activeTitles, bauMarkers }) {
+/**
+ * What a ticket is, for the purposes of the one-big-swing rule.
+ *
+ * Two ClickUp fields carry different halves of the answer:
+ *   Big Swing       - which project this ticket belongs to. The spec's "big swing".
+ *   Rock Reference  - which quarterly outcome it serves. The leadership priority.
+ *
+ * A ticket counts as big swing work if it names a Big Swing. Whether that big swing is
+ * tied to a live leadership priority is a separate question, answered by whether any
+ * active rock claims it.
+ */
+export function classifyTicketLink(task, { activeOptionIds, activeTitles, activeBigSwingIds, bauMarkers }) {
   const priority = task.leadershipPriority;
+  const swing = task.bigSwing;
+  const priorityLabel = String(priority?.label ?? "").toLowerCase();
+
+  // BAU is expected work and is never a big swing, however it is tagged.
+  if (priority && bauMarkers.includes(priorityLabel)) {
+    return { link: "bau", label: priority.label };
+  }
+
+  if (swing?.optionId) {
+    const claimed =
+      activeBigSwingIds.has(String(swing.optionId)) ||
+      (priority?.optionId && activeOptionIds.has(String(priority.optionId))) ||
+      (priorityLabel && activeTitles.has(priorityLabel));
+    return {
+      link: "bigSwing",
+      swing: swing.label ?? swing.optionId,
+      swingId: swing.optionId,
+      label: priority?.label ?? null,
+      // Named a big swing, but no active rock claims it. It is real work on a real
+      // project that nothing at leadership level is currently tracking.
+      untethered: !claimed,
+    };
+  }
+
   if (!priority) return { link: "none" };
 
-  const label = String(priority.label ?? "").toLowerCase();
-  if (bauMarkers.includes(label)) return { link: "bau", label: priority.label };
-
   const byId = priority.optionId && activeOptionIds.has(String(priority.optionId));
-  const byLabel = label && activeTitles.has(label);
+  const byLabel = priorityLabel && activeTitles.has(priorityLabel);
+  // A rock is named but no Big Swing is. Counts as laddering up, just not as a project.
   if (byId || byLabel) return { link: "leadership", label: priority.label, optionId: priority.optionId };
 
-  // A priority is set but it matches no ACTIVE leadership item. Either the item shipped
-  // or moved to the backlog, or the dropdown has drifted. Either way the ticket is not
-  // laddering up to a live priority today.
   return { link: "stale", label: priority.label, optionId: priority.optionId };
 }
 
@@ -50,6 +80,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   // not been linked yet, and it breaks the moment somebody renames the dropdown option.
   const activeOptionIds = new Set(activeItems.map((i) => i.clickupOptionId).filter(Boolean).map(String));
   const activeTitles = new Set(activeItems.map((i) => String(i.title).toLowerCase()));
+  const activeBigSwingIds = new Set(activeItems.map((i) => i.clickupBigSwingOptionId).filter(Boolean).map(String));
 
   const openTasks = (clickupDelta.tasks ?? []).filter((t) => t.bucket !== "done");
 
@@ -64,6 +95,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
         bauTickets: [],
         unrelatedTickets: [],
         staleTickets: [],
+        untetheredSwings: [],
         totalTickets: 0,
       });
     }
@@ -77,15 +109,22 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   }
 
   for (const task of openTasks) {
-    const link = classifyTicketLink(task, { activeOptionIds, activeTitles, bauMarkers });
+    const link = classifyTicketLink(task, { activeOptionIds, activeTitles, activeBigSwingIds, bauMarkers });
     const accountable = accountableFor(task);
     if (accountable.length === 0) continue; // no owner and no assignee: Layer 2's problem, not this check's
 
     for (const person of accountable) {
       const row = seed(person);
       row.totalTickets += 1;
-      const ref = { id: task.id, name: task.name, url: task.url, status: task.status, priorityLabel: link.label ?? null };
-      if (link.link === "leadership") row.bigSwings.push(ref);
+      const ref = {
+        id: task.id, name: task.name, url: task.url, status: task.status,
+        priorityLabel: link.label ?? null,
+        swing: link.swing ?? null, swingId: link.swingId ?? null,
+      };
+      if (link.link === "bigSwing") {
+        row.bigSwings.push(ref);
+        if (link.untethered) row.untetheredSwings.push(ref);
+      } else if (link.link === "leadership") row.bigSwings.push(ref);
       else if (link.link === "bau") row.bauTickets.push(ref);
       else if (link.link === "stale") row.staleTickets.push(ref);
       else row.unrelatedTickets.push(ref);
@@ -97,9 +136,10 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   const pile = lc.unrelatedTicketPileThreshold ?? 5;
 
   for (const row of people.values()) {
-    // Distinct leadership priorities, not distinct tickets. Several tickets under one
-    // priority are one big swing, which is the point of the rule.
-    const distinctSwings = new Set(row.bigSwings.map((t) => t.priorityLabel ?? t.id));
+    // Distinct big swings, not distinct tickets. Several tickets on one project are one
+    // big swing, which is the point of the rule. Fall back to the rock label for a
+    // ticket that names a priority but no Big Swing.
+    const distinctSwings = new Set(row.bigSwings.map((t) => t.swingId ?? t.swing ?? t.priorityLabel ?? t.id));
     row.distinctBigSwings = distinctSwings.size;
 
     if (lc.requireOneBigSwingPerPerson !== false) {
@@ -145,6 +185,18 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
       });
     }
 
+    if (row.untetheredSwings.length > 0) {
+      const swings = [...new Set(row.untetheredSwings.map((t) => t.swing))];
+      add({
+        layer: "cross",
+        rule: "crosslayer.big_swing_without_rock",
+        severity: "attention",
+        subject: { type: "person", id: `${row.id}:untethered`, label: row.name },
+        message: `${row.name} is working on ${swings.map((s) => `"${s}"`).join(", ")}, which no active rock claims. Real work on a real project that nothing at leadership level is tracking.`,
+        values: { swings, tickets: row.untetheredSwings.length },
+      });
+    }
+
     if (row.staleTickets.length > 0) {
       add({
         layer: "cross",
@@ -167,7 +219,8 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   for (const item of activeItems) {
     const hit =
       laddered.has(String(item.title).toLowerCase()) ||
-      openTasks.some((t) => t.leadershipPriority?.optionId && item.clickupOptionId && String(t.leadershipPriority.optionId) === String(item.clickupOptionId));
+      openTasks.some((t) => t.leadershipPriority?.optionId && item.clickupOptionId && String(t.leadershipPriority.optionId) === String(item.clickupOptionId)) ||
+      openTasks.some((t) => t.bigSwing?.optionId && item.clickupBigSwingOptionId && String(t.bigSwing.optionId) === String(item.clickupBigSwingOptionId));
     if (!hit) {
       add({
         layer: "cross",

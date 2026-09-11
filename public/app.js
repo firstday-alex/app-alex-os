@@ -26,7 +26,7 @@ $("login-form").addEventListener("submit", async (event) => {
   });
   if (response.ok) {
     $("login").classList.add("hidden");
-    $("app").classList.remove("hidden");
+    $("shell").classList.remove("hidden");
     load();
   } else {
     const body = await response.json().catch(() => ({}));
@@ -40,20 +40,20 @@ $("login-form").addEventListener("submit", async (event) => {
 async function load() {
   const response = await fetch(`${FN}/report`, { headers: { accept: "application/json" } });
   if (response.status === 401) {
-    $("app").classList.add("hidden");
+    $("shell").classList.add("hidden");
     $("login").classList.remove("hidden");
     return;
   }
   // A valid cookie from an earlier visit means we can skip the sign-in screen.
   $("login").classList.add("hidden");
-  $("app").classList.remove("hidden");
+  $("shell").classList.remove("hidden");
 
   const body = await response.json();
   state.openItems = body.openItems ?? [];
   state.advisorButtonText = body.advisorButtonText ?? state.advisorButtonText;
 
   if (body.empty) {
-    $("strap").textContent = body.message;
+    $("banners").innerHTML = `<div class="note"><strong>Nothing yet.</strong> ${esc(body.message)}</div>`;
     renderOpenItems();
     return;
   }
@@ -67,10 +67,9 @@ function render() {
   const report = state.report;
   const s = report.summary;
 
-  $("strap").textContent = `${s.p1} P1, ${s.attention} needing attention, ${s.prompt} owner prompt(s), ${s.info} hygiene note(s).`;
-  $("chip-mode").textContent = report.mode === "official" ? "8 AM official readout" : "On demand refresh";
-  $("chip-baseline").textContent = `Baseline ${report.baseline.describe}`;
-  $("chip-generated").textContent = `Pulled ${new Date(report.generatedAt).toLocaleString()}`;
+  $("chip-mode").textContent = report.mode === "official" ? "8 AM readout" : "refreshed";
+  $("drawer-baseline").textContent = `Baseline ${report.baseline.describe}`;
+  $("drawer-generated").textContent = `Pulled ${new Date(report.generatedAt).toLocaleString()}`;
 
   const banners = [];
   if (report.mode !== "official") {
@@ -350,7 +349,7 @@ $("refresh").addEventListener("click", async () => {
     if (!body.started) {
       button.textContent = "Refresh now";
       button.disabled = false;
-      $("strap").textContent = body.reason ?? "Refresh did not start.";
+      $("banners").innerHTML = `<div class="note">${esc(body.reason ?? "Refresh did not start.")}</div>`;
       return;
     }
 
@@ -372,18 +371,14 @@ $("refresh").addEventListener("click", async () => {
   }
 });
 
-$("toggle-text").addEventListener("click", () => {
-  $("text-view").classList.toggle("hidden");
-});
 
 // Already signed in from a previous visit? The cookie will tell us.
 load();
 
 
 /* ---------------------------------- rocks ----------------------------------
-   Layer 1's data. Rocks change weekly, so they live in the app's own store rather
-   than in config, and every write is versioned so a stale form cannot clobber a
-   newer change. */
+   Layer 1's data, on its own screen. A list you can scan, and one rock at a time in a
+   modal, because a dozen rocks each with nine fields is not a table anyone can read. */
 
 async function loadRocks() {
   try {
@@ -403,110 +398,162 @@ function rocksError(message) {
   box.classList.remove("hidden");
 }
 
+const STATUS_TONE = { on_track: "on_track", at_risk: "at_risk", off_track: "off_track", done: "done" };
+
 function renderRocks() {
   const data = state.rocks;
   if (!data) return;
-  const people = data.people ?? [];
-  const cu = data.clickupOptions ?? { available: false, options: [] };
+  const label = (id) => (data.statusLabels ?? {})[id] ?? id;
+  const peopleById = new Map((data.people ?? []).map((p) => [p.id, p.name]));
+  const cuById = new Map((data.clickupOptions?.options ?? []).map((o) => [o.id, o.label]));
+  const swingById = new Map((data.bigSwingOptions?.options ?? []).map((o) => [o.id, o.label]));
+
+  const q = ($("rock-filter")?.value ?? "").toLowerCase();
+  const stateFilter = $("rock-state-filter")?.value ?? "";
+
+  const rocks = (data.rocks ?? []).filter((r) => {
+    if (stateFilter && r.state !== stateFilter) return false;
+    if (!q) return true;
+    return `${r.title} ${peopleById.get(r.owner) ?? ""} ${r.kpi ?? ""}`.toLowerCase().includes(q);
+  });
+
+  const gaps = (r) => {
+    const out = [];
+    if (!r.owner) out.push("no owner");
+    if (!r.kpi) out.push("no KPI");
+    if (!r.clickupOptionId && !r.clickupBigSwingOptionId) out.push("not linked to ClickUp");
+    return out;
+  };
+
+  const card = (r) => `
+    <button class="rock-row" data-open="${esc(r.id)}">
+      <span class="sig ${esc(STATUS_TONE[r.status] ?? "")}">${esc(label(r.status))}</span>
+      <span class="rock-row-main">
+        <span class="rock-row-title">${esc(r.title)}</span>
+        <span class="meta">
+          ${esc(peopleById.get(r.owner) ?? "no owner")}
+          · ${esc(r.state)}
+          ${r.kpi ? `· KPI ${esc(r.kpi)}` : ""}
+          ${r.checkInDate ? `· checked in ${esc(r.checkInDate)}` : "· never checked in"}
+          ${r.clickupBigSwingOptionId ? `· swing: ${esc(swingById.get(r.clickupBigSwingOptionId) ?? "linked")}` : ""}
+          ${r.clickupOptionId ? `· rock: ${esc(cuById.get(r.clickupOptionId) ?? "linked")}` : ""}
+        </span>
+      </span>
+      <span class="rock-row-gaps">${gaps(r).map((g) => `<span class="chip warn">${esc(g)}</span>`).join("")}</span>
+    </button>`;
+
+  $("rocks-list").innerHTML = `
+    ${data.clickupOptions?.available === false ? `<div class="note"><strong>ClickUp link unavailable.</strong> ${esc(data.clickupOptions.reason ?? "")}</div>` : ""}
+    ${rocks.map(card).join("") || `<p class="sub">${(data.rocks ?? []).length ? "No rocks match that filter." : "No rocks yet. Use New rock to add the first."}</p>`}
+    <p class="sub">${rocks.length} of ${(data.rocks ?? []).length} shown · version ${esc(data.version)}${data.updatedAt ? ` · last changed ${new Date(data.updatedAt).toLocaleString()}` : ""}</p>`;
+}
+
+/* ------------------------------- rock editor ------------------------------- */
+
+let editingId = null;
+
+function openRock(id) {
+  const data = state.rocks;
+  const r = id ? (data.rocks ?? []).find((x) => x.id === id) : null;
+  editingId = r?.id ?? null;
+  $("rock-modal-title").textContent = r ? "Edit rock" : "New rock";
+  $("rock-delete").classList.toggle("hidden", !r);
+  $("rock-form-error").classList.add("hidden");
 
   const opts = (list, selected, blank) =>
-    [`<option value="">${esc(blank)}</option>`]
+    (blank == null ? [] : [`<option value="">${esc(blank)}</option>`])
       .concat(list.map((o) => `<option value="${esc(o.id)}"${String(selected ?? "") === String(o.id) ? " selected" : ""}>${esc(o.label)}</option>`))
       .join("");
 
-  const statusList = (data.statuses ?? []).map((s) => ({ id: s, label: (data.statusLabels ?? {})[s] ?? s }));
-  const stateList = (data.states ?? []).map((s) => ({ id: s, label: s }));
+  const statuses = (data.statuses ?? []).map((s) => ({ id: s, label: (data.statusLabels ?? {})[s] ?? s }));
+  const states = (data.states ?? []).map((s) => ({ id: s, label: s }));
+  const people = (data.people ?? []).map((p) => ({ id: p.id, label: p.name }));
+  const cu = data.clickupOptions ?? { available: false, options: [] };
+  const swings = data.bigSwingOptions ?? { available: false, options: [] };
 
-  const card = (r) => `
-    <div class="rock" data-id="${esc(r.id)}">
-      <div class="rock-head">
-        <input class="rk rk-title" data-f="title" value="${esc(r.title)}">
-        <span class="sig ${esc(r.status)}">${esc((data.statusLabels ?? {})[r.status] ?? r.status)}</span>
-      </div>
-      <div class="rock-grid">
-        <label>Status<select class="rk" data-f="status">${opts(statusList, r.status, "on track").replace('<option value="">on track</option>', "")}</select></label>
-        <label>Queue<select class="rk" data-f="state">${opts(stateList, r.state, "").replace('<option value=""></option>', "")}</select></label>
-        <label>Owner<select class="rk" data-f="owner">${opts(people.map((p) => ({ id: p.id, label: p.name })), r.owner, "no owner")}</select></label>
-        <label>KPI<input class="rk" data-f="kpi" value="${esc(r.kpi ?? "")}" placeholder="the number this moves"></label>
-        <label>Start date<input class="rk" data-f="startDate" value="${esc(r.startDate ?? "")}" placeholder="YYYY-MM-DD"></label>
-        <label>Check-in date<input class="rk" data-f="checkInDate" value="${esc(r.checkInDate ?? "")}" placeholder="YYYY-MM-DD"></label>
-        <label>Shipped<input class="rk" data-f="shippedAt" value="${esc(r.shippedAt ?? "")}" placeholder="YYYY-MM-DD"></label>
-        <label>ClickUp ${esc(cu.fieldName ?? "link")}${
-          cu.available
-            ? `<select class="rk" data-f="clickupOptionId">${opts(cu.options, r.clickupOptionId, "not linked")}</select>`
-            : `<input class="rk" data-f="clickupOptionId" value="${esc(r.clickupOptionId ?? "")}" placeholder="option id">`
-        }</label>
-      </div>
-      <label class="rock-notes">Notes / details<textarea class="rk" data-f="notes" rows="2" placeholder="context, links, what done looks like">${esc(r.notes ?? "")}</textarea></label>
-      <div class="bar">
-        <button class="rock-save">Save</button>
-        <button class="ghost rock-del">Remove</button>
-        ${r.clickupOptionId ? "" : '<span class="chip warn">not linked to ClickUp</span>'}
-        ${r.kpi ? "" : '<span class="chip">no KPI</span>'}
-      </div>
-    </div>`;
+  $("rock-form").innerHTML = `
+    <label class="wide">Title<input class="rk" data-f="title" value="${esc(r?.title ?? "")}" placeholder="What is the rock"></label>
+    <div class="form-grid">
+      <label>Status<select class="rk" data-f="status">${opts(statuses, r?.status ?? "on_track", null)}</select></label>
+      <label>Queue<select class="rk" data-f="state">${opts(states, r?.state ?? "active", null)}</select></label>
+      <label>Owner<select class="rk" data-f="owner">${opts(people, r?.owner, "no owner")}</select></label>
+      <label>KPI<input class="rk" data-f="kpi" value="${esc(r?.kpi ?? "")}" placeholder="the number this moves"></label>
+      <label>Start date<input class="rk" type="date" data-f="startDate" value="${esc(r?.startDate ?? "")}"></label>
+      <label>Check-in date<input class="rk" type="date" data-f="checkInDate" value="${esc(r?.checkInDate ?? "")}"></label>
+      <label>Shipped<input class="rk" type="date" data-f="shippedAt" value="${esc(r?.shippedAt ?? "")}"></label>
+      <label>Big Swing${
+        swings.available
+          ? `<select class="rk" data-f="clickupBigSwingOptionId">${opts(swings.options, r?.clickupBigSwingOptionId, "not linked")}</select>`
+          : `<input class="rk" data-f="clickupBigSwingOptionId" value="${esc(r?.clickupBigSwingOptionId ?? "")}" placeholder="option id">`
+      }</label>
+      <label>Rock Reference${
+        cu.available
+          ? `<select class="rk" data-f="clickupOptionId">${opts(cu.options, r?.clickupOptionId, "not linked")}</select>`
+          : `<input class="rk" data-f="clickupOptionId" value="${esc(r?.clickupOptionId ?? "")}" placeholder="option id">`
+      }</label>
+    </div>
+    <label class="wide">Notes / details<textarea class="rk" data-f="notes" rows="4" placeholder="context, links, what done looks like">${esc(r?.notes ?? "")}</textarea></label>
+    <p class="meta">${r ? `Linking to a ClickUp option is what lets tickets ladder up to this rock.` : "A new rock starts active and on track."}</p>`;
 
-  $("rocks-editor").innerHTML = `
-    ${cu.available ? "" : `<div class="note"><strong>ClickUp link unavailable.</strong> ${esc(cu.reason ?? "")} Rocks can still be linked by pasting an option id.</div>`}
-    ${(data.rocks ?? []).map(card).join("") || '<p class="sub">No rocks yet. Add the first one below.</p>'}
-    <p class="sub">Version ${esc(data.version)}${data.updatedAt ? ` · last changed ${new Date(data.updatedAt).toLocaleString()}` : ""}</p>
-    <div class="bar">
-      <input id="new-rock" placeholder="New rock title" style="flex:1;min-width:220px;padding:6px 10px;border:1px solid var(--line);border-radius:4px;font:inherit">
-      <button id="add-rock">Add rock</button>
-    </div>`;
+  $("rock-modal").hidden = false;
 }
 
-function rowPayload(tr) {
-  const out = { id: tr.dataset.id };
-  for (const el of tr.querySelectorAll(".rk")) out[el.dataset.f] = el.value.trim();
+function closeRock() {
+  $("rock-modal").hidden = true;
+  editingId = null;
+}
+
+function formPayload() {
+  const out = editingId ? { id: editingId } : {};
+  for (const el of $("rock-form").querySelectorAll(".rk")) out[el.dataset.f] = el.value.trim();
   return out;
 }
 
-document.addEventListener("click", async (event) => {
-  const save = event.target.closest("button.rock-save");
-  const del = event.target.closest("button.rock-del");
-  const add = event.target.closest("#add-rock");
-  if (!save && !del && !add) return;
-
-  rocksError("");
-  const button = save || del || add;
-  button.disabled = true;
-  try {
-    let res;
-    if (add) {
-      const title = $("new-rock").value.trim();
-      if (!title) return;
-      res = await fetch(`${FN}/rocks`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ rock: { title }, version: state.rocks.version }),
-      });
-    } else if (save) {
-      res = await fetch(`${FN}/rocks`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ rock: rowPayload(save.closest(".rock")), version: state.rocks.version }),
-      });
-    } else {
-      const id = del.closest(".rock").dataset.id;
-      if (!confirm(`Remove "${id}"? The change is recorded, but the rock is gone from the queue.`)) return;
-      res = await fetch(`${FN}/rocks?id=${encodeURIComponent(id)}&version=${state.rocks.version}`, { method: "DELETE" });
-    }
-
-    const body = await res.json();
-    if (!res.ok) {
-      // 409 means someone else changed the rocks first. Reload so the user sees theirs.
-      rocksError(body.error ?? `HTTP ${res.status}`);
-      if (res.status === 409) await loadRocks();
-      return;
-    }
-    await loadRocks();
-  } catch (err) {
-    rocksError(err.message);
-  } finally {
-    button.disabled = false;
+async function saveRock() {
+  const errBox = $("rock-form-error");
+  errBox.classList.add("hidden");
+  const res = await fetch(`${FN}/rocks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ rock: formPayload(), version: state.rocks.version }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    errBox.textContent = body.error ?? `HTTP ${res.status}`;
+    errBox.classList.remove("hidden");
+    if (res.status === 409) await loadRocks();
+    return;
   }
+  closeRock();
+  await loadRocks();
+}
+
+async function deleteRock() {
+  if (!editingId) return;
+  if (!confirm(`Remove "${editingId}"? The change is recorded, but it leaves the queue.`)) return;
+  const res = await fetch(`${FN}/rocks?id=${encodeURIComponent(editingId)}&version=${state.rocks.version}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    $("rock-form-error").textContent = body.error ?? `HTTP ${res.status}`;
+    $("rock-form-error").classList.remove("hidden");
+    return;
+  }
+  closeRock();
+  await loadRocks();
+}
+
+document.addEventListener("click", (event) => {
+  const open = event.target.closest("[data-open]");
+  if (open) return openRock(open.dataset.open);
 });
+$("new-rock-btn").addEventListener("click", () => openRock(null));
+$("rock-close").addEventListener("click", closeRock);
+$("rock-save").addEventListener("click", saveRock);
+$("rock-delete").addEventListener("click", deleteRock);
+$("rock-modal").addEventListener("click", (e) => { if (e.target.id === "rock-modal") closeRock(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("rock-modal").hidden) closeRock(); });
+$("rock-filter").addEventListener("input", renderRocks);
+$("rock-state-filter").addEventListener("change", renderRocks);
 
 $("rocks-audit-wrap")?.addEventListener("toggle", async (event) => {
   if (!event.target.open) return;
@@ -523,3 +570,42 @@ $("rocks-audit-wrap")?.addEventListener("toggle", async (event) => {
         </div>`).join("")
     : '<p class="sub">No changes recorded yet.</p>';
 });
+
+/* ----------------------------------- nav ----------------------------------- */
+
+const VIEW_TITLES = { readout: "Readout", rocks: "Rocks", sprint: "Sprint", tests: "Tests", setup: "Setup" };
+
+function showView(name) {
+  for (const section of document.querySelectorAll(".view")) {
+    section.classList.toggle("hidden", section.id !== `view-${name}`);
+  }
+  for (const button of document.querySelectorAll(".nav")) {
+    button.classList.toggle("active", button.dataset.view === name);
+  }
+  $("view-title").textContent = VIEW_TITLES[name] ?? name;
+  location.hash = name;
+  closeDrawer();
+  if (name === "rocks" && !state.rocks) loadRocks();
+}
+
+function openDrawer() {
+  $("drawer").classList.add("open");
+  $("drawer").setAttribute("aria-hidden", "false");
+  $("menu-toggle").setAttribute("aria-expanded", "true");
+  $("scrim").hidden = false;
+}
+function closeDrawer() {
+  $("drawer").classList.remove("open");
+  $("drawer").setAttribute("aria-hidden", "true");
+  $("menu-toggle").setAttribute("aria-expanded", "false");
+  $("scrim").hidden = true;
+}
+
+$("menu-toggle").addEventListener("click", () =>
+  $("drawer").classList.contains("open") ? closeDrawer() : openDrawer(),
+);
+$("scrim").addEventListener("click", closeDrawer);
+for (const button of document.querySelectorAll(".nav")) {
+  button.addEventListener("click", () => showView(button.dataset.view));
+}
+showView((location.hash || "#readout").slice(1));

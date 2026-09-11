@@ -136,3 +136,72 @@ test("done tickets do not count toward anyone's sprint", () => {
   ]);
   assert.equal(result.people.find((p) => p.name === "dana").totalTickets, 1);
 });
+
+/* ------------------- the Big Swing field, once it exists ------------------- */
+
+const SWING_QUIZ = { optionId: "00eaa598", label: "New Problem Based Bundle Buy Box" };
+const SWING_CARPE = { optionId: "23eba93e", label: "Carpe Bundle Builder Inspired Funnel" };
+
+const LEADERSHIP_WITH_SWINGS = {
+  ...LEADERSHIP,
+  queue: [
+    { ...LEADERSHIP.queue[0], clickupBigSwingOptionId: "00eaa598" },
+    { ...LEADERSHIP.queue[1], clickupBigSwingOptionId: null },
+  ],
+};
+
+test("a person's big swings are counted from the Big Swing field, not the rock label", () => {
+  const result = check(
+    [
+      { ...task({ id: "a", bigSwing: SWING_QUIZ, leadershipPriority: SUB }), ...owner("u1", "dana") },
+      { ...task({ id: "b", bigSwing: SWING_QUIZ, leadershipPriority: null }), ...owner("u1", "dana") },
+      { ...task({ id: "c", bigSwing: SWING_QUIZ, leadershipPriority: SHIP }), ...owner("u1", "dana") },
+    ],
+    LEADERSHIP_WITH_SWINGS,
+  );
+  // Three tickets, three different rock labels, but ONE project. That is one big swing.
+  assert.equal(result.people.find((p) => p.name === "dana").distinctBigSwings, 1);
+  assert.ok(!rulesFor(result, "dana").includes("crosslayer.multiple_big_swings"));
+});
+
+test("two different Big Swings on one person is still flagged", () => {
+  const result = check(
+    [
+      { ...task({ id: "a", bigSwing: SWING_QUIZ }), ...owner("u1", "dana") },
+      { ...task({ id: "b", bigSwing: SWING_CARPE }), ...owner("u1", "dana") },
+    ],
+    LEADERSHIP_WITH_SWINGS,
+  );
+  assert.ok(rulesFor(result, "dana").includes("crosslayer.multiple_big_swings"));
+});
+
+test("a big swing no active rock claims is flagged as untethered", () => {
+  const result = check(
+    [{ ...task({ id: "a", bigSwing: SWING_CARPE, leadershipPriority: null }), ...owner("u1", "dana") }],
+    LEADERSHIP_WITH_SWINGS,
+  );
+  const flag = result.flags.find((f) => f.rule === "crosslayer.big_swing_without_rock");
+  assert.ok(flag, "real work on a real project that leadership is not tracking");
+  assert.deepEqual(flag.values.swings, ["Carpe Bundle Builder Inspired Funnel"]);
+  // It still counts as a big swing: they are not idle, they are unaligned.
+  assert.equal(result.people.find((p) => p.name === "dana").distinctBigSwings, 1);
+});
+
+test("BAU still wins over a Big Swing value, because BAU is expected work", () => {
+  const result = check(
+    [{ ...task({ id: "a", bigSwing: SWING_QUIZ, leadershipPriority: BAU }), ...owner("u1", "dana") }],
+    LEADERSHIP_WITH_SWINGS,
+  );
+  const dana = result.people.find((p) => p.name === "dana");
+  assert.equal(dana.bauTickets.length, 1);
+  assert.equal(dana.distinctBigSwings, 0);
+});
+
+test("a rock is considered worked on when a ticket names its Big Swing", () => {
+  const result = check(
+    [{ ...task({ id: "a", bigSwing: SWING_QUIZ, leadershipPriority: null }), ...owner("u1", "dana") }],
+    LEADERSHIP_WITH_SWINGS,
+  );
+  const orphans = result.flags.filter((f) => f.rule === "crosslayer.priority_without_work").map((f) => f.subject.label);
+  assert.ok(!orphans.includes("Subscription upsell"), "its Big Swing is being worked on");
+});

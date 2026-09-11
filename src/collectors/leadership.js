@@ -46,6 +46,7 @@ export async function collectLeadership({ config, clickupSnapshot = null, rocksS
     kpi: item.kpi ?? null,
     startDate: item.startDate ?? null,
     clickupFieldId: item.clickupFieldId ?? null,
+    clickupBigSwingOptionId: item.clickupBigSwingOptionId == null ? null : String(item.clickupBigSwingOptionId),
     intelligemsExperienceId: item.intelligemsExperienceId == null ? null : String(item.intelligemsExperienceId),
     notes: item.notes ?? null,
     // Everything in the leadership queue is a P1 by definition.
@@ -77,10 +78,21 @@ export async function collectLeadership({ config, clickupSnapshot = null, rocksS
 
   // The dropdown options currently offered in ClickUp, so the sync check can compare them
   // against the live queue. Pulled from the snapshot we already have. No extra API call.
+  const uniqueOptions = (fieldId) => {
+    if (!fieldId) return [];
+    // The option table is indexed by uuid AND orderindex, so the same entry appears
+    // twice. De-duplicate on the canonical id.
+    const seen = new Map();
+    for (const o of Object.values(clickupSnapshot?.fieldMap?.options?.[fieldId] ?? {})) {
+      seen.set(String(o.id), { id: String(o.id), label: o.label, orderindex: o.orderindex });
+    }
+    return [...seen.values()].sort((a, b) => (a.orderindex ?? 0) - (b.orderindex ?? 0));
+  };
+
   const priorityFieldId = clickupSnapshot?.fieldMap?.leadershipPriority?.id ?? null;
-  const dropdownOptions = priorityFieldId
-    ? Object.values(clickupSnapshot?.fieldMap?.options?.[priorityFieldId] ?? {}).map((o) => ({ id: String(o.id), label: o.label }))
-    : [];
+  const bigSwingFieldId = clickupSnapshot?.fieldMap?.bigSwing?.id ?? null;
+  const dropdownOptions = uniqueOptions(priorityFieldId);
+  const bigSwingOptions = uniqueOptions(bigSwingFieldId);
 
   const roster = (people.team ?? [])
     .filter((p) => p.clickupUserId != null && p.countsTowardCapacity !== false)
@@ -106,6 +118,7 @@ export async function collectLeadership({ config, clickupSnapshot = null, rocksS
     backlog,
     roster: roster.length ? roster : rosterFallback,
     dropdownOptions,
+    bigSwingOptions,
     meta: {
       source,
       version,
