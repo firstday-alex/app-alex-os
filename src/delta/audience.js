@@ -92,7 +92,11 @@ export function analyseAudience({ dimension, segments, metric, overall, minOrder
     });
 
     return { segment, variants, visitors: groups.reduce((s, g) => s + (g.visitors ?? 0), 0) };
-  });
+  })
+    // A segment the platform returned with no challenger against the control says
+    // nothing. Dropping it here means a dimension that yields none disappears entirely
+    // rather than rendering as an empty heading.
+    .filter((row) => row.variants.length > 0);
 
   // The finding: a segment whose direction contradicts the overall one, on evidence.
   const overallDirection = overall?.level?.includes("win") ? "win" : overall?.level?.includes("loss") ? "loss" : null;

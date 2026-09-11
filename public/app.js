@@ -583,7 +583,8 @@ function renderExperienceDiff(diff) {
 /* ----------------------- where the test won or lost ----------------------- */
 
 function renderAudiences(audiences) {
-  if (!audiences || !audiences.length) return "";
+  const shown = (audiences ?? []).filter((a) => a.rows?.length);
+  if (!shown.length) return "";
 
   const pct = (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`);
 
@@ -621,7 +622,7 @@ function renderAudiences(audiences) {
 
   return `<h4 class="form-head">Where it won or lost</h4>
     <p class="meta">A segment under the order bar is shown as Too small rather than as a result. Slicing until something looks significant is the failure this invites.</p>
-    ${audiences.map(block).join("")}`;
+    ${shown.map(block).join("")}`;
 }
 
 /* -------------------------------- test card -------------------------------- */
