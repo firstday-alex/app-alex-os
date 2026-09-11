@@ -2,7 +2,7 @@
   "apiBase": "https://api.clickup.com/api/v2",
   "workspaceId": "18042215",
   "sprintListId": "901112668495",
-  "_VERIFIED": "List id, statuses and custom field ids read live from the First Day workspace on 2026-09-10. Big Swing (f9135883) and Rock Reference (de6b3171) both confirmed present with their option sets.",
+  "_VERIFIED": "List id, statuses and all three custom field ids read live from the First Day workspace on 2026-09-10: Project Owner (673c4185), Big Swing (f9135883), Rock Reference (de6b3171).",
   "backlogListId": "901111926996",
   "_comment_backlog": "'Site Backlog' sits in the same folder as Current Sprint, which answers the spec's open question: sprint tickets DO originate in a separate backlog list, so include_timl must stay true or tickets whose home list is the backlog will be invisible.",
   "taskQuery": {
@@ -13,12 +13,14 @@
   },
   "customFields": {
     "taskOwner": {
-      "id": null,
+      "id": "673c4185-87a0-4021-83bf-b974267913c1",
       "matchName": [
+        "Project Owner",
         "Task Owner",
         "Task Project Manager"
       ],
-      "type": "users"
+      "type": "users",
+      "_comment": "Created 2026-09-10. A users-type field, separate from assignee. The owner drives the task and is accountable for keeping it moving; assignees execute pieces of it. Note single_user is false, so ClickUp will accept several owners on one ticket \u2014 see the multiple-owners flag, since accountability shared between two people is accountability held by neither."
     },
     "leadershipPriority": {
       "id": "de6b3171-e1ed-4078-ac4c-f1f1c9a4fd4b",
@@ -29,7 +31,6 @@
       "type": "drop_down",
       "_comment": "Rock Reference. The quarterly outcome a ticket ladders up to."
     },
-    "_BLOCKER": "Task Owner still does not exist. Checked list, space and workspace level: there is no user-type custom field anywhere, so the ownership model falls back to assignees and the readout says so in one line.",
     "bigSwing": {
       "id": "f9135883-30f4-42ab-89af-69173768c248",
       "matchName": [

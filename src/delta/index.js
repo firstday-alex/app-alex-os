@@ -67,6 +67,21 @@ function clickupFlags(delta, { config, dateKey, fieldMap }) {
       });
     }
 
+    // ClickUp allows several owners on one ticket. The spec's model is one accountable
+    // person: "the owner is accountable for divvying up the work and keeping the task
+    // moving". Two owners is not twice the accountability, it is none.
+    if (ownerFieldExists && task.taskOwners.length > 1) {
+      add({
+        layer: 2,
+        rule: "clickup.multiple_task_owners",
+        severity: "info",
+        advisable: false,
+        subject: { type: "task", id: `${task.id}:owners`, label: task.name, url: task.url },
+        message: `"${task.name}" has ${task.taskOwners.length} Project Owners. One person should be accountable for keeping it moving; the rest can be assignees.`,
+        values: { owners: task.taskOwners.map((u) => u.username) },
+      });
+    }
+
     if (ownerFieldExists && task.taskOwners.length === 0) {
       add({
         layer: 2,
