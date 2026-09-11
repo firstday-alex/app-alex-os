@@ -2,7 +2,13 @@
   "timezone": "America/Chicago",
   "schedule": {
     "readoutHourCentral": 8,
-    "workingWeekdays": [1, 2, 3, 4, 5],
+    "workingWeekdays": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
     "_comment": "Cron runs at 13:00 and 14:00 UTC. The function checks the Central hour and exits unless it is readoutHourCentral on a working weekday. DST is not chased in the cron string."
   },
   "storage": {
@@ -16,13 +22,24 @@
   "http": {
     "timeoutMs": 30000,
     "maxAttempts": 5,
-    "backoffMsSchedule": [1000, 2000, 4000, 8000],
+    "backoffMsSchedule": [
+      1000,
+      2000,
+      4000,
+      8000
+    ],
     "maxPages": 50
   },
   "logging": {
     "level": "info",
     "persistRunLogToStorage": true,
-    "redactHeaders": ["authorization", "intelligems-access-token", "x-api-key", "cookie", "x-slack-signature"]
+    "redactHeaders": [
+      "authorization",
+      "intelligems-access-token",
+      "x-api-key",
+      "cookie",
+      "x-slack-signature"
+    ]
   },
   "dashboard": {
     "sessionTtlHours": 12,
@@ -37,5 +54,10 @@
     "effort": "high",
     "maxTokens": 16000,
     "_comment": "Only the Strategic Advisor and the Learning Skill spend tokens. The daily pipeline spends none."
+  },
+  "github": {
+    "repo": "firstday-alex/app-alex-os",
+    "defaultBranch": "main",
+    "_comment": "Where the learning skill opens its proposal pull requests. NOT secrets: a repo name and a branch name are public, and putting them in the environment was a mistake. Netlify's secrets scanner treats every environment value as something to hunt for in the build output, so GITHUB_DEFAULT_BRANCH=main failed the build on every occurrence of the word 'main' in an HTML tag or a CSS selector. Only GITHUB_TOKEN belongs in the environment."
   }
 }

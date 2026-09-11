@@ -69,10 +69,14 @@ Connect the repo. Build settings come from `netlify.toml`; there is no build ste
 | `SLACK_READOUT_CHANNEL` | channel id, e.g. `C0123456789` |
 | `ANTHROPIC_API_KEY` | advisor and learning skill only |
 | `GITHUB_TOKEN` | scoped to this repo: contents + pull requests write |
-| `GITHUB_REPO` | `org/app-turnpup-os` |
-| `GITHUB_DEFAULT_BRANCH` | usually `main` |
 | `DASHBOARD_PASSWORD` | the shared dashboard password |
 | `DASHBOARD_COOKIE_SECRET` | `openssl rand -base64 32`. Also gates internal function calls. |
+
+**Only secrets go here.** The repo and branch the learning skill targets live in
+`config/system.json` → `github`, not in the environment. Netlify runs a secrets scanner
+over the build output and fails the build on any string matching an environment value —
+so a variable set to `main` fails on every `<main>` tag in the HTML and every "domain" in
+the CSS. Anything that is not genuinely secret belongs in `config/`.
 
 `DASHBOARD_COOKIE_SECRET` does double duty: it signs the dashboard session **and** is the
 shared secret that lets the scheduler and the refresh endpoint invoke the pipeline. Without

@@ -116,6 +116,11 @@ export function validateConfig(config = loadConfig()) {
     warn("references.ltv is not populated. Future-value projection renders as 'not configured', never as zero.");
   }
 
+  const repo = config.system?.github?.repo;
+  if (!repo || !/^[^/\s]+\/[^/\s]+$/.test(repo)) {
+    warn("system.github.repo should be owner/name. The learning skill cannot open a pull request without it.");
+  }
+
   const queue = config.leadershipQueue?.queue ?? [];
   if (queue.some((item) => String(item.id ?? "").startsWith("example"))) {
     warn("config/leadership-queue.json still contains the example item. Replace it with the real leadership queue.");

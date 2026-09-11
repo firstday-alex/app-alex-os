@@ -157,8 +157,10 @@ export async function handleFeedback({ feedback, reportContext, config, env = pr
   let pr = null;
   try {
     pr = await openProposalPr({
-      repo: env.GITHUB_REPO,
-      baseBranch: env.GITHUB_DEFAULT_BRANCH ?? "main",
+      // Config first: the repo and branch are settings, not secrets. The env vars are
+      // still honoured so an existing deployment does not break.
+      repo: config.system.github?.repo ?? env.GITHUB_REPO,
+      baseBranch: config.system.github?.defaultBranch ?? env.GITHUB_DEFAULT_BRANCH ?? "main",
       filePath: proposal.targetFile,
       newContent: proposal.newContent,
       title: `MOS: ${proposal.summary}`,
