@@ -579,6 +579,51 @@ function renderExperienceDiff(diff) {
     </div>`;
 }
 
+
+/* ----------------------- where the test won or lost ----------------------- */
+
+function renderAudiences(audiences) {
+  if (!audiences || !audiences.length) return "";
+
+  const pct = (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`);
+
+  const block = (a) => {
+    const rows = a.rows
+      .flatMap((row) =>
+        row.variants.map((v) => {
+          const tone = v.significance.tone === "win" ? "good" : v.significance.tone === "loss" ? "bad" : "";
+          return `<tr class="${v.underpowered ? "underpowered" : ""}">
+              <td>${esc(row.segment)}</td>
+              <td>${esc(v.name ?? "")}</td>
+              <td>${esc((v.orders ?? 0).toLocaleString())}</td>
+              <td class="${tone}">${esc(pct(v.upliftPct))}</td>
+              <td><span class="sig-chip ${esc(v.significance.tone === "none" ? "flat" : v.significance.tone)}" title="${esc(v.significance.reason ?? "")}">${esc(v.significance.label)}</span></td>
+            </tr>`;
+        }),
+      )
+      .join("");
+
+    const findings = a.divergent.length
+      ? `<div class="note"><strong>Segments disagree with the overall result.</strong> ${a.divergent
+          .map((d) => `${esc(d.segment)} is a ${esc(d.direction)}${d.overallDirection ? ` while the test overall is a ${esc(d.overallDirection)}` : " while the test overall is inconclusive"}`)
+          .join("; ")}. Worth shipping to the segment rather than calling the whole test.</div>`
+      : "";
+
+    return `<div class="aud-block">
+        <div class="aud-head">By ${esc(a.dimension.replace(/_/g, " "))}<span class="meta"> · judged on ${esc(a.metric)} · overall ${esc(a.overall?.label ?? "not judged")}</span></div>
+        ${findings}
+        <div class="scroll"><table>
+          <thead><tr><th>Segment</th><th>Variation</th><th>Orders</th><th>Uplift</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>`;
+  };
+
+  return `<h4 class="form-head">Where it won or lost</h4>
+    <p class="meta">A segment under the order bar is shown as Too small rather than as a result. Slicing until something looks significant is the failure this invites.</p>
+    ${audiences.map(block).join("")}`;
+}
+
 /* -------------------------------- test card -------------------------------- */
 
 function renderTestCard(test, ti) {
@@ -600,6 +645,7 @@ function renderTestCard(test, ti) {
         ${renderExperienceDiff(test.experienceDiff)}
         ${renderNotes(test.id)}
         ${trees}
+        ${renderAudiences(test.audiences)}
         <div class="bar tree-controls">
           <button class="ghost" id="toggle-quiet-${esc(openKey)}" data-quiet="1">${state.showQuiet ? "Hide inconclusive" : "Show all rows"}</button>
         </div>

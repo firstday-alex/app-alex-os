@@ -235,6 +235,23 @@ function intelligemsFlags(delta, { config, dateKey }) {
       });
     }
 
+    // A segment that contradicts the aggregate turns ship-or-kill into a third option:
+    // ship it to the segment it works for. This is the finding the breakdown exists for.
+    for (const audience of test.audiences ?? []) {
+      for (const d of audience.divergent) {
+        add({
+          layer: 3,
+          rule: "intelligems.segment_diverges",
+          severity: "attention",
+          subject: { ...subject, id: `${test.id}:${audience.dimension}:${d.segment}` },
+          message: d.overallDirection
+            ? `"${test.name}" is a ${d.overallDirection} overall but a ${d.direction} on ${d.segment} (${d.upliftPct > 0 ? "+" : ""}${d.upliftPct?.toFixed(1)}% ${audience.metric}). Worth segmenting rather than calling it either way.`
+            : `"${test.name}" is inconclusive overall but a ${d.direction} on ${d.segment} (${d.upliftPct > 0 ? "+" : ""}${d.upliftPct?.toFixed(1)}% ${audience.metric}).`,
+          values: { dimension: audience.dimension, segment: d.segment, variant: d.variant, level: d.level, upliftPct: d.upliftPct, metric: audience.metric },
+        });
+      }
+    }
+
     // A test nobody described is a test nobody will be able to read in three months.
     // Info, not attention: it is a documentation gap, not a problem with the result.
     if (test.experienceDiff?.descriptionMissing) {

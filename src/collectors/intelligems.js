@@ -482,6 +482,31 @@ export async function collectIntelligems({ config, token, store, logger, fetchIm
         test.timeseriesStabilized = { stabilized: null, reason: "timeseries call failed" };
       }
 
+      // Audience breakdowns, for tests that can actually be called. One extra request per
+      // dimension, so this is deliberately narrow: a test short of the readiness gate
+      // cannot be judged by segment either, and pulling it would cost calls to produce
+      // nothing readable.
+      const audCfg = config.intelligems.audiences;
+      const gateReady = test.daysRunning >= (config.intelligems.readinessGate?.minDaysRunning ?? 7)
+        && (test.minOrdersPerGroup ?? 0) >= (config.intelligems.readinessGate?.minOrdersPerGroup ?? 300);
+
+      if (audCfg?.pullDuringRun?.length && (!audCfg.onlyWhenGateMet || gateReady)) {
+        test.audiences = {};
+        for (const dimension of audCfg.pullDuringRun) {
+          try {
+            test.audiences[dimension] = await call({
+              config, token, logger, fetchImpl, sleep,
+              endpointName: "analytics",
+              params: { experienceId },
+              body: { view: "audience", audience: dimension, topN: audCfg.topN ?? 8 },
+              label: `intelligems.audience.${dimension}`,
+            });
+          } catch (err) {
+            logger?.warn?.("intelligems.audience_failed", { experienceId, dimension, err });
+          }
+        }
+      }
+
       // Post-test customer value: the hook for the LTV projection. Optional, and its
       // absence must not cost us the test's main result.
       if (config.intelligems.postTest?.enabled) {

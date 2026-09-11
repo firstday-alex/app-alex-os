@@ -11,6 +11,7 @@ import { recommendFor } from "./readiness.js";
 import { checkTestP1Bands } from "./p1band.js";
 import { buildMetricTree, treeHeadline } from "./metric-tree.js";
 import { projectFutureValue } from "./future-value.js";
+import { groupByAudience, analyseAudience } from "./audience.js";
 
 const PROB_CROSS_THRESHOLD = 0.95;
 
@@ -179,6 +180,25 @@ export function intelligemsDelta(baseline, current, { config, logger, settings =
       });
     const futureValue = projectFutureValue(test, settings, now);
 
+    // Where the test actually won or lost. Only reported when a segment contradicts the
+    // aggregate; confirming it in six segments is noise.
+    const audCfg = config.intelligems.audiences ?? {};
+    const judgeOn = audCfg.judgeOn ?? "net_revenue_per_visitor";
+    const overallNode = (trees[0]?.roots ?? []).flatMap(function flat(n) {
+      return [n, ...(n.children ?? []).flatMap(flat)];
+    }).find((n) => n.metric === judgeOn);
+
+    const audiences = Object.entries(test.audiences ?? {}).map(([dimension, analysis]) =>
+      analyseAudience({
+        dimension,
+        segments: groupByAudience(analysis, [judgeOn, "n_orders", "n_visitors"]),
+        metric: judgeOn,
+        overall: overallNode?.significance ?? null,
+        minOrders: audCfg.minOrdersPerGroup ?? config.intelligems.readinessGate?.minOrdersPerGroup ?? 300,
+        thresholds,
+      }),
+    );
+
     const notable = verdictChanged || gateJustMet || p0.length > 0 || p1.length > 0 || crossings.length > 0;
 
     tests.push({
@@ -189,6 +209,7 @@ export function intelligemsDelta(baseline, current, { config, logger, settings =
       tradeOffs: trades,
       trees,
       futureValue,
+      audiences,
       notable,
       // No notable change means the owner gets prompted, not that nothing happens.
       quiet: Boolean(before) && !notable,

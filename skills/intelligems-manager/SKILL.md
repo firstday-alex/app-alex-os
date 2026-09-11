@@ -121,6 +121,41 @@ at all, nothing can ever be strong: one signal cannot corroborate itself.
 headline resting on noisy components is labelled as such, rather than being allowed to
 borrow authority from its own summary.
 
+## Audience breakdown
+
+A test judged only in aggregate forces a binary decision: ship it or kill it. The
+breakdown adds the third option that is usually the right one — **ship it to the segment
+it works for**. "The new PDP lost" and "the new PDP lost on mobile and won on desktop"
+lead to completely different work.
+
+The danger is the opposite error, slicing until something looks significant. Two guards,
+and they are the point of the feature rather than decoration:
+
+- **A segment under the order bar is reported as "Too small", never as a result.** The
+  same per-group bar the readiness gate uses. On the live A/A test — a null test by
+  construction — Desktop showed **+277% on 12 orders**. Without the bar that reads as a
+  massive desktop win.
+- **A segment is only called out when it DISAGREES with the overall result.** Confirming
+  the aggregate in six segments is noise; contradicting it is a finding.
+
+Breakdowns are pulled during the daily run only for tests **past the readiness gate**: a
+test that cannot be called overall cannot be called by segment either, and pulling it
+would spend a request per test per dimension to produce nothing readable.
+
+### Which dimensions, and why
+
+`visitor_type` first. It is the only dimension on this store where **both** segments clear
+the order bar — New 1,345 and Returning 324 on a representative test — and new versus
+returning is the split this business already reasons in.
+
+`device_type` second, not because it segments well but because it reliably reports Mobile
+as judgeable and Desktop as too small. That is itself worth knowing: **this store is
+mobile-dominant enough that desktop cannot be called on a normal test**, which is a fact
+about the business, not a gap in the data.
+
+`source_channel` is available on demand but only Paid Social clears the bar, so pulling it
+every run would mostly produce "Too small" rows.
+
 ## Stored data for future value projection
 
 The skill stores reference values that help project the **future** value of a test, not

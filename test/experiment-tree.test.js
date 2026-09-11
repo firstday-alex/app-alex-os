@@ -325,3 +325,97 @@ test("an assignee is stored as the ClickUp id, so a rename cannot break it", () 
   assert.equal(note.assignee, "87349065");
   assert.equal(normalizeNote({ assignee: "", hypothesis: "x" }).assignee, undefined, "no owner means absent");
 });
+
+/* ---------------------------- audience breakdown ---------------------------- */
+
+import { groupByAudience, analyseAudience } from "../src/delta/audience.js";
+
+const audienceMetric = (value, uplift, ci, p) => ({
+  value,
+  uplift: uplift == null ? null : { value: uplift, ci_low: ci?.[0] ?? null, ci_high: ci?.[1] ?? null },
+  p2bc: p,
+});
+
+/** The real shape: rows keyed by variation_id + audience, plus an audienceOrder. */
+const AUDIENCE_RESPONSE = {
+  audienceOrder: ["Mobile", "Desktop"],
+  variations: [
+    { id: "c", name: "Old", isControl: true },
+    { id: "v", name: "New", isControl: false },
+  ],
+  metrics: [
+    { variation_id: "c", audience: "Mobile", n_orders: { value: 1466 }, net_revenue_per_visitor: audienceMetric(3.1) },
+    { variation_id: "v", audience: "Mobile", n_orders: { value: 1500 }, net_revenue_per_visitor: audienceMetric(3.0, -0.03, [-0.05, -0.01], 0.02) },
+    { variation_id: "c", audience: "Desktop", n_orders: { value: 205 }, net_revenue_per_visitor: audienceMetric(4.0) },
+    { variation_id: "v", audience: "Desktop", n_orders: { value: 210 }, net_revenue_per_visitor: audienceMetric(5.1, 0.28, [0.1, 0.46], 0.99) },
+  ],
+};
+
+test("segments are joined from variation_id and audience, in the order the platform gave", () => {
+  const segments = groupByAudience(AUDIENCE_RESPONSE, ["net_revenue_per_visitor", "n_orders"]);
+  assert.deepEqual(segments.map((s) => s.segment), ["Mobile", "Desktop"]);
+  assert.equal(segments[0].groups.length, 2);
+  assert.equal(segments[0].groups.find((g) => g.isControl).name, "Old");
+});
+
+test("a segment under the order bar is reported as too small, never as a result", () => {
+  // The guard that matters. On the live A/A test, Desktop showed +277% on 12 orders —
+  // pure noise on a test that is null by construction. Without this it reads as a win.
+  const result = analyseAudience({
+    dimension: "device_type",
+    segments: groupByAudience(AUDIENCE_RESPONSE, ["net_revenue_per_visitor", "n_orders"]),
+    metric: "net_revenue_per_visitor",
+    overall: { level: "inconclusive", label: "Inconclusive", tone: "flat", rank: 0 },
+    minOrders: 300,
+    thresholds: { strong: 0.95, directional: 0.8 },
+  });
+
+  const desktop = result.rows.find((r) => r.segment === "Desktop").variants[0];
+  assert.equal(desktop.underpowered, true, "205 orders is under the 300 bar");
+  assert.equal(desktop.significance.label, "Too small");
+  assert.match(desktop.significance.reason, /under the 300 bar/);
+
+  // And an underpowered segment can never become a finding.
+  assert.ok(!result.divergent.some((d) => d.segment === "Desktop"));
+});
+
+test("a powered segment that contradicts the aggregate is the finding", () => {
+  const powered = {
+    ...AUDIENCE_RESPONSE,
+    metrics: AUDIENCE_RESPONSE.metrics.map((m) => (m.audience === "Desktop" ? { ...m, n_orders: { value: 900 } } : m)),
+  };
+  const result = analyseAudience({
+    dimension: "device_type",
+    segments: groupByAudience(powered, ["net_revenue_per_visitor", "n_orders"]),
+    metric: "net_revenue_per_visitor",
+    overall: { level: "strong_loss", label: "Strong", tone: "loss", rank: 4 },
+    minOrders: 300,
+    thresholds: { strong: 0.95, directional: 0.8 },
+  });
+
+  assert.equal(result.divergent.length, 1);
+  assert.equal(result.divergent[0].segment, "Desktop");
+  assert.equal(result.divergent[0].direction, "win");
+  assert.equal(result.divergent[0].overallDirection, "loss", "ship it to desktop rather than killing it");
+
+  // Mobile agrees with the aggregate, so it is not reported: confirming the overall
+  // result in every segment is noise.
+  assert.ok(!result.divergent.some((d) => d.segment === "Mobile"));
+});
+
+test("a test inconclusive overall but decisive in one segment is also a finding", () => {
+  const powered = {
+    ...AUDIENCE_RESPONSE,
+    metrics: AUDIENCE_RESPONSE.metrics.map((m) => (m.audience === "Desktop" ? { ...m, n_orders: { value: 900 } } : m)),
+  };
+  const result = analyseAudience({
+    dimension: "device_type",
+    segments: groupByAudience(powered, ["net_revenue_per_visitor", "n_orders"]),
+    metric: "net_revenue_per_visitor",
+    overall: { level: "inconclusive", label: "Inconclusive", tone: "flat", rank: 0 },
+    minOrders: 300,
+    thresholds: { strong: 0.95, directional: 0.8 },
+  });
+  assert.ok(result.divergent.length >= 1, "the more common shape of the same finding");
+  assert.equal(result.divergent[0].overallDirection, null);
+});

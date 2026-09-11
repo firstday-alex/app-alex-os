@@ -319,3 +319,9 @@ td.bad { color: var(--red); font-weight: 600; }
 .vdiff-changes li { margin-bottom: 2px; word-break: break-word; }
 .vdiff-changes a { color: var(--green); }
 .test-peek { font-size: 11px; color: var(--muted); padding: 0 14px 9px 33px; margin-top: -6px; }
+
+/* audience breakdown */
+.aud-block { margin-top: 10px; }
+.aud-head { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--green); margin-bottom: 4px; }
+.aud-head .meta { text-transform: none; letter-spacing: 0; }
+tr.underpowered td { opacity: .5; }

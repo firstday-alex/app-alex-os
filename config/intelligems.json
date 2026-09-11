@@ -197,5 +197,25 @@
         ]
       }
     ]
+  },
+  "audiences": {
+    "_comment": "Audience breakdowns. Pulled during the daily run ONLY for tests past the readiness gate, and only on the dimensions listed here: it is one extra API call per test per dimension, and a test that cannot be called overall cannot be called by segment either. Other dimensions are available on demand from the dashboard.",
+    "pullDuringRun": [
+      "visitor_type",
+      "device_type"
+    ],
+    "available": [
+      "device_type",
+      "visitor_type",
+      "source_channel",
+      "country_code",
+      "landing_page_full_path"
+    ],
+    "judgeOn": "net_revenue_per_visitor",
+    "minOrdersPerGroup": 300,
+    "onlyWhenGateMet": true,
+    "topN": 8,
+    "_comment_minOrders": "The same per-group bar the readiness gate uses. A segment below it is reported as 'Too small', never as a result: slicing until something looks significant is the failure mode this whole feature invites, and the bar is the guard against it.",
+    "_comment_dimensions": "visitor_type first, because it is the only dimension on this store where BOTH segments clear the 300-order bar (New 1,345 and Returning 324 on a representative test), and because new versus returning is the split this business already reasons in. device_type is kept because it reliably shows Mobile as judgeable and Desktop as too small, which is itself worth knowing: this store is mobile-dominant enough that desktop cannot be called on a normal test. source_channel is available on demand but only Paid Social clears the bar, so pulling it every run would mostly produce 'Too small' rows."
   }
 }
