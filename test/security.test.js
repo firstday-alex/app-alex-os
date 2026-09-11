@@ -123,3 +123,36 @@ test("the internal pipeline invoke cannot be triggered from outside", () => {
   assert.equal(isInternalCall(asRequest({}), env), false);
   assert.equal(isInternalCall(asRequest({ "x-mos-internal": "anything" }), {}), false, "no secret set means nobody gets in");
 });
+
+/* --------------------------- config path resolution --------------------------- */
+
+test("the repo root is discovered by finding config, not by counting directories", async () => {
+  // This broke production. src/config.js computed the root as one level up from its own
+  // file, which is right from source and wrong once esbuild inlines it into
+  // netlify/functions/*.mjs: the same arithmetic landed on /var/task/netlify while the
+  // config had shipped to /var/task/config. Every function 502'd on the first config read.
+  const { repoRoot, loadConfig } = await import("../src/config.js");
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+
+  assert.ok(
+    fs.existsSync(path.join(repoRoot, "config", "system.json")),
+    "repoRoot must actually contain config/system.json, whatever layout this file is running in",
+  );
+  assert.equal(Object.keys(loadConfig()).length, 7);
+});
+
+test("every function bundle can reach the config and the skill files", async () => {
+  // included_files in netlify.toml ships config/ and skills/ next to the bundle. If the
+  // root is wrong, the advisor and the learning skill fail the same way the dashboard did.
+  const { repoRoot } = await import("../src/config.js");
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+
+  for (const skill of ["clickup-manager", "intelligems-manager", "leadership-priority-manager", "strategic-advisor", "learning-skill"]) {
+    assert.ok(
+      fs.existsSync(path.join(repoRoot, "skills", skill, "SKILL.md")),
+      `skills/${skill}/SKILL.md must be reachable from repoRoot`,
+    );
+  }
+});

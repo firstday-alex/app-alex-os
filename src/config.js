@@ -10,8 +10,47 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+/**
+ * Find the repo root by looking for it, not by counting directories up from this file.
+ *
+ * This file is bundled. Running from source, `import.meta.url` is src/config.js and the
+ * root is one level up. After esbuild inlines it into netlify/functions/report.mjs the
+ * same arithmetic lands on /var/task/netlify, and the config that actually shipped is at
+ * /var/task/config. Counting levels only works in the layout you counted in.
+ *
+ * So: probe a few candidates and take the first that actually contains config/system.json.
+ */
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const repoRoot = path.resolve(here, "..");
+
+function findRepoRoot() {
+  const marker = path.join("config", "system.json");
+  const candidates = [];
+
+  if (process.env.MOS_ROOT) candidates.push(process.env.MOS_ROOT);
+  candidates.push(path.resolve(here, ".."));   // running from source
+  candidates.push(process.cwd());              // Netlify functions run with cwd at the task root
+
+  // Bundled somewhere unexpected: walk up and look.
+  let cursor = here;
+  for (let i = 0; i < 6; i += 1) {
+    cursor = path.resolve(cursor, "..");
+    candidates.push(cursor);
+    if (cursor === path.parse(cursor).root) break;
+  }
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(path.join(candidate, marker))) return candidate;
+    } catch {
+      // unreadable candidate, keep looking
+    }
+  }
+
+  // Nothing found. Return the source-layout guess so the error names a real path.
+  return path.resolve(here, "..");
+}
+
+export const repoRoot = findRepoRoot();
 const configDir = path.join(repoRoot, "config");
 
 const FILES = {
