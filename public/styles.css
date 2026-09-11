@@ -244,3 +244,41 @@ main { max-width: 940px; margin: 0 auto; padding: 22px 18px 80px; }
 .funnel-step { font-weight: 600; color: var(--ink); }
 .funnel-lost { color: var(--red); }
 .funnel-oftop { opacity: .8; }
+
+/* ------------------------ experiment tree (Layer 3) ------------------------ */
+.test-card { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; margin-bottom: 10px; overflow: hidden; }
+.test-head, .tnode-head {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  background: none; border: 0; font: inherit; color: var(--ink); cursor: pointer; padding: 11px 14px;
+}
+.test-head:hover, .tnode-head:hover:not(.leaf) { background: #fff; }
+.test-name { font-weight: 600; flex: 1; min-width: 0; }
+.test-body { padding: 0 14px 14px; border-top: 1px solid var(--line); }
+.caret { display: inline-block; transition: transform .12s ease; color: var(--muted); font-size: 11px; width: 10px; }
+.caret.open { transform: rotate(90deg); }
+.caret.leafdot { opacity: .35; }
+
+.tnode { border-top: 1px solid var(--line); }
+.tnode.depth-0 { border-top: 0; }
+.tnode-head { padding: 7px 0; font-size: 13px; }
+.tnode-head.leaf { cursor: default; }
+.tnode-label { flex: 1; min-width: 120px; }
+.tnode-value { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 74px; text-align: right; }
+.tnode-vs { font-size: 11px; color: var(--muted); min-width: 74px; text-align: right; }
+.tnode-uplift { font-variant-numeric: tabular-nums; min-width: 62px; text-align: right; font-weight: 600; }
+.tnode-uplift.good { color: var(--green); }
+.tnode-uplift.bad { color: var(--red); }
+.tchildren { margin-left: 16px; padding-left: 10px; border-left: 2px solid var(--line); }
+
+.sig-chip { font-size: 10px; font-weight: 700; letter-spacing: .03em; padding: 1px 7px; border-radius: 10px; white-space: nowrap; }
+.sig-chip.win { background: #eef4ef; color: var(--green); border: 1px solid var(--green); }
+.sig-chip.loss { background: var(--red-bg); color: var(--red); border: 1px solid var(--red); }
+.sig-chip.flat { background: var(--code); color: var(--muted); }
+.sig-chip.none { background: transparent; color: var(--muted); border: 1px dashed var(--line); }
+.rollup { font-size: 10px; color: var(--amber-ink); background: var(--amber-bg); border: 1px solid var(--amber); border-radius: 10px; padding: 1px 7px; white-space: nowrap; }
+
+.attribution { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 0 8px 20px; }
+.attr { font-size: 11px; color: var(--muted); background: var(--code); border-radius: 10px; padding: 2px 8px; }
+.control-row td { color: var(--muted); }
+td.good { color: var(--green); font-weight: 600; }
+td.bad { color: var(--red); font-weight: 600; }

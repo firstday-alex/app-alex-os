@@ -9,6 +9,8 @@
 
 import { recommendFor } from "./readiness.js";
 import { checkTestP1Bands } from "./p1band.js";
+import { buildMetricTree, treeHeadline } from "./metric-tree.js";
+import { projectFutureValue } from "./future-value.js";
 
 const PROB_CROSS_THRESHOLD = 0.95;
 
@@ -142,7 +144,11 @@ export function tradeOffs(test, config) {
   return analysis;
 }
 
-export function intelligemsDelta(baseline, current, { config, logger } = {}) {
+export function intelligemsDelta(baseline, current, { config, logger, settings = null, now = new Date() } = {}) {
+  const thresholds = {
+    strong: settings?.significanceStrong ?? 0.95,
+    directional: settings?.significanceDirectional ?? 0.8,
+  };
   const baselineById = new Map((baseline?.items ?? []).map((t) => [t.id, t]));
   const currentById = new Map((current?.items ?? []).map((t) => [t.id, t]));
 
@@ -163,6 +169,16 @@ export function intelligemsDelta(baseline, current, { config, logger } = {}) {
     const crossings = probabilityCrossings(test, before);
     const trades = tradeOffs(test, config);
 
+    // The cascading tree, per challenger, and the lifetime view of the whole test.
+    const control = (test.groups ?? []).find((g) => g.isControl) ?? null;
+    const trees = (test.groups ?? [])
+      .filter((g) => !g.isControl)
+      .map((group) => {
+        const roots = buildMetricTree(group, control, config.intelligems.metricTree, thresholds);
+        return { groupId: group.id, groupName: group.name, roots, headline: treeHeadline(roots) };
+      });
+    const futureValue = projectFutureValue(test, settings, now);
+
     const notable = verdictChanged || gateJustMet || p0.length > 0 || p1.length > 0 || crossings.length > 0;
 
     tests.push({
@@ -171,6 +187,8 @@ export function intelligemsDelta(baseline, current, { config, logger } = {}) {
       recommendation,
       changes: { verdictChanged, gateJustMet, p0Moves: p0, p1OutOfBand: p1, probabilityCrossings: crossings },
       tradeOffs: trades,
+      trees,
+      futureValue,
       notable,
       // No notable change means the owner gets prompted, not that nothing happens.
       quiet: Boolean(before) && !notable,

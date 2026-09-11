@@ -10,6 +10,7 @@ import { loadConfig, validateConfig } from "./config.js";
 import { createLogger, newRunId } from "./lib/logger.js";
 import { Store } from "./lib/storage.js";
 import { RocksStore } from "./store/rocks.js";
+import { SettingsStore } from "./store/settings.js";
 import { dateKey as toDateKey, zonedParts, baselineCandidateKeys } from "./lib/time.js";
 import { collectClickUp } from "./collectors/clickup.js";
 import { collectIntelligems } from "./collectors/intelligems.js";
@@ -145,10 +146,20 @@ export async function runPipeline(opts = {}) {
 
   /* --------------------------------- delta --------------------------------- */
 
+  // App-level settings: the LTV references and significance thresholds the Layer 3 tree
+  // and the future-value projection read.
+  let settings = null;
+  try {
+    settings = (await new SettingsStore(store.backend, logger).read()).settings;
+  } catch (err) {
+    logger.warn("settings.unavailable", { err, note: "falling back to defaults" });
+  }
+
   const { flags, sections, detail } = computeFlags({
     snapshots,
     baselines,
     config,
+    settings,
     dateKey,
     nowIso: now.toISOString(),
     logger,

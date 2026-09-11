@@ -214,3 +214,19 @@ test("an unrecognised envelope is used but reported, never silently emptied", as
   assert.equal(rosterArray({ a: 1 }, { error: (e) => errored.push(e) }).length, 0);
   assert.ok(errored.includes("intelligems.roster_unreadable"), "unreadable is an error, not a quiet zero");
 });
+
+/* --------------------------- tree metric coverage --------------------------- */
+
+test("every metric the tree names is pulled, or the branches read as No data", async () => {
+  const { metricNamesFor, treeMetricNames } = await import("../src/collectors/intelligems.js");
+  const { loadConfig } = await import("../src/config.js");
+  const real = loadConfig();
+
+  const treeMetrics = treeMetricNames(real.intelligems.metricTree);
+  assert.ok(treeMetrics.length > 10, "the tree has real depth");
+
+  const pulled = new Set(metricNamesFor(real, EXPERIENCE_DETAIL));
+  for (const metric of treeMetrics) {
+    assert.ok(pulled.has(metric), `${metric} is in the tree but would be filtered out of the snapshot`);
+  }
+});

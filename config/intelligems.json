@@ -2,29 +2,42 @@
   "apiBase": "https://api.intelligems.io/v25-10-beta",
   "authHeader": "intelligems-access-token",
   "_VERIFIED": "Endpoints, methods and response field names verified 2026-09-10 against the Intelligems External API reference AND against a real payload from the First Day Life Inc. account (org 86ab4ded-43f9-4a0a-a9ef-80dfd2b5508d, shop first-day-inc.myshopify.com). The captured payload is test/fixtures/intelligems-real.js and the collector is tested against it.",
-
   "organizationId": "86ab4ded-43f9-4a0a-a9ef-80dfd2b5508d",
-
   "endpoints": {
-    "experiencesList": { "method": "GET", "path": "/experiences-list" },
-    "experience": { "method": "GET", "path": "/experiences/{experienceId}" },
-    "analytics": { "method": "POST", "path": "/analytics/resource/{experienceId}" },
-    "timeseries": { "method": "POST", "path": "/analytics/experience/{experienceId}/timeseries" },
-    "export": { "method": "POST", "path": "/analytics/experience/{experienceId}/export" },
-    "sitewideSnapshot": { "method": "POST", "path": "/analytics/sitewide/snapshot" },
+    "experiencesList": {
+      "method": "GET",
+      "path": "/experiences-list"
+    },
+    "experience": {
+      "method": "GET",
+      "path": "/experiences/{experienceId}"
+    },
+    "analytics": {
+      "method": "POST",
+      "path": "/analytics/resource/{experienceId}"
+    },
+    "timeseries": {
+      "method": "POST",
+      "path": "/analytics/experience/{experienceId}/timeseries"
+    },
+    "export": {
+      "method": "POST",
+      "path": "/analytics/experience/{experienceId}/export"
+    },
+    "sitewideSnapshot": {
+      "method": "POST",
+      "path": "/analytics/sitewide/snapshot"
+    },
     "_comment": "The analytics endpoints are POST, not GET, and take a JSON body. There is no /shop endpoint and no separate metrics-config endpoint: per-test key metrics ride on the experience object as experienceKeyMetrics. Pagination on /experiences-list is 1-BASED with a totalPages envelope, unlike ClickUp's 0-based paging."
   },
-
   "rateLimits": {
     "_comment": "Documented burst/refill: experience endpoints burst 50, refill 25 per 30s. Export burst 20. Sitewide burst 10, refill 5 per 30s. Response headers are x-ratelimit-limit, x-ratelimit-remaining and x-ratelimit-reset, where reset is MILLISECONDS UNTIL RESET, not an epoch. A 429 body carries retryAfter in seconds. A once-daily pull of 7 tests is nowhere near these limits."
   },
-
   "readinessGate": {
     "minDaysRunning": 7,
     "minOrdersPerGroup": 300,
     "_comment": "Confirmed against a live test: '[KCM-PDP] Price per Gummy' at 42 runtime_days with 254/238 orders per variant returns verdict not_ready. Days met, orders not, so not ready. 300 is per group. The platform returns runtime_days and orders_per_variant inside the testResult block, so the gate is read rather than recomputed, and any disagreement with our own arithmetic is flagged."
   },
-
   "verdictMap": {
     "strong_win": "Ship",
     "directional_win": "Iterate",
@@ -41,23 +54,148 @@
     "filtered_not_ready": "Keep Running",
     "_TODO": "Alex to decide the mapping for the six actionable verdicts. The rest are not decisions. The spec listed six verdicts; the platform actually returns thirteen. 'error' means the verdict could not be computed. The six filtered_* variants are returned when filters were sent, and the platform documents that they describe a narrowed population rather than the full randomized group, so they must never be treated as wins or losses. This pipeline sends no filters, so filtered_* should never appear; they map to Keep Running so that a future filter cannot silently produce a Ship."
   },
-
   "metrics": {
-    "p0": ["conversion_rate", "net_revenue_per_visitor", "net_revenue_per_order"],
-    "p1": ["add_to_cart_rate", "avg_units_per_order", "pct_subscription_orders", "subscription_revenue_per_visitor", "n_orders", "n_visitors"],
+    "p0": [
+      "conversion_rate",
+      "net_revenue_per_visitor",
+      "net_revenue_per_order"
+    ],
+    "p1": [
+      "add_to_cart_rate",
+      "avg_units_per_order",
+      "pct_subscription_orders",
+      "subscription_revenue_per_visitor",
+      "n_orders",
+      "n_visitors"
+    ],
     "_TODO": "Alex to confirm. These are the real metric keys from the analytics response, not invented names, and they are drawn from what the live tests are actually configured on: conversionRate, netRevenuePerVisitor, profitPerVisitor, netRevenuePerOrder and addToCartRate. Two notes. There is no 'aov' key in the variation overview: AOV is net_revenue_per_order. And gross_profit_per_visitor is deliberately NOT in the P0 list because COGS is not configured on this account, so it returns null on every test.",
     "_comment": "Per-test metrics are read automatically from the experience's experienceKeyMetrics and translated from camelCase to these snake_case keys. These lists are only the always-watch set on top of that."
   },
-
   "p1Band": {
     "method": "confidence_interval",
     "fallbackPercentChange": 15,
     "_comment": "A P1 metric is out of whack when it moves outside its own 95 percent interval day over day. The API returns ci_low and ci_high per metric. Metrics with a null interval, such as view_collection_page_rate on a low-traffic test, are SKIPPED and logged, never compared against zero."
   },
-
   "postTest": {
     "enabled": true,
     "includeInTestOrders": true,
     "_comment": "analyze view post_test returns customers who converted during the test, tracked by their purchase behavior afterwards, split by variation. With includeInTestOrders true the total_* family is the LTV view. This is the platform's own answer to the spec's future-value question and may remove the need for hand-entered LTV reference values entirely."
+  },
+  "metricTree": {
+    "_comment": "The cascading tree shown for each experiment. Two roots. RPV decomposes exactly into AOV x conversion rate, which is why `decomposes` is set on it: the children's contributions can be attributed to the parent's move. Nothing else in the tree is an identity, so nothing else claims attribution. Metric keys are the real snake_case keys the analytics response returns.",
+    "roots": [
+      {
+        "metric": "net_revenue_per_visitor",
+        "label": "RPV",
+        "format": "money",
+        "decomposes": true,
+        "description": "Revenue per visitor. The headline: it is the only metric that captures both how many visitors buy and how much they spend.",
+        "children": [
+          {
+            "metric": "conversion_rate",
+            "label": "Conversion rate",
+            "format": "percent",
+            "description": "Orders per visitor.",
+            "children": [
+              {
+                "metric": "add_to_cart_rate",
+                "label": "Add to cart rate",
+                "format": "percent"
+              },
+              {
+                "metric": "checkout_begin_rate",
+                "label": "Reached checkout",
+                "format": "percent"
+              },
+              {
+                "metric": "checkout_enter_contact_info_rate",
+                "label": "Entered contact info",
+                "format": "percent"
+              },
+              {
+                "metric": "checkout_address_submitted_rate",
+                "label": "Entered address",
+                "format": "percent"
+              },
+              {
+                "metric": "abandoned_cart_rate",
+                "label": "Abandoned cart",
+                "format": "percent",
+                "goodDirection": "down"
+              },
+              {
+                "metric": "abandoned_checkout_rate",
+                "label": "Abandoned checkout",
+                "format": "percent",
+                "goodDirection": "down"
+              }
+            ]
+          },
+          {
+            "metric": "net_revenue_per_order",
+            "label": "AOV",
+            "format": "money",
+            "description": "Net revenue per order.",
+            "children": [
+              {
+                "metric": "net_product_revenue_per_order",
+                "label": "Product revenue / order",
+                "format": "money"
+              },
+              {
+                "metric": "net_shipping_revenue_per_order",
+                "label": "Shipping revenue / order",
+                "format": "money"
+              },
+              {
+                "metric": "avg_units_per_order",
+                "label": "Units / order",
+                "format": "number"
+              },
+              {
+                "metric": "avg_product_revenue_per_unit",
+                "label": "Revenue / unit",
+                "format": "money"
+              },
+              {
+                "metric": "avg_discount_per_all_orders",
+                "label": "Discount / order",
+                "format": "money",
+                "goodDirection": "down"
+              },
+              {
+                "metric": "pct_orders_free_shipping",
+                "label": "Orders with free shipping",
+                "format": "percent",
+                "goodDirection": "down"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "metric": "pct_subscription_orders",
+        "label": "Subscription share of orders",
+        "format": "percent",
+        "description": "The share of orders that are subscriptions. Separate root because it changes what a customer is WORTH, not what this order is worth, and the future-value projection is built on it.",
+        "children": [
+          {
+            "metric": "subscription_orders_per_visitor",
+            "label": "Subscription orders / visitor",
+            "format": "percent"
+          },
+          {
+            "metric": "subscription_revenue_per_order",
+            "label": "Subscription revenue / order",
+            "format": "money"
+          },
+          {
+            "metric": "subscription_revenue_per_visitor",
+            "label": "Subscription revenue / visitor",
+            "format": "money"
+          }
+        ]
+      }
+    ]
   }
 }

@@ -281,7 +281,7 @@ function intelligemsFlags(delta, { config, dateKey }) {
  * `sections` records which layers are present and which are missing and why. A partial
  * readout beats no readout, and the reader has to be able to see the difference.
  */
-export function computeFlags({ snapshots, baselines, config, dateKey, nowIso, logger }) {
+export function computeFlags({ snapshots, baselines, config, settings = null, dateKey, nowIso, logger }) {
   const sections = {};
   const flags = [];
 
@@ -302,7 +302,7 @@ export function computeFlags({ snapshots, baselines, config, dateKey, nowIso, lo
   /* ---- Layer 3 ---- */
   let igDelta = null;
   if (snapshots.intelligems) {
-    igDelta = intelligemsDelta(baselines.intelligems?.snapshot ?? null, snapshots.intelligems, { config, logger });
+    igDelta = intelligemsDelta(baselines.intelligems?.snapshot ?? null, snapshots.intelligems, { config, logger, settings, now: new Date(nowIso) });
     flags.push(...intelligemsFlags(igDelta, { config, dateKey }));
     sections.intelligems = { present: true, baselineDate: baselines.intelligems?.dateKey ?? null, counts: igDelta.counts };
   } else {

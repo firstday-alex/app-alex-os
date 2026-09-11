@@ -81,6 +81,46 @@ and whether those two sets conflict. A conflict is stated plainly and flagged.
 The judgement on a conflict is what the **Strategic Advisor** is for, and it only runs
 when Alex clicks the button.
 
+## The experiment tree
+
+Each test is shown as a cascading tree rather than a list of metrics, because a list
+invites reading numbers side by side that are not independent.
+
+Two roots, being the two questions worth asking of a test on this store:
+
+- **RPV**, revenue per visitor, which decomposes into **conversion rate** and **AOV**,
+  and those into their own components.
+- **Subscription share of orders**, separate because it changes what a customer is
+  *worth*, not what this order is worth.
+
+`RPV = AOV x conversion rate` is an exact identity, verified against live data to zero
+error. That is why the tree can **attribute** a move: "RPV is up 15.9%" becomes "up 15.9%,
+and AOV carried most of it", which is a different decision from the same number coming
+from conversion. Attribution is computed in log space so the parts sum to the whole, and
+is offered **only** where the identity actually holds. Nothing else in the tree claims it.
+
+Every metric the tree names is pulled, not just the P0 and P1 lists. Without that the
+branches below the roots read "No data", which looks like the platform returned nothing
+rather than like we discarded it.
+
+## Significance
+
+Every node carries a judgement, because a tree of numbers with no sense of confidence
+invites exactly the mistake this system exists to prevent: reading a 12% swing on 40
+orders as a result.
+
+Two independent signals, and they must **agree** before anything is called strong:
+
+- **probability to beat control**, the platform's own posterior
+- **the uplift interval**, and whether it excludes zero
+
+A high probability with an interval spanning zero is directional at best. With no interval
+at all, nothing can ever be strong: one signal cannot corroborate itself.
+
+**A parent is never reported as more certain than the branch beneath it.** A strong-looking
+headline resting on noisy components is labelled as such, rather than being allowed to
+borrow authority from its own summary.
+
 ## Stored data for future value projection
 
 The skill stores reference values that help project the **future** value of a test, not
@@ -90,9 +130,26 @@ lifetime, not just first order. These live in `config/references.json` and are r
 across tests.
 
 While they are unset, future value renders as **"not configured"** — never as zero.
+Valuing a subscriber at nothing would make every mix-shifting test look neutral, which is
+the precise error the projection exists to prevent.
 
-**Open question, not yet decided:** where those values come from (pulled from Shopify,
-entered by Alex, or computed by the skill) and how often they refresh.
+The values are **edited in the app**, under Settings, not in a config file: they change
+when someone re-runs a cohort analysis, not when the logic changes, and waiting on a pull
+request to update a number measured that morning is the wrong shape. Every change is
+recorded, so "why did the projected value of every test move last Tuesday" has an answer.
+
+### How the projection works
+
+    value per visitor = conversion rate x ( sub share x sub LTV + (1 - sub share) x one-time LTV )
+
+Computed for control and each variant, then compared. **The point is the disagreement**: a
+variant can lose on immediate revenue per visitor and still be the right call if it moves
+enough people onto subscriptions. When the two views point in opposite directions the
+readout says so plainly, because that conflict *is* the decision, and it is a decision
+rather than a calculation.
+
+Past `ltvStaleAfterDays` the projection is still shown and flagged as resting on old
+numbers. Old numbers beat no numbers; pretending they are fresh does not.
 
 ## Which calls, and why
 

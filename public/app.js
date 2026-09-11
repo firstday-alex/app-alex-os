@@ -11,7 +11,7 @@ const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 const FN = "/.netlify/functions";
-let state = { report: null, openItems: [], advisorButtonText: "Ask for recommendation", rocks: null };
+let state = { report: null, openItems: [], advisorButtonText: "Ask for recommendation", rocks: null, settings: null, openTests: new Set() };
 
 /* ---------------------------------- auth ---------------------------------- */
 
@@ -106,7 +106,7 @@ function render() {
   renderLayer1(report);
   renderCross(report);
   renderLayer2(report);
-  renderLayer3(report);
+  renderTests();
   renderOpenItems();
   $("report-text").textContent = report.text ?? "";
   loadRocks();
@@ -373,63 +373,165 @@ function renderLayer2(report) {
     ${changeLines.length ? `<ul>${changeLines.map((l) => `<li>${l}</li>`).join("")}</ul>` : '<p class="sub">No changes since the baseline.</p>'}`;
 }
 
-function renderLayer3(report) {
-  const section = report.sections.intelligems;
-  const delta = report.detail?.intelligems;
-  if (!section?.present) {
-    $("layer3").innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
-    return;
-  }
-  const c = delta.counts;
+/* ------------------------- Layer 3. experiment trees ------------------------- */
 
-  const cards = (delta.tests ?? [])
-    .map((test) => {
-      const groupRows = (test.groups ?? [])
-        .map((group) => {
-          const metrics = Object.values(group.metrics ?? {})
-            .map((m) => {
-              const value = m.value == null ? "not configured" : Number(m.value).toFixed(3);
-              const uplift = m.upliftPct == null ? "" : ` (${m.upliftPct > 0 ? "+" : ""}${Number(m.upliftPct).toFixed(1)}%)`;
-              return `${esc(m.name)} ${esc(value)}${esc(uplift)}`;
-            })
-            .join(" · ");
-          return `<tr><td>${esc(group.name)}${group.isControl ? " (control)" : ""}</td><td>${esc(group.orders ?? "—")}</td><td class="wrap">${metrics}</td></tr>`;
-        })
-        .join("");
+const SIG_TONE = { win: "win", loss: "loss", flat: "flat", none: "none" };
 
-      const trades = (test.tradeOffs ?? [])
-        .filter((t) => t.conflict)
-        .map(
-          (t) =>
-            `<div class="note"><strong>Trade off on ${esc(t.groupName)}.</strong> Wins on ${esc(t.wins.map((w) => w.metric).join(", "))} against losses on ${esc(t.losses.map((l) => l.metric).join(", "))}. ${
-              t.futureValue?.configured === false
-                ? "Six month value: not configured."
-                : `Six month value spread, subscription over one time: ${esc(Number(t.futureValue.spread).toFixed(2))}.`
-            }</div>`,
-        )
-        .join("");
+function fmtMetric(value, format) {
+  if (value == null) return "—";
+  if (format === "money") return `$${Number(value).toFixed(2)}`;
+  if (format === "percent") return `${(Number(value) * 100).toFixed(2)}%`;
+  return Number(value).toFixed(3);
+}
 
-      return `
-        <h3>${esc(test.name)} — ${esc(test.recommendation.recommendation)}</h3>
-        <p class="sub">${esc(test.recommendation.reason)} ${test.daysRunning ?? "?"} days, ${test.minOrdersPerGroup ?? "?"} orders in the smallest group. Platform verdict: ${esc(test.verdict ?? "none")}.</p>
-        ${trades}
-        <div class="scroll"><table>
-          <thead><tr><th>Group</th><th>Orders</th><th>Metrics</th></tr></thead>
-          <tbody>${groupRows || '<tr><td colspan="3">No groups returned.</td></tr>'}</tbody>
-        </table></div>`;
+function sigChip(sig) {
+  if (!sig) return "";
+  const tone = SIG_TONE[sig.tone] ?? "flat";
+  const detail = sig.probability != null ? ` · p(beat control) ${(sig.probability * 100).toFixed(0)}%` : "";
+  return `<span class="sig-chip ${tone}" title="${esc(sig.reason ?? "")}${esc(detail)}">${esc(sig.label)}</span>`;
+}
+
+/** One node and its children, collapsed until clicked. */
+function renderNode(node, depth, path) {
+  const hasChildren = (node.children ?? []).length > 0;
+  const open = state.openTests.has(path);
+  // Direction is not the same as good: abandonment rising is not an improvement.
+  const up = (node.upliftPct ?? 0) > 0;
+  const good = node.upliftPct == null ? null : node.goodDirection === "down" ? !up : up;
+  const upliftText = node.upliftPct == null ? "—" : `${up ? "+" : ""}${node.upliftPct.toFixed(1)}%`;
+  const caret = hasChildren ? `<span class="caret ${open ? "open" : ""}">▸</span>` : `<span class="caret leafdot">·</span>`;
+  const headAttrs = hasChildren ? `data-node="${esc(path)}"` : "disabled";
+
+  const attribution = node.attribution
+    ? `<div class="attribution">${node.attribution
+        .map((a) => `<span class="attr"><strong>${esc(a.label)}</strong> ${a.contributionPct > 0 ? "+" : ""}${a.contributionPct.toFixed(1)}pp of the move</span>`)
+        .join("")}</div>`
+    : "";
+
+  const weaker = node.childrenSignificance && node.childrenSignificance.rank < (node.significance?.rank ?? 0);
+  const rollup = weaker
+    ? `<span class="rollup" title="The components beneath this are weaker than the headline. Treat the headline with the confidence of its parts.">components: ${esc(node.childrenSignificance.label)}</span>`
+    : "";
+
+  const children = hasChildren && open
+    ? `<div class="tchildren">${node.children.map((c, i) => renderNode(c, depth + 1, `${path}.${i}`)).join("")}</div>`
+    : "";
+
+  return `<div class="tnode depth-${depth}">
+      <button class="tnode-head${hasChildren ? "" : " leaf"}" ${headAttrs}>
+        ${caret}
+        <span class="tnode-label">${esc(node.label)}</span>
+        <span class="tnode-value">${esc(fmtMetric(node.value, node.format))}</span>
+        <span class="tnode-vs">vs ${esc(fmtMetric(node.control, node.format))}</span>
+        <span class="tnode-uplift ${good === null ? "" : good ? "good" : "bad"}">${esc(upliftText)}</span>
+        ${sigChip(node.significance)}
+        ${rollup}
+      </button>
+      ${attribution}
+      ${children}
+    </div>`;
+}
+
+function renderFutureValue(fv) {
+  if (!fv) return "";
+  if (!fv.available) return `<div class="note"><strong>Future value not projected.</strong> ${esc(fv.reason)}</div>`;
+
+  const money = (v) => (v == null ? "—" : `$${Number(v).toFixed(2)}`);
+  const pct = (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`);
+  const share = (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
+
+  const rows = fv.variants
+    .map((v) => `<tr>
+        <td>${esc(v.name)}</td>
+        <td>${esc(money(v.valuePerVisitor))}</td>
+        <td class="${v.upliftPct == null ? "" : v.upliftPct > 0 ? "good" : "bad"}">${esc(pct(v.upliftPct))}</td>
+        <td>${esc(money(v.immediateRpv))}</td>
+        <td class="${v.immediateUpliftPct == null ? "" : v.immediateUpliftPct > 0 ? "good" : "bad"}">${esc(pct(v.immediateUpliftPct))}</td>
+        <td>${esc(share(v.subscriptionShare))}</td>
+      </tr>`)
+    .join("");
+
+  const conflict = fv.variants.filter((v) => v.disagreesWithImmediate);
+  const conflictNote = conflict.length
+    ? `<div class="note"><strong>The two views disagree on ${esc(conflict.map((v) => v.name).join(", "))}.</strong> Immediate revenue and ${esc(fv.horizonMonths)} month value point in opposite directions, which is the whole reason this projection exists. Which one wins is a decision, not a calculation.</div>`
+    : "";
+
+  return `<h4 class="form-head">Future value, ${esc(fv.horizonMonths)} months</h4>
+    <p class="meta">Subscriber ${esc(money(fv.subscriptionLtv))} against one-time ${esc(money(fv.oneTimeLtv))}, a spread of ${esc(money(fv.spread))}. Value per visitor is conversion rate times the blended worth of the mix it produces.</p>
+    ${fv.references.stale ? `<div class="note">${esc(fv.references.note)}</div>` : ""}
+    ${conflictNote}
+    <div class="scroll"><table>
+      <thead><tr><th>Variation</th><th>Value / visitor</th><th>vs control</th><th>Immediate RPV</th><th>vs control</th><th>Sub share</th></tr></thead>
+      <tbody>
+        <tr class="control-row"><td>${esc(fv.control.name)} (control)</td><td>${esc(money(fv.control.valuePerVisitor))}</td><td>—</td><td>—</td><td>—</td><td>${esc(share(fv.control.subscriptionShare))}</td></tr>
+        ${rows}
+      </tbody>
+    </table></div>`;
+}
+
+function renderTestCard(test, ti) {
+  const openKey = `t${ti}`;
+  const open = state.openTests.has(openKey);
+  const gate = test.recommendation.gate.ready ? "" : " · gate not met";
+
+  const trees = (test.trees ?? [])
+    .map((tree, gi) => {
+      const roots = tree.roots.map((r, ri) => renderNode(r, 0, `${openKey}.g${gi}.r${ri}`)).join("");
+      return `<h4 class="form-head">${esc(tree.groupName)} vs control</h4>
+        <p class="meta">Click a row to open its components. A parent is never reported as more certain than the branch beneath it.</p>
+        ${roots}`;
     })
     .join("");
 
-  const ended = (delta.ended ?? [])
-    .map((t) => `<li>${esc(t.name)} ended. Final verdict ${esc(t.finalVerdict ?? "none recorded")}.</li>`)
-    .join("");
+  const body = open
+    ? `<div class="test-body">
+        <p class="meta">${esc(test.recommendation.reason)}</p>
+        ${renderFutureValue(test.futureValue)}
+        ${trees}
+      </div>`
+    : "";
 
-  $("layer3").innerHTML = `
-    <p class="sub">${c.running} running. ${c.notable} moved, ${c.quiet} quiet, ${c.readyForVerdict} past the readiness gate, ${c.ended} ended.</p>
-    ${delta.hasBaseline ? "" : `<div class="note"><strong>First run.</strong> No previous snapshot, so no day over day comparison on results yet.</div>`}
-    ${cards || '<p class="sub">No tests running.</p>'}
-    ${ended ? `<h3>Ended</h3><ul>${ended}</ul>` : ""}`;
+  return `<div class="test-card">
+      <button class="test-head" data-node="${esc(openKey)}">
+        <span class="caret ${open ? "open" : ""}">▸</span>
+        <span class="test-name">${esc(test.name)}</span>
+        <span class="chip">${esc(test.recommendation.recommendation)}</span>
+        <span class="meta">${esc(test.daysRunning ?? "?")}d · ${esc(test.minOrdersPerGroup ?? "?")} orders${esc(gate)}</span>
+      </button>
+      ${body}
+    </div>`;
 }
+
+function renderTests() {
+  const report = state.report;
+  const section = report?.sections?.intelligems;
+  const delta = report?.detail?.intelligems;
+  const host = $("layer3");
+  if (!host) return;
+
+  if (!section?.present) {
+    host.innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
+    return;
+  }
+
+  const c = delta.counts;
+  const ended = (delta.ended ?? []).length
+    ? `<h3>Ended</h3><ul>${delta.ended.map((t) => `<li>${esc(t.name)} — final verdict ${esc(t.finalVerdict ?? "none recorded")}</li>`).join("")}</ul>`
+    : "";
+
+  host.innerHTML = `<p class="sub">${esc(c.running)} running · ${esc(c.readyForVerdict)} past the readiness gate · ${esc(c.notable)} moved · ${esc(c.quiet)} quiet</p>
+    ${(delta.tests ?? []).map(renderTestCard).join("")}
+    ${ended}`;
+}
+
+document.addEventListener("click", (event) => {
+  const head = event.target.closest("[data-node]");
+  if (!head) return;
+  const key = head.dataset.node;
+  if (state.openTests.has(key)) state.openTests.delete(key);
+  else state.openTests.add(key);
+  renderTests();
+});
 
 function renderOpenItems() {
   const items = state.openItems ?? [];
@@ -805,6 +907,89 @@ $("rocks-audit-wrap")?.addEventListener("toggle", async (event) => {
 
 const VIEW_TITLES = { readout: "Readout", rocks: "Rocks", sprint: "Sprint", tests: "Tests", setup: "Setup" };
 
+/* -------------------------------- settings -------------------------------- */
+
+async function loadSettings() {
+  try {
+    const res = await fetch(`${FN}/settings`);
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+    state.settings = await res.json();
+    renderSettings();
+  } catch (err) {
+    settingsError(`Could not load settings: ${err.message}`);
+  }
+}
+
+function settingsError(message) {
+  const box = $("settings-error");
+  if (!message) return box.classList.add("hidden");
+  box.textContent = message;
+  box.classList.remove("hidden");
+}
+
+function renderSettings() {
+  const d = state.settings;
+  if (!d) return;
+  const fields = Object.entries(d.schema)
+    .map(([key, spec]) => {
+      const value = d.settings[key];
+      const type = spec.type === "date" ? "date" : "number";
+      const step = spec.type === "money" ? "0.01" : spec.type === "probability" ? "0.01" : "1";
+      const stepAttr = type === "number" ? `step="${step}"` : "";
+      return `<label class="wide">${esc(spec.label)}
+        <input class="st" data-k="${esc(key)}" type="${type}" ${stepAttr} value="${esc(value ?? "")}" placeholder="not set">
+        <span class="meta">${esc(spec.help)}</span>
+      </label>`;
+    })
+    .join("");
+  $("settings-form").innerHTML = `<div class="form-grid">${fields}</div>`;
+  $("settings-meta").textContent = `version ${d.version}${d.updatedAt ? ` · last changed ${new Date(d.updatedAt).toLocaleString()}` : " · never set"}`;
+  if (d.settings._warning) settingsError(d.settings._warning);
+}
+
+$("settings-save").addEventListener("click", async () => {
+  settingsError("");
+  const payload = {};
+  for (const el of document.querySelectorAll("#settings-form .st")) payload[el.dataset.k] = el.value.trim();
+
+  const res = await fetch(`${FN}/settings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ settings: payload, version: state.settings.version }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    settingsError(body.error ?? `HTTP ${res.status}`);
+    if (res.status === 409) await loadSettings();
+    return;
+  }
+  state.settings = body;
+  renderSettings();
+
+  // Every projection rests on these, so the tests view must not keep showing the old one.
+  const fresh = await fetch(`${FN}/report`).then((r) => r.json()).catch(() => null);
+  if (fresh && !fresh.empty) {
+    state.report = fresh.report;
+    renderTests();
+  }
+});
+
+$("settings-audit-wrap")?.addEventListener("toggle", async (event) => {
+  if (!event.target.open) return;
+  const res = await fetch(`${FN}/settings?audit=true`).then((r) => r.json()).catch(() => null);
+  const entries = res?.audit ?? [];
+  $("settings-audit").innerHTML = entries.length
+    ? entries
+        .map((e) => {
+          const changes = Object.entries(e.changes ?? {})
+            .map(([k, v]) => `<p class="meta">${esc(k)}: ${esc(v.from ?? "unset")} → ${esc(v.to ?? "unset")}</p>`)
+            .join("");
+          return `<div class="flag"><p class="meta">${esc(new Date(e.at).toLocaleString())} · v${esc(e.version)} · ${esc(e.actor)}</p>${changes || '<p class="meta">no field changed</p>'}</div>`;
+        })
+        .join("")
+    : '<p class="sub">No changes recorded yet.</p>';
+});
+
 function showView(name) {
   for (const section of document.querySelectorAll(".view")) {
     section.classList.toggle("hidden", section.id !== `view-${name}`);
@@ -816,6 +1001,7 @@ function showView(name) {
   location.hash = name;
   closeDrawer();
   if (name === "rocks" && !state.rocks) loadRocks();
+  if (name === "setup" && !state.settings) loadSettings();
 }
 
 function openDrawer() {

@@ -183,6 +183,17 @@ export function normalizeGroups(analysis, metricNames) {
  * Which metrics to pull for one test: the metrics the test itself is configured on,
  * translated to analytics keys, plus the always-watch P0 and P1 lists.
  */
+/** Every metric named anywhere in the experiment tree, roots and leaves alike. */
+export function treeMetricNames(treeSpec) {
+  const out = [];
+  const walk = (node) => {
+    if (node?.metric) out.push(node.metric);
+    (node?.children ?? []).forEach(walk);
+  };
+  (treeSpec?.roots ?? []).forEach(walk);
+  return out;
+}
+
 export function metricNamesFor(config, experienceDetail) {
   const configured = (experienceDetail?.experienceKeyMetrics ?? [])
     .slice()
@@ -192,7 +203,12 @@ export function metricNamesFor(config, experienceDetail) {
 
   const p0 = config.intelligems.metrics?.p0 ?? [];
   const p1 = config.intelligems.metrics?.p1 ?? [];
-  return [...new Set([...p0, ...configured, ...p1])];
+  // The tree's metrics too. The analytics response carries them all regardless; without
+  // this the collector filters them out and every branch below the roots reads "No data",
+  // which looks like the platform returned nothing rather than like we discarded it.
+  const tree = treeMetricNames(config.intelligems.metricTree);
+
+  return [...new Set([...p0, ...configured, ...p1, ...tree])];
 }
 
 /** The metric this specific test is actually being judged on, when one is marked primary. */
