@@ -7,6 +7,13 @@
   # build script exits non-zero. Saying "do nothing" out loud is not the same as silence.
   command = "echo 'no build step: plain ESM, nothing to compile'"
 
+# Pin the Node version. package.json declares engines >=20; if the build image defaults
+# to something older, the dependency install fails before the build command ever runs,
+# which presents as a build-script error with no obvious cause.
+[build.environment]
+  NODE_VERSION = "22"
+  NPM_FLAGS = "--no-audit --no-fund"
+
 [functions]
   node_bundler = "esbuild"
   # src/ and config/ are read at runtime by the functions. Bundle them in.
