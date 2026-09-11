@@ -1,0 +1,23 @@
+{
+  "miniReadout": {
+    "toleranceWindowDays": 7,
+    "perProjectType": {},
+    "_TODO": "OPEN QUESTION from the spec, not yet decided: what is the tolerance window for a shipped test mini readout, and is it one global number or per project type. 7 days is a placeholder chosen to match the readiness gate. Per-type overrides go in perProjectType as { \"<type>\": <days> }."
+  },
+
+  "capacity": {
+    "bigSwingsPerPerson": 1,
+    "_comment": "Each team member holds only one big leadership project at a time. When every member already holds one, remaining leadership items route to the backlog rather than being assigned."
+  },
+
+  "crossLayer": {
+    "requireOneBigSwingPerPerson": true,
+    "unrelatedTicketPileThreshold": 5,
+    "_comment": "A person is flagged when they hold a big swing plus a pile of tickets that link to no leadership priority and are not marked business as usual. Business as usual work is expected and allowed. It just should not crowd out the one big swing."
+  },
+
+  "dropdownSync": {
+    "enforce": true,
+    "_comment": "The Leadership Priority dropdown in ClickUp must offer exactly the active items in the leadership queue, plus the BAU markers. Drift is flagged, never auto-corrected. The system does not write to ClickUp."
+  }
+}

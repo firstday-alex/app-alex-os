@@ -1,0 +1,20 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+  command = "npm run --silent build --if-present"
+
+[functions]
+  node_bundler = "esbuild"
+  # src/ and config/ are read at runtime by the functions. Bundle them in.
+  included_files = ["config/**", "skills/**", "src/**"]
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+
+[dev]
+  framework = "#static"
+  publish = "public"

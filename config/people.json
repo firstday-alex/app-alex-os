@@ -1,0 +1,57 @@
+{
+  "_comment": "Team roster. Maps ClickUp user ids to a display name and a Slack member id. The one-big-swing capacity rule needs this to know its denominator.",
+  "_BLOCKER": "The workspace has 54 members, which is the whole company. The team below was inferred from who actually holds OPEN work in Current Sprint as of 2026-09-10, which is the only defensible denominator for the one-big-swing rule. Alex must confirm it: getting this list wrong makes 'everyone is at capacity' either meaningless or wrong.",
+  "team": [
+    {
+      "clickupUserId": "87349065",
+      "name": "Robson Lopes",
+      "slackUserId": null,
+      "countsTowardCapacity": true,
+      "_openTasks": 6
+    },
+    {
+      "clickupUserId": "44140689",
+      "name": "Blake Tucker",
+      "slackUserId": null,
+      "countsTowardCapacity": true,
+      "_openTasks": 2
+    },
+    {
+      "clickupUserId": "81872941",
+      "name": "Oleksandr Zghonnyk",
+      "slackUserId": null,
+      "countsTowardCapacity": true,
+      "_openTasks": 1
+    },
+    {
+      "clickupUserId": "87471371",
+      "name": "Cristobal Alanis",
+      "slackUserId": null,
+      "countsTowardCapacity": true,
+      "_openTasks": 2
+    },
+    {
+      "clickupUserId": "87365453",
+      "name": "Alex Turney",
+      "slackUserId": null,
+      "countsTowardCapacity": false,
+      "_comment": "Alex reads the readout rather than holding a queue in it, but currently holds 2 open tickets. countsTowardCapacity is false so Alex is not counted in the 'everyone is full' denominator. Flip it if Alex should carry a big swing like everyone else."
+    }
+  ],
+  "alex": {
+    "clickupUserId": "87365453",
+    "name": "Alex Turney",
+    "email": "alex.turney@firstday.com",
+    "slackUserId": null,
+    "_TODO": "Alex's Slack member id. Until it is set, ANY human reply in a readout thread will drive the learning skill, and the system warns about that on every event."
+  },
+  "_knownMembers": {
+    "_comment": "A few ids confirmed live, kept here as a convenience when filling in the team array. Not used by the system.",
+    "Alex Turney": "87365453",
+    "Alice Li": "6352878",
+    "Drew Videira": "81375017",
+    "Daniel J Franklin": "75458568",
+    "Yoed Negri": "87431913"
+  },
+  "_TODO_CONFIRM": "Kate Chernenko (4378173) held sprint work earlier in the year but has nothing open now. Add her if she is still on the team."
+}

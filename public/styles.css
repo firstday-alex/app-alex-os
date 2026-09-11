@@ -1,0 +1,98 @@
+/* Palette lifted from the requirements spec itself, so the dashboard and the document
+   that specified it read as one thing. */
+:root {
+  --bg: #eef1f0;
+  --panel: #f7f9f8;
+  --ink: #1c2b2a;
+  --muted: #4a5a58;
+  --line: #c9d2cf;
+  --green: #3f6b4a;
+  --amber: #c79a3f;
+  --amber-bg: #fbf7f0;
+  --amber-ink: #8a6a1f;
+  --red: #9c3d34;
+  --red-bg: #fbf1f0;
+  --code: #e4e9e8;
+  color-scheme: light only;
+}
+
+* { box-sizing: border-box; min-width: 0; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+main { max-width: 940px; margin: 0 auto; padding: 28px 18px 80px; }
+
+h1 { font-size: 26px; letter-spacing: -0.02em; margin: 0 0 4px; }
+h2 {
+  font-size: 18px; margin: 34px 0 8px;
+  border-bottom: 2px solid var(--green); padding-bottom: 6px;
+}
+h3 { font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--green); margin: 20px 0 8px; }
+p { margin: 0 0 10px; }
+.sub { color: var(--muted); margin: 0 0 14px; }
+
+.bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 18px; }
+.chip {
+  display: inline-block; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 4px; padding: 3px 9px; font-size: 13px; color: var(--muted);
+}
+.chip.warn { background: var(--amber-bg); border-color: var(--amber); color: var(--amber-ink); }
+.chip.bad { background: var(--red-bg); border-color: var(--red); color: var(--red); }
+
+button {
+  font: inherit; cursor: pointer; border-radius: 4px; padding: 6px 12px;
+  border: 1px solid var(--green); background: var(--green); color: #fff;
+}
+button.ghost { background: var(--panel); color: var(--green); }
+button:disabled { opacity: 0.5; cursor: default; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 8px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; }
+.tile .n { font-size: 24px; font-variant-numeric: tabular-nums; }
+.tile .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+
+.flag {
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line);
+  border-radius: 4px; padding: 10px 14px; margin-bottom: 8px;
+}
+.flag.p1 { border-left-color: var(--red); background: var(--red-bg); }
+.flag.attention { border-left-color: var(--amber); background: var(--amber-bg); }
+.flag.prompt { border-left-color: var(--green); }
+.flag .msg { margin: 0 0 6px; }
+.flag .meta { font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.flag .row { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; }
+.flag .advice {
+  margin-top: 10px; padding: 10px 12px; background: #fff; border: 1px solid var(--line);
+  border-radius: 4px; white-space: pre-wrap; font-size: 14px;
+}
+
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td.wrap { white-space: normal; min-width: 220px; }
+
+.sig { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 3px; }
+.sig.stalled { background: var(--red-bg); color: var(--red); border: 1px solid var(--red); }
+.sig.waiting { background: var(--code); color: var(--muted); }
+.sig.moving { background: #eef4ef; color: var(--green); border: 1px solid var(--green); }
+.sig.idle { background: var(--code); color: var(--muted); }
+
+code { background: var(--code); padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+pre { background: var(--code); padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 13px; }
+.note { background: var(--amber-bg); border-left: 3px solid var(--amber); padding: 10px 14px; margin: 0 0 12px; }
+.note strong { color: var(--amber-ink); }
+.missing { background: var(--red-bg); border-left: 3px solid var(--red); padding: 10px 14px; margin: 0 0 12px; }
+
+#login { max-width: 340px; margin: 80px auto; }
+#login input { font: inherit; width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; margin-bottom: 10px; }
+.hidden { display: none !important; }
+.err { color: var(--red); font-size: 13px; }

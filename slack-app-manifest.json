@@ -1,0 +1,41 @@
+{
+  "_comment": "Turnpups MOS Slack app manifest. REPLACE every occurrence of YOUR-SITE with the Netlify site name before pasting this in, and deploy the site FIRST: Slack verifies both request URLs at creation time and refuses the manifest if they do not answer. See docs/DEPLOY.md step 5.",
+  "display_information": {
+    "name": "Turnpups MOS (Claude)",
+    "description": "Daily 8 AM readout across leadership priorities, the ClickUp sprint and active Intelligems tests. Posts as Claude.",
+    "background_color": "#3f6b4a",
+    "long_description": "Turnpups Management Operating System. Every weekday at 8:00 AM Central this bot posts a readout comparing yesterday's snapshot to this morning's: what is still Not Started, what is In Progress, what changed overnight, which tests moved, and which leadership priorities need attention.\r\n\r\nEach flagged item carries an Ask for recommendation button. Clicking it runs the Strategic Advisor and posts a recommendation back into the thread.\r\n\r\nReplying to a readout in the thread sends the feedback to the Learning Skill, which proposes a specific configuration change as a pull request and waits for approval. Nothing changes until the pull request is merged.\r\n\r\nEvery message this app posts identifies itself as Claude."
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Turnpups MOS (Claude)",
+      "always_online": false
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "chat:write",
+        "chat:write.public",
+        "channels:history",
+        "groups:history"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "request_url": "https://YOUR-SITE.netlify.app/.netlify/functions/slack-events",
+      "bot_events": [
+        "message.channels",
+        "message.groups"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://YOUR-SITE.netlify.app/.netlify/functions/slack-interactive"
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light only">
+<title>Turnpups MOS</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<section id="login">
+  <h1>Turnpups MOS</h1>
+  <p class="sub">Sprint and test data. Sign in.</p>
+  <form id="login-form">
+    <input type="password" id="password" placeholder="Dashboard password" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+    <p class="err hidden" id="login-error"></p>
+  </form>
+</section>
+
+<main id="app" class="hidden">
+  <h1>Turnpups Management Operating System</h1>
+  <p class="sub" id="strap">Loading the latest readout.</p>
+
+  <div class="bar">
+    <span class="chip" id="chip-mode">—</span>
+    <span class="chip" id="chip-baseline">—</span>
+    <span class="chip" id="chip-generated">—</span>
+    <button id="refresh">Refresh now</button>
+    <button id="toggle-text" class="ghost">Plain text readout</button>
+  </div>
+
+  <div id="banners"></div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <h2>Needs your attention</h2>
+  <div id="attention"></div>
+
+  <h2>Owner prompts</h2>
+  <p class="sub">Items that did not move and need a next step or a decision from their owner.</p>
+  <div id="prompts"></div>
+
+  <h2>Layer 1. Leadership priorities</h2>
+  <div id="layer1"></div>
+
+  <h2>Cross layer</h2>
+  <div id="cross"></div>
+
+  <h2>Layer 2. ClickUp sprint</h2>
+  <div id="layer2"></div>
+
+  <h2>Layer 3. Active tests</h2>
+  <div id="layer3"></div>
+
+  <h2>Hygiene</h2>
+  <div id="hygiene"></div>
+
+  <h2>Still to decide</h2>
+  <p class="sub">Open items the config carries. Every one of these is a decision waiting on a person, not a bug.</p>
+  <div id="open-items"></div>
+
+  <section id="text-view" class="hidden">
+    <h2>Plain text readout</h2>
+    <p class="sub">Byte for byte what goes to Slack at 8 AM.</p>
+    <pre id="report-text"></pre>
+  </section>
+</main>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>

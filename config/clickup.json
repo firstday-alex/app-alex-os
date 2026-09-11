@@ -1,0 +1,48 @@
+{
+  "apiBase": "https://api.clickup.com/api/v2",
+  "workspaceId": "18042215",
+  "sprintListId": "901112668495",
+  "_VERIFIED": "List id, status names and custom fields read live from the First Day workspace on 2026-09-10. 'Current Sprint' lives at WEB > 2025/26 Updated Team Boards > Current Sprint, https://app.clickup.com/18042215/v/l/li/901112668495",
+
+  "backlogListId": "901111926996",
+  "_comment_backlog": "'Site Backlog' sits in the same folder as Current Sprint, which answers the spec's open question: sprint tickets DO originate in a separate backlog list, so include_timl must stay true or tickets whose home list is the backlog will be invisible.",
+
+  "taskQuery": {
+    "include_closed": true,
+    "subtasks": false,
+    "include_timl": true,
+    "_TODO_subtasks": "Alex to confirm whether the team uses subtasks on sprint tickets. Left false until confirmed, because turning it on inflates every per-person ticket count and would trip the unrelated-pile rule."
+  },
+
+  "customFields": {
+    "taskOwner": {
+      "id": null,
+      "matchName": ["Task Owner", "Task Project Manager"],
+      "type": "users"
+    },
+    "leadershipPriority": {
+      "id": null,
+      "matchName": ["Leadership Priority", "Rock Reference"],
+      "type": "drop_down"
+    },
+    "_BLOCKER": "Neither field exists yet. Checked list, space and workspace level on 2026-09-10: the Current Sprint list has 📅 Target Month, Epic, Design Reference URL, Rock Reference and Ready for Estimate, and there are no space-level or workspace-level custom fields at all. There is NO user-type field anywhere, so Task Owner has to be created before the ownership model works.",
+    "_DECISION_NEEDED": "'Rock Reference' (id de6b3171-e1ed-4078-ac4c-f1f1c9a4fd4b) already does what the spec's Leadership Priority dropdown is meant to do. It is a dropdown of quarterly rocks and it already includes a BAU option. Either point the system at it, or create a separate Leadership Priority field and accept that tickets carry two overlapping priority fields. It is listed in matchName above so that the system will resolve it if Alex confirms, and will find the new field first if one is created with that name."
+  },
+
+  "statusMap": {
+    "notStarted": ["to do", "open", "not started", "backlog"],
+    "inProgress": ["in-progress", "vqa", "qa", "ready for deploy", "in progress", "in review", "blocked"],
+    "done": ["complete", "done", "closed"],
+    "_VERIFIED": "The Current Sprint list uses exactly: 'to do' (open), 'in-progress', 'vqa', 'qa', 'ready for deploy', 'complete' (closed). Note 'in-progress' is hyphenated, and vqa, qa and ready for deploy are all work in flight, not done. Matching is case-insensitive. An unmapped status falls through to notStarted and logs clickup.status_unmapped.",
+    "_TODO": "Alex to confirm that 'ready for deploy' should count as in progress rather than done. It is the last state before shipping, so a ticket can sit there a long time and should still be visible as in-flight work."
+  },
+
+  "bauMarkers": ["BAU", "Business as usual", "Other", "Keep the lights on"],
+  "_comment_bau": "'BAU' and 'Other' are real options on the Rock Reference dropdown. A ticket whose priority matches one of these counts as expected business-as-usual work: never a big swing, and never counted toward the unrelated-ticket pile.",
+
+  "rules": {
+    "stalledAfterDays": 3,
+    "fetchCommentsOnlyWhenUpdated": true,
+    "commentFetchCapPerRun": 60
+  }
+}

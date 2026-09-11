@@ -1,0 +1,24 @@
+{
+  "_comment": "Stored reference values the Intelligems Manager reuses across tests so a recommendation can weigh long term value against immediate conversion. The spec's example: a test that shifts the subscription mix should be valued on lifetime, not just first order.",
+  "_TODO": "OPEN QUESTION, possibly now answerable by the platform rather than by hand: the Intelligems post_test view returns customers who converted during a test tracked by their later purchase behavior, split by variation. That may supply the future-value projection directly and make these hand-entered LTV values unnecessary. Worth checking one live test's post_test output before Alex spends time sourcing these from Shopify.",
+  "staleAfterDays": 90,
+  "currency": "USD",
+  "ltv": {
+    "subscription6MonthLtv": {
+      "value": null,
+      "asOf": null,
+      "source": "manual"
+    },
+    "oneTime6MonthLtv": {
+      "value": null,
+      "asOf": null,
+      "source": "manual"
+    },
+    "_comment": "When both are set, the Intelligems Manager can value a shift in subscription mix over six months instead of over the first order alone. When either is null the projection is reported as 'not configured', never as zero."
+  },
+  "cogsConfigured": false,
+  "_comment_cogs": "VERIFIED false. The live analytics response returns cogsConfigured: false and cogsCoveragePct: 0, and every gross_profit_* metric comes back null. Profit metrics therefore render as 'not configured', never as zero, and gross_profit_per_visitor is deliberately kept out of the P0 list.",
+  "shopTimezone": "America/Los_Angeles",
+  "_VERIFIED": "Shop metadata read live 2026-09-10: First Day Life Inc., firstday.com, Shopify Plus, USD, America/Los_Angeles.",
+  "_TIMEZONE_MISMATCH": "The store reports in Pacific but the readout is specified for 8 AM CENTRAL. That is a two hour offset, so 'yesterday' in a test result and 'yesterday' in the readout are not the same window. The readout stays on Central per the spec; this is recorded so the discrepancy is a known, stated thing rather than a silent one. Alex to confirm Central is intended."
+}

@@ -1,0 +1,41 @@
+{
+  "timezone": "America/Chicago",
+  "schedule": {
+    "readoutHourCentral": 8,
+    "workingWeekdays": [1, 2, 3, 4, 5],
+    "_comment": "Cron runs at 13:00 and 14:00 UTC. The function checks the Central hour and exits unless it is readoutHourCentral on a working weekday. DST is not chased in the cron string."
+  },
+  "storage": {
+    "snapshotPrefix": "snapshots",
+    "reportPrefix": "reports",
+    "indexKey": "index.json",
+    "sentKeyPrefix": "reports/sent",
+    "keepSnapshotIndexEntries": 400,
+    "baselineLookbackWorkingDays": 10
+  },
+  "http": {
+    "timeoutMs": 30000,
+    "maxAttempts": 5,
+    "backoffMsSchedule": [1000, 2000, 4000, 8000],
+    "maxPages": 50
+  },
+  "logging": {
+    "level": "info",
+    "persistRunLogToStorage": true,
+    "redactHeaders": ["authorization", "intelligems-access-token", "x-api-key", "cookie", "x-slack-signature"]
+  },
+  "dashboard": {
+    "sessionTtlHours": 12,
+    "refreshMinIntervalSeconds": 60
+  },
+  "slack": {
+    "advisorButtonText": "Ask for recommendation",
+    "postPartialReadouts": true
+  },
+  "anthropic": {
+    "model": "claude-opus-5",
+    "effort": "high",
+    "maxTokens": 16000,
+    "_comment": "Only the Strategic Advisor and the Learning Skill spend tokens. The daily pipeline spends none."
+  }
+}
