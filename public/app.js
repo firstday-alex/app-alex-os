@@ -725,7 +725,8 @@ function renderTestCard(test, ti) {
     ? `<span class="sig-chip ${SIG_TONE[headline.tone] ?? "flat"}">${esc(headline.label)} on ${esc(headline.label === "Strong" || headline.label === "Directional" ? headline.metric ?? "" : "")}</span>`
     : "";
 
-  return `<div class="test-card">
+  // id-based, so a deep link survives tests being added, removed or reordered.
+  return `<div class="test-card" id="test-${esc(test.id)}" data-test-id="${esc(test.id)}">
       <button class="test-head" data-node="${esc(openKey)}">
         <span class="caret ${open ? "open" : ""}">▸</span>
         <span class="test-name">${esc(test.name)}</span>
@@ -733,6 +734,11 @@ function renderTestCard(test, ti) {
         ${headlineChip}
         <span class="meta">${esc(test.daysRunning ?? "?")}d · ${esc(test.minOrdersPerGroup ?? "?")} orders${gate ? ` · ${esc(gate)}` : ""}</span>
       </button>
+      ${
+        test.consoleUrl
+          ? `<a class="test-out" href="${esc(test.consoleUrl)}" target="_blank" rel="noreferrer" title="Open this test in Intelligems">Intelligems ↗</a>`
+          : ""
+      }
       ${!open && test.experienceDiff?.summary ? `<div class="test-peek">${esc(test.experienceDiff.summary)}</div>` : ""}
       ${body}
     </div>`;
@@ -1041,7 +1047,24 @@ function renderRocks() {
           ${r.readout?.headline ? `· <strong>${esc(r.readout.headline)}</strong>` : ""}
         </span>
         <span class="rock-links" data-stop>
-          ${(r.experimentLinks ?? []).map((l, i) => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label || `experiment ${i + 1}`)}</a>`).join("")}
+          ${(r.experimentLinks ?? [])
+            .map((l, i) => {
+              const label = esc(l.label || `experiment ${i + 1}`);
+              // Two destinations, because they answer different questions. The in-app
+              // link goes to the readout this system has already built — the tree, the
+              // segments, the projection — with that test expanded. The outward one
+              // goes to Intelligems for everything this system does not hold. An
+              // experiment link with no experience id parsed out of it can only do the
+              // latter.
+              const inApp = l.experienceId
+                ? `<a href="#tests/${encodeURIComponent(l.experienceId)}" title="Open this test's readout in the Tests view">${label}</a>`
+                : `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${label}</a>`;
+              const out = l.experienceId
+                ? `<a class="link-out" href="${esc(l.url)}" target="_blank" rel="noreferrer" title="Open ${label} in Intelligems">↗</a>`
+                : "";
+              return inApp + out;
+            })
+            .join("")}
           ${r.websiteUrl ? `<a href="${esc(r.websiteUrl)}" target="_blank" rel="noreferrer">site</a>` : ""}
           ${(r.reportLinks ?? []).map((l, i) => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label || `report ${i + 1}`)}</a>`).join("")}
         </span>
@@ -1450,6 +1473,46 @@ $("settings-audit-wrap")?.addEventListener("toggle", async (event) => {
     : '<p class="sub">No changes recorded yet.</p>';
 });
 
+/* ------------------------------ deep links ------------------------------
+   `#tests/<experienceId>` opens the Tests view with that test already expanded and
+   scrolled to. This is what makes a rock's experiment link useful: a big swing points at
+   the test that is meant to prove it, and following it should land on the answer rather
+   than on a list of nine cards to hunt through.
+
+   Keyed on the experience id rather than the card's position, so a link keeps working
+   as tests start and end. */
+
+function parseHash(hash) {
+  const [name, ...rest] = (hash || "#readout").slice(1).split("/");
+  return { name: name || "readout", target: rest.join("/") ? decodeURIComponent(rest.join("/")) : null };
+}
+
+/** Expands the named test and brings it into view. Safe to call before it has rendered. */
+function focusTest(testId, { attempt = 0 } = {}) {
+  if (!testId) return;
+
+  const card = document.querySelector(`.test-card[data-test-id="${CSS.escape(testId)}"]`);
+  if (!card) {
+    // The Tests view loads its notes asynchronously and re-renders. Retry briefly rather
+    // than silently doing nothing, then give up rather than spinning forever.
+    if (attempt < 20) setTimeout(() => focusTest(testId, { attempt: attempt + 1 }), 150);
+    return;
+  }
+
+  const key = card.querySelector(".test-head")?.dataset.node;
+  if (key && !state.openTests.has(key)) {
+    state.openTests.add(key);
+    renderTests();
+    // renderTests replaced the node, so re-find it before scrolling.
+    return focusTest(testId, { attempt });
+  }
+
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+  // A brief highlight, because scrolling alone leaves you unsure which card was meant.
+  card.classList.add("test-focused");
+  setTimeout(() => card.classList.remove("test-focused"), 2200);
+}
+
 function showView(name) {
   for (const section of document.querySelectorAll(".view")) {
     section.classList.toggle("hidden", section.id !== `view-${name}`);
@@ -1458,7 +1521,9 @@ function showView(name) {
     button.classList.toggle("active", button.dataset.view === name);
   }
   $("view-title").textContent = VIEW_TITLES[name] ?? name;
-  location.hash = name;
+  // Keep an existing deep-link target: showView is also called on boot from the hash,
+  // and overwriting it there would drop the very test we were asked to open.
+  if (parseHash(location.hash).name !== name) location.hash = name;
   closeDrawer();
   if (name === "rocks" && !state.rocks) loadRocks();
   if (name === "setup" && !state.settings) loadSettings();
@@ -1485,4 +1550,11 @@ $("scrim").addEventListener("click", closeDrawer);
 for (const button of document.querySelectorAll(".nav")) {
   button.addEventListener("click", () => showView(button.dataset.view));
 }
-showView((location.hash || "#readout").slice(1));
+function routeFromHash() {
+  const { name, target } = parseHash(location.hash);
+  showView(name);
+  if (name === "tests" && target) focusTest(target);
+}
+
+addEventListener("hashchange", routeFromHash);
+routeFromHash();

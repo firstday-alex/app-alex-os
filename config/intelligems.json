@@ -1,5 +1,11 @@
 {
   "apiBase": "https://api.intelligems.io/v25-10-beta",
+  "consoleBase": "https://app.intelligems.io",
+  "consolePathByCategory": {
+    "experiment": "/experiment/{id}",
+    "personalization": "/personalization/{id}"
+  },
+  "_comment_console": "Where a human goes to look at a test. Taken from the Intelligems app's own link builder in its published bundle, not guessed: `e.category === 'experiment' ? r.pathname = '/experiment/' + e.id : r.pathname = '/personalization/' + e.id`. Verified 2026-09-11. The app also appends ?action=edit when opening its editor; that is deliberately omitted here, because these are links to look at a test, not to change one.",
   "authHeader": "intelligems-access-token",
   "_VERIFIED": "Endpoints, methods and response field names verified 2026-09-10 against the Intelligems External API reference AND against a real payload from the First Day Life Inc. account (org 86ab4ded-43f9-4a0a-a9ef-80dfd2b5508d, shop first-day-inc.myshopify.com). The captured payload is test/fixtures/intelligems-real.js and the collector is tested against it.",
   "organizationId": "86ab4ded-43f9-4a0a-a9ef-80dfd2b5508d",

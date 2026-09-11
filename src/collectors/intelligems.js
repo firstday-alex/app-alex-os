@@ -243,6 +243,26 @@ export function metricNamesFor(config, experienceDetail) {
   return [...new Set([...p0, ...configured, ...p1, ...tree])];
 }
 
+/**
+ * The Intelligems console URL for one experience.
+ *
+ * The path differs by category, and this is the app's own rule rather than a guess: its
+ * bundle builds `/experiment/${id}` for an experiment and `/personalization/${id}` for a
+ * personalization. It also appends `?action=edit` when opening its editor, which is
+ * deliberately not reproduced — a readout links you to look at a test, never to change
+ * one.
+ */
+export function consoleUrl(experience, config) {
+  const base = config?.intelligems?.consoleBase;
+  const byCategory = config?.intelligems?.consolePathByCategory ?? {};
+  const id = experience?.id;
+  if (!base || !id) return null;
+
+  const template = byCategory[experience?.category] ?? byCategory.experiment;
+  if (!template) return null;
+  return `${String(base).replace(/\/$/, "")}${template.replace("{id}", encodeURIComponent(String(id)))}`;
+}
+
 /** The metric this specific test is actually being judged on, when one is marked primary. */
 export function primaryMetricFor(experienceDetail) {
   const primary = (experienceDetail?.experienceKeyMetrics ?? []).find((m) => m.isPrimary);
@@ -262,6 +282,9 @@ export function normalizeExperiment({ experiment, analysis, detail, config, now 
     name: experiment.name ?? null,
     status: experiment.status ?? null,
     category: experiment.category ?? null,
+    // Where a human goes to look at this test. Carried on the snapshot so the readout,
+    // the dashboard and any future Slack block all use the same link.
+    consoleUrl: consoleUrl(experiment, config),
     startedAt,
     // The platform reports runtime directly. Fall back to computing it only if absent.
     daysRunning: num(verdictBlock?.runtime_days) ?? (startedAt ? daysBetween(startedAt, now.toISOString()) : null),

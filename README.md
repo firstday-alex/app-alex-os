@@ -254,6 +254,13 @@ Severities: **p1** (Layer 1 items and material test movement), **attention**,
 - **The dashboard is not public.** It shows sprint and test data, so it sits behind a shared
   password and a signed, HttpOnly session cookie. Netlify Identity is a drop-in alternative;
   `isAuthorized` in `src/lib/dashboard-auth.js` is the only place that would change.
+- **Tests link both ways.** Each test card links out to Intelligems, and the Tests view
+  answers deep links: `#tests/<experienceId>` opens with that test expanded and scrolled
+  to. A rock's experiment link uses it, so following a big swing lands on the readout for
+  the test meant to prove it rather than on a list of nine cards. The console path comes
+  from the Intelligems app's own link builder — `/experiment/<id>`, or
+  `/personalization/<id>` — and never carries its `?action=edit`, because these are links
+  to look at a test, not to change one.
 - **Every Slack message identifies itself as Claude.** Not configurable.
 - **This system never writes to any platform.** It reads ClickUp and Intelligems and posts
   to Slack. Dropdown drift and field gaps are *flagged*, never auto-corrected. The only

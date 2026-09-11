@@ -361,3 +361,24 @@ tr.underpowered td { opacity: .5; }
 .age-unknown { color: var(--muted); }
 .stale-row td { background: var(--amber-bg); }
 .stale-row td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+
+/* ------------------------- test links and deep links -------------------------
+   The outward link sits on the card rather than inside the expandable body, so it is
+   reachable without opening the test — that is the whole point of a link out. */
+.test-card { position: relative; }
+.test-out {
+  position: absolute; top: 9px; right: 12px; z-index: 2;
+  font-size: 11px; color: var(--muted); text-decoration: none;
+  border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; background: #fff;
+}
+.test-out:hover { color: var(--green); border-color: var(--green); }
+.test-head { padding-right: 96px; }
+
+/* Landing from a deep link. Scrolling alone leaves you unsure which card was meant. */
+.test-focused { outline: 2px solid var(--green); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  .test-focused { transition: outline-color .4s ease; }
+}
+
+.rock-links .link-out { margin-left: 2px; opacity: .65; text-decoration: none; }
+.rock-links .link-out:hover { opacity: 1; }
