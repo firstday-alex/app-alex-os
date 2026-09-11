@@ -688,7 +688,15 @@ function renderTests() {
     ? `<h3>Ended</h3><ul>${delta.ended.map((t) => `<li>${esc(t.name)} — final verdict ${esc(t.finalVerdict ?? "none recorded")}</li>`).join("")}</ul>`
     : "";
 
+  // Not shown is not the same as not there. One quiet line rather than a card each.
+  const setAside = (delta.setAside ?? []).length
+    ? `<p class="meta">${esc(delta.setAside.length)} not shown — ${delta.setAside
+        .map((e) => `${esc(e.name)} (${esc(e.category)})`)
+        .join(", ")}. A personalization has no control group, so there is no verdict to reach.</p>`
+    : "";
+
   host.innerHTML = `<p class="sub">${esc(c.running)} running · ${esc(c.readyForVerdict)} past the readiness gate · ${esc(c.notable)} moved · ${esc(c.quiet)} quiet</p>
+    ${setAside}
     ${(delta.tests ?? []).map(renderTestCard).join("")}
     ${ended}`;
 }

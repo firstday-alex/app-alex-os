@@ -385,13 +385,36 @@ export async function fetchRoster({ config, token, logger, fetchImpl, sleep }) {
   }
 
   // Belt and braces: the roster endpoint may not filter server-side on every version.
-  return all.filter((e) => !e.status || e.status === "started");
+  const started = all.filter((e) => !e.status || e.status === "started");
+
+  // A personalization is an always-on targeting rule, not a test. It has no control to
+  // measure against, so a verdict, a readiness gate and an audience breakdown all mean
+  // nothing for it, and every one of those costs an API call. The platform labels them
+  // itself, so this is a field read rather than a guess about the name.
+  const include = config.intelligems.categories?.include ?? ["experiment"];
+  const kept = started.filter((e) => !e.category || include.includes(e.category));
+  const setAside = started.filter((e) => e.category && !include.includes(e.category));
+
+  if (setAside.length) {
+    logger?.info?.("intelligems.roster_filtered", {
+      kept: kept.length,
+      setAside: setAside.map((e) => ({ name: e.name, category: e.category })),
+    });
+  }
+
+  // An explicit pair, not an array with a property bolted on: the second half is the
+  // part that would otherwise vanish, and a shape that survives a .map() is worth more
+  // than the one line it saves at the call site.
+  return {
+    experiences: kept,
+    setAside: setAside.map((e) => ({ id: String(e.id), name: e.name, category: e.category })),
+  };
 }
 
 export async function collectIntelligems({ config, token, store, logger, fetchImpl, sleep, now = new Date() }) {
   if (!token) throw new Error("INTELLIGEMS_TOKEN is not set");
 
-  const roster = await fetchRoster({ config, token, logger, fetchImpl, sleep });
+  const { experiences: roster, setAside } = await fetchRoster({ config, token, logger, fetchImpl, sleep });
 
   const tests = [];
   const failures = [];
@@ -554,6 +577,12 @@ export async function collectIntelligems({ config, token, store, logger, fetchIm
     // in config/references.json instead, from get_shop_info via the MCP server.
     shop: { currency: config.references?.currency ?? null, timezone: config.references?.shopTimezone ?? null },
     cogsConfigured,
-    meta: { rosterSize: roster.length, collected: tests.length, failed: failures.length },
+    meta: {
+      rosterSize: roster.length,
+      collected: tests.length,
+      failed: failures.length,
+      // Not a failure and not a silent drop: named so the dashboard can account for it.
+      setAside,
+    },
   };
 }

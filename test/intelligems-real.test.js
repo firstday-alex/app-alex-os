@@ -215,6 +215,64 @@ test("an unrecognised envelope is used but reported, never silently emptied", as
   assert.ok(errored.includes("intelligems.roster_unreadable"), "unreadable is an error, not a quiet zero");
 });
 
+/* ------------------------- personalizations are not tests ------------------------- */
+
+test("a personalization is set aside, not judged as a test", async () => {
+  const { fetchRoster } = await import("../src/collectors/intelligems.js");
+  const { loadConfig } = await import("../src/config.js");
+  const config = loadConfig();
+
+  // Both categories the live account actually returns.
+  const page = {
+    totalPages: 1,
+    experiencesList: [
+      { id: "1", name: "[Broad-PDP] Unified PDP price/day", status: "started", category: "experiment" },
+      { id: "2", name: "Translate Pages To Spanish", status: "started", category: "personalization" },
+    ],
+  };
+
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ "content-type": "application/json" }),
+    json: async () => page,
+    text: async () => JSON.stringify(page),
+  });
+
+  const { experiences, setAside } = await fetchRoster({ config, token: "t", fetchImpl, sleep: async () => {} });
+
+  // A personalization has no control group, so a verdict, a readiness gate and an
+  // audience breakdown are all meaningless for it — and each is an API call per run.
+  assert.equal(experiences.length, 1);
+  assert.equal(experiences[0].name, "[Broad-PDP] Unified PDP price/day");
+
+  // Set aside is not dropped. It is named, so the dashboard can account for it.
+  assert.equal(setAside.length, 1);
+  assert.equal(setAside[0].category, "personalization");
+  assert.equal(setAside[0].name, "Translate Pages To Spanish");
+});
+
+test("an experience with no category is kept rather than silently discarded", async () => {
+  const { fetchRoster } = await import("../src/collectors/intelligems.js");
+  const { loadConfig } = await import("../src/config.js");
+  const config = loadConfig();
+
+  // If the platform stops sending `category`, the filter must fail open. Dropping every
+  // test because a field went missing is the worse of the two failures by a long way.
+  const page = { totalPages: 1, experiencesList: [{ id: "1", name: "No category", status: "started" }] };
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ "content-type": "application/json" }),
+    json: async () => page,
+    text: async () => JSON.stringify(page),
+  });
+
+  const { experiences, setAside } = await fetchRoster({ config, token: "t", fetchImpl, sleep: async () => {} });
+  assert.equal(experiences.length, 1);
+  assert.equal(setAside.length, 0);
+});
+
 /* --------------------------- tree metric coverage --------------------------- */
 
 test("every metric the tree names is pulled, or the branches read as No data", async () => {

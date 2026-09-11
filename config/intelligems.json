@@ -30,6 +30,12 @@
     },
     "_comment": "The analytics endpoints are POST, not GET, and take a JSON body. There is no /shop endpoint and no separate metrics-config endpoint: per-test key metrics ride on the experience object as experienceKeyMetrics. Pagination on /experiences-list is 1-BASED with a totalPages envelope, unlike ClickUp's 0-based paging."
   },
+  "categories": {
+    "include": [
+      "experiment"
+    ],
+    "_comment": "Which experience categories are decisions. The live account returns two: 'experiment' and 'personalization'. A personalization is an always-on targeting rule with no control group, so a verdict, a readiness gate, a significance call and an audience breakdown are all meaningless for it, and each of those is an API call per run. They are set aside rather than dropped: the count and names ride on snapshot meta.setAside so the dashboard can account for them."
+  },
   "rateLimits": {
     "_comment": "Documented burst/refill: experience endpoints burst 50, refill 25 per 30s. Export burst 20. Sitewide burst 10, refill 5 per 30s. Response headers are x-ratelimit-limit, x-ratelimit-remaining and x-ratelimit-reset, where reset is MILLISECONDS UNTIL RESET, not an epoch. A 429 body carries retryAfter in seconds. A once-daily pull of 7 tests is nowhere near these limits."
   },

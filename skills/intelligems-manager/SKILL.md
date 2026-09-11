@@ -121,6 +121,29 @@ at all, nothing can ever be strong: one signal cannot corroborate itself.
 headline resting on noisy components is labelled as such, rather than being allowed to
 borrow authority from its own summary.
 
+## Personalizations are not tests
+
+The platform's roster mixes two categories: `experiment` and `personalization`. Only the
+first is a decision.
+
+A personalization is an always-on targeting rule — show Spanish pages to Spanish traffic
+— with no control group held back. There is nothing to ship and nothing to kill, so a
+verdict, a readiness gate, a significance call and an audience breakdown are all
+meaningless for it. On the live account both personalizations came back with a **null
+verdict**, which is the tell: the platform itself declines to judge them.
+
+They are filtered on `category` (`categories.include` in config), which is a field read
+rather than a guess at the name. Two consequences:
+
+- **Four fewer API calls per run** — each set-aside experience would otherwise cost a
+  detail call, a timeseries call, and one call per audience dimension.
+- **They are set aside, not dropped.** The names ride on `meta.setAside` through the delta
+  to one quiet line in the dashboard. Not shown is not the same as not there.
+
+The filter **fails open**: an experience with no `category` at all is kept. If the platform
+stops sending the field, showing an extra row is much the lesser failure against silently
+emptying the readout.
+
 ## Audience breakdown
 
 A test judged only in aggregate forces a binary decision: ship it or kill it. The

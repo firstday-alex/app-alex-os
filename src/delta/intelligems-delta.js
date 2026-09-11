@@ -231,6 +231,9 @@ export function intelligemsDelta(baseline, current, { config, logger, settings =
     tests,
     ended,
     failures: current?.failures ?? [],
+    // Personalizations and anything else that is not a test. Carried through so the
+    // dashboard can say what it is not showing.
+    setAside: current?.meta?.setAside ?? [],
     counts: {
       running: tests.length,
       notable: tests.filter((t) => t.notable).length,
