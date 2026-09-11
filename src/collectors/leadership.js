@@ -20,7 +20,13 @@ export function resolveOwner(ownerRef, people) {
   return { clickupUserId: asString, name: asString, slackUserId: null, unresolved: true };
 }
 
-export async function collectLeadership({ config, clickupSnapshot = null, logger, now = new Date() }) {
+/**
+ * @param {object} opts
+ * @param {import("../store/rocks.js").RocksStore} [opts.rocksStore]
+ *   The live store. When absent (tests, or a store that has never been written), the
+ *   config file is used instead, which keeps the old behaviour working.
+ */
+export async function collectLeadership({ config, clickupSnapshot = null, rocksStore = null, logger, now = new Date() }) {
   const queueConfig = config.leadershipQueue ?? {};
   const people = config.people ?? {};
 
@@ -39,8 +45,28 @@ export async function collectLeadership({ config, clickupSnapshot = null, logger
     priority: "P1",
   });
 
-  const queue = (queueConfig.queue ?? []).map((item) => mapItem(item, "active"));
-  const backlog = (queueConfig.backlog ?? []).map((item) => mapItem(item, "backlog"));
+  // The store is the source of truth. Config is the seed for a store that has never been
+  // written, and the fallback if the store cannot be reached, so a Blobs outage degrades
+  // Layer 1 to yesterday's config rather than emptying it.
+  let rawQueue = queueConfig.queue ?? [];
+  let rawBacklog = queueConfig.backlog ?? [];
+  let source = "config";
+  let version = null;
+
+  if (rocksStore) {
+    try {
+      const stored = await rocksStore.list({ seed: [...(queueConfig.queue ?? []), ...(queueConfig.backlog ?? [])] });
+      rawQueue = stored.queue;
+      rawBacklog = stored.backlog;
+      source = "store";
+      version = stored.version;
+    } catch (err) {
+      logger?.warn("leadership.store_unavailable", { err, fallback: "config/leadership-queue.json" });
+    }
+  }
+
+  const queue = rawQueue.map((item) => mapItem(item, "active"));
+  const backlog = rawBacklog.map((item) => mapItem(item, "backlog"));
 
   // The dropdown options currently offered in ClickUp, so the sync check can compare them
   // against the live queue. Pulled from the snapshot we already have. No extra API call.
@@ -74,6 +100,8 @@ export async function collectLeadership({ config, clickupSnapshot = null, logger
     roster: roster.length ? roster : rosterFallback,
     dropdownOptions,
     meta: {
+      source,
+      version,
       queueSize: queue.length,
       backlogSize: backlog.length,
       rosterSize: (roster.length ? roster : rosterFallback).length,

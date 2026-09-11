@@ -11,7 +11,7 @@ const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 const FN = "/.netlify/functions";
-let state = { report: null, openItems: [], advisorButtonText: "Ask for recommendation" };
+let state = { report: null, openItems: [], advisorButtonText: "Ask for recommendation", rocks: null };
 
 /* ---------------------------------- auth ---------------------------------- */
 
@@ -108,6 +108,7 @@ function render() {
   renderLayer3(report);
   renderOpenItems();
   $("report-text").textContent = report.text ?? "";
+  loadRocks();
 }
 
 function tile(n, k) {
@@ -377,3 +378,129 @@ $("toggle-text").addEventListener("click", () => {
 
 // Already signed in from a previous visit? The cookie will tell us.
 load();
+
+
+/* ---------------------------------- rocks ----------------------------------
+   Layer 1's data. Rocks change weekly, so they live in the app's own store rather
+   than in config, and every write is versioned so a stale form cannot clobber a
+   newer change. */
+
+async function loadRocks() {
+  try {
+    const res = await fetch(`${FN}/rocks`);
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+    state.rocks = await res.json();
+    renderRocks();
+  } catch (err) {
+    rocksError(`Could not load the rocks: ${err.message}`);
+  }
+}
+
+function rocksError(message) {
+  const box = $("rocks-error");
+  if (!message) return box.classList.add("hidden");
+  box.textContent = message;
+  box.classList.remove("hidden");
+}
+
+function renderRocks() {
+  const data = state.rocks;
+  if (!data) return;
+  const people = data.people ?? [];
+  const ownerOptions = (selected) =>
+    [`<option value="">no owner</option>`]
+      .concat(people.map((p) => `<option value="${esc(p.id)}"${String(selected) === p.id ? " selected" : ""}>${esc(p.name)}</option>`))
+      .join("");
+  const stateOptions = (selected) =>
+    (data.states ?? []).map((s) => `<option value="${esc(s)}"${s === selected ? " selected" : ""}>${esc(s)}</option>`).join("");
+
+  const row = (r) => `
+    <tr data-id="${esc(r.id)}">
+      <td class="wrap"><input class="rk" data-f="title" value="${esc(r.title)}"></td>
+      <td><select class="rk" data-f="state">${stateOptions(r.state)}</select></td>
+      <td><select class="rk" data-f="owner">${ownerOptions(r.owner)}</select></td>
+      <td><input class="rk narrow" data-f="type" value="${esc(r.type ?? "")}" placeholder="test / initiative"></td>
+      <td><input class="rk narrow" data-f="shippedAt" value="${esc(r.shippedAt ?? "")}" placeholder="YYYY-MM-DD"></td>
+      <td><input class="rk narrow" data-f="lastMiniReadoutAt" value="${esc(r.lastMiniReadoutAt ?? "")}" placeholder="YYYY-MM-DD"></td>
+      <td><button class="ghost rock-save">Save</button> <button class="ghost rock-del">Remove</button></td>
+    </tr>`;
+
+  $("rocks-editor").innerHTML = `
+    <div class="scroll"><table>
+      <thead><tr><th>Rock</th><th>State</th><th>Owner</th><th>Type</th><th>Shipped</th><th>Last mini readout</th><th></th></tr></thead>
+      <tbody>${(data.rocks ?? []).map(row).join("") || '<tr><td colspan="7">No rocks yet. Add the first one below.</td></tr>'}</tbody>
+    </table></div>
+    <p class="sub">Version ${esc(data.version)}${data.updatedAt ? ` · last changed ${new Date(data.updatedAt).toLocaleString()}` : ""}</p>
+    <div class="bar">
+      <input id="new-rock" placeholder="New rock title" style="flex:1;min-width:220px;padding:6px 10px;border:1px solid var(--line);border-radius:4px;font:inherit">
+      <button id="add-rock">Add rock</button>
+    </div>`;
+}
+
+function rowPayload(tr) {
+  const out = { id: tr.dataset.id };
+  for (const el of tr.querySelectorAll(".rk")) out[el.dataset.f] = el.value.trim();
+  return out;
+}
+
+document.addEventListener("click", async (event) => {
+  const save = event.target.closest("button.rock-save");
+  const del = event.target.closest("button.rock-del");
+  const add = event.target.closest("#add-rock");
+  if (!save && !del && !add) return;
+
+  rocksError("");
+  const button = save || del || add;
+  button.disabled = true;
+  try {
+    let res;
+    if (add) {
+      const title = $("new-rock").value.trim();
+      if (!title) return;
+      res = await fetch(`${FN}/rocks`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ rock: { title }, version: state.rocks.version }),
+      });
+    } else if (save) {
+      res = await fetch(`${FN}/rocks`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ rock: rowPayload(save.closest("tr")), version: state.rocks.version }),
+      });
+    } else {
+      const id = del.closest("tr").dataset.id;
+      if (!confirm(`Remove "${id}"? The change is recorded, but the rock is gone from the queue.`)) return;
+      res = await fetch(`${FN}/rocks?id=${encodeURIComponent(id)}&version=${state.rocks.version}`, { method: "DELETE" });
+    }
+
+    const body = await res.json();
+    if (!res.ok) {
+      // 409 means someone else changed the rocks first. Reload so the user sees theirs.
+      rocksError(body.error ?? `HTTP ${res.status}`);
+      if (res.status === 409) await loadRocks();
+      return;
+    }
+    await loadRocks();
+  } catch (err) {
+    rocksError(err.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("rocks-audit-wrap")?.addEventListener("toggle", async (event) => {
+  if (!event.target.open) return;
+  const res = await fetch(`${FN}/rocks?audit=true`).then((r) => r.json()).catch(() => null);
+  const entries = res?.audit ?? [];
+  $("rocks-audit").innerHTML = entries.length
+    ? entries.map((e) => `
+        <div class="flag">
+          <p class="meta">${esc(new Date(e.at).toLocaleString())} · v${esc(e.version)} · ${esc(e.actor)}</p>
+          <p class="msg">${esc(e.reason ?? "")}</p>
+          ${e.changes.map((c) => `<p class="meta">${esc(c.change)} ${esc(c.title ?? c.id)}${
+            c.diff ? " — " + Object.entries(c.diff).map(([f, d]) => `${esc(f)}: ${esc(d.from ?? "none")} to ${esc(d.to ?? "none")}`).join(", ") : ""
+          }</p>`).join("")}
+        </div>`).join("")
+    : '<p class="sub">No changes recorded yet.</p>';
+});

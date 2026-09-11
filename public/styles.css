@@ -96,3 +96,11 @@ pre { background: var(--code); padding: 12px; border-radius: 4px; overflow-x: au
 #login input { font: inherit; width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; margin-bottom: 10px; }
 .hidden { display: none !important; }
 .err { color: var(--red); font-size: 13px; }
+
+/* rocks editor */
+.rk { font: inherit; width: 100%; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.rk.narrow { min-width: 120px; }
+#rocks-editor td { vertical-align: middle; }
+#rocks-audit-wrap { margin-top: 14px; }
+#rocks-audit-wrap summary { cursor: pointer; color: var(--green); font-size: 13px; }
+#rocks-audit { margin-top: 10px; }

@@ -14,7 +14,7 @@ request. Code and skill move together because they read the same file.
 | `clickup.json` | List id, field ids, status name map, delta and stall rules |
 | `intelligems.json` | API paths, P0/P1 metric lists, readiness gate, verdict map, bands |
 | `leadership.json` | Tolerance window, one-big-swing rule, cross layer thresholds |
-| `leadership-queue.json` | The live leadership queue and backlog. Layer 1's data. |
+| `leadership-queue.json` | **Seed and fallback only.** The live rocks are in the app's store, edited on the dashboard. |
 | `references.json` | Stored LTV reference values used to project future test value |
 | `people.json` | Team roster. ClickUp user ids to names and Slack ids. |
 

@@ -1,22 +1,5 @@
 {
-  "_comment": "Layer 1. The leadership queue and the leadership backlog. Every item here is a P1 by definition. This file is the data for Layer 1 and is edited by pull request, same as every other config file, so the queue has a git history. `clickupOptionId` ties an item to its Leadership Priority dropdown option in ClickUp; leave null until the option exists and the sync check will flag it.",
-
-  "queue": [
-    {
-      "id": "example-1",
-      "title": "EXAMPLE. Replace this. Subscription upsell test on PDP",
-      "type": "test",
-      "owner": null,
-      "state": "active",
-      "clickupOptionId": null,
-      "shippedAt": null,
-      "lastMiniReadoutAt": null,
-      "intelligemsExperienceId": null,
-      "notes": "state is one of: active, shipped, backlog. owner is a clickup user id from people.json, or null when unassigned. shippedAt and lastMiniReadoutAt are ISO dates and drive the mini readout tolerance check."
-    }
-  ],
-
-  "backlog": [],
-
-  "_TODO": "Alex to populate with the real leadership queue. The example entry is inert but will produce an 'unassigned priority' flag until removed, which is the correct behavior for an unowned P1."
+  "_comment": "SEED ONLY. Layer 1's rocks now live in the app's own store (Netlify Blobs), edited from the dashboard under 'Manage rocks', with an audit trail of every change. This file is used for exactly two things: it seeds the store the first time it is read if the store has never been written, and it is the fallback if the store cannot be reached, so a storage outage degrades Layer 1 to this rather than emptying it. Editing this file does NOT change a store that has already been written. Rocks are data and change weekly; the RULES that judge them (tolerance window, capacity, cross layer thresholds) stay in config/leadership.json and still change by pull request.",
+  "queue": [],
+  "backlog": []
 }
