@@ -25,14 +25,25 @@ export const EDITABLE = [
   "config/clickup.json",
   "config/intelligems.json",
   "config/leadership.json",
-  "config/leadership-queue.json",
   "config/references.json",
   "config/people.json",
+  "config/shopify.json",
   "skills/clickup-manager/SKILL.md",
   "skills/intelligems-manager/SKILL.md",
   "skills/leadership-priority-manager/SKILL.md",
+  "skills/store-metrics-manager/SKILL.md",
   "skills/strategic-advisor/SKILL.md",
 ];
+
+/**
+ * Files that look editable but are not, with the reason. Naming them is better than
+ * silently rejecting a reasonable request: the skill can tell Alex where the thing
+ * actually lives instead of saying no.
+ */
+export const NOT_EDITABLE = {
+  "config/leadership-queue.json":
+    "Rocks moved out of config and into the app's own store. Edit them on the Rocks screen, where every change is recorded with what it was before. This file is only a seed for a store that has never been written, and a fallback if storage is unreachable.",
+};
 
 const PROPOSAL_SCHEMA = {
   type: "object",
@@ -111,7 +122,13 @@ export async function proposeChange({ feedback, reportContext, config, env = pro
   }
   if (!EDITABLE.includes(proposal.targetFile)) {
     logger?.warn?.("learning.target_rejected", { targetFile: proposal.targetFile });
-    return { actionable: false, error: `${proposal.targetFile} is not an editable file. Nothing proposed.` };
+    const why = NOT_EDITABLE[proposal.targetFile];
+    return {
+      actionable: false,
+      error: why
+        ? `${proposal.targetFile} is not edited here. ${why}`
+        : `${proposal.targetFile} is not an editable file. Nothing proposed.`,
+    };
   }
   // A config file that no longer parses would take the pipeline down on the next run.
   if (proposal.targetFile.endsWith(".json")) {

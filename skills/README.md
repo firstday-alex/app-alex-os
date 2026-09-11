@@ -1,15 +1,22 @@
 # skills/
 
-Five skills. Three managers that run as deterministic code, one strategic advisor that
-runs on demand, and one that learns from Alex's feedback and rewrites the others.
+Managers that run as deterministic code, one strategic advisor that runs on demand, and
+one that learns from Alex's feedback and rewrites the others.
 
-| # | Skill | Runs as | Invoked by |
-|---|---|---|---|
-| 1 | ClickUp Manager | deterministic code | the 8 AM scheduler, and the dashboard refresh |
-| 2 | Intelligems Manager | deterministic code | the 8 AM scheduler, and the dashboard refresh |
-| 3 | Leadership Priority Manager | deterministic code | the 8 AM scheduler, and the dashboard refresh |
-| 4 | Learning Skill | agentic | Alex replying to a readout in Slack |
-| 5 | Strategic Advisor | agentic | Alex clicking the button on a flagged item |
+| # | Skill | Layer | Runs as | Invoked by |
+|---|---|---|---|---|
+| 1 | ClickUp Manager | 2 | deterministic code | the 8 AM scheduler, and the dashboard refresh |
+| 2 | Intelligems Manager | 3 | deterministic code | the 8 AM scheduler, and the dashboard refresh |
+| 3 | Leadership Priority Manager | 1 | deterministic code | the 8 AM scheduler, and the dashboard refresh |
+| 4 | Learning Skill | — | agentic | Alex replying to a readout in Slack |
+| 5 | Strategic Advisor | — | agentic | Alex clicking the button on a flagged item |
+| 6 | Store Metrics Manager | 0 | deterministic code | the 8 AM scheduler, and the dashboard refresh |
+
+**Six, not the spec's five.** The requirements document specifies five and Layer 0 was not
+in it: the store-wide metrics overview was asked for later. Adding the skill file rather
+than leaving Layer 0 as code-only keeps the rule that every manager has a plain-language
+spec — and, more practically, it is what lets the Learning Skill change Layer 0 at all.
+Without it, "stop flagging discounts" would have been a request the system had to refuse.
 
 ## Why the manager skills are written as skills but run as code
 

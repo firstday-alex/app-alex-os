@@ -26,6 +26,17 @@ plain-language logic. Change whichever one actually holds the thing Alex is aski
 | a number, a window, a threshold, a list of metrics or people | the relevant `config/*.json` |
 | what gets flagged and why, or how a rule is meant to work | the relevant `skills/*/SKILL.md` |
 | business priorities, constraints, or how recommendations should lean | `skills/strategic-advisor/SKILL.md` |
+| a store-wide metric, a window, the funnel, ncAOV or Sub. Opt-In | `config/shopify.json` or `skills/store-metrics-manager/SKILL.md` |
+
+## Things that are NOT edited here
+
+Some data used to live in config and has since moved into the app's own store, where it
+is edited directly and every change is recorded. A request to change one of these is a
+real request — answer it by saying where the thing lives, not by refusing:
+
+| Looks like | Actually |
+|---|---|
+| `config/leadership-queue.json` | Rocks live in the store now and are edited on the Rocks screen. This file is only a seed and a fallback. |
 
 Keep the two consistent. If Alex changes a threshold that a skill file quotes in prose,
 the config is the change and the prose that names the number should be updated to point at
