@@ -306,3 +306,16 @@ td.bad { color: var(--red); font-weight: 600; }
 /* test owner */
 .chip.owner { background: #eef4ef; color: var(--green); border-color: var(--green); }
 .notes-edit select.nt { font: inherit; width: 100%; padding: 6px 9px; margin-top: 3px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+
+/* control vs variant difference */
+.ediff { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; margin: 8px 0; }
+.ediff-desc { font-size: 13px; margin: 6px 0; }
+.ediff-missing { font-style: italic; }
+.vdiffs { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-top: 8px; }
+.vdiff { border: 1px solid var(--line); border-left: 3px solid var(--green); border-radius: 4px; padding: 8px 10px; }
+.vdiff.control { border-left-color: var(--line); }
+.vdiff-head { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; margin-bottom: 4px; }
+.vdiff-changes { margin: 4px 0 0; padding-left: 16px; font-size: 12px; color: var(--muted); }
+.vdiff-changes li { margin-bottom: 2px; word-break: break-word; }
+.vdiff-changes a { color: var(--green); }
+.test-peek { font-size: 11px; color: var(--muted); padding: 0 14px 9px 33px; margin-top: -6px; }

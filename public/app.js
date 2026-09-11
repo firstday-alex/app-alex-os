@@ -547,6 +547,38 @@ function renderNotes(testId) {
     </div>`;
 }
 
+/* --------------------- what is different, control vs variant --------------------- */
+
+function renderExperienceDiff(diff) {
+  if (!diff) return "";
+
+  const variation = (v) => `<div class="vdiff${v.isControl ? " control" : ""}">
+      <div class="vdiff-head">
+        <strong>${esc(v.name)}</strong>
+        ${v.isControl ? '<span class="chip">control</span>' : ""}
+        ${v.percentage != null ? `<span class="meta">${esc(v.percentage)}% of traffic</span>` : ""}
+        ${v.unchanged ? '<span class="meta">unchanged baseline</span>' : ""}
+      </div>
+      ${v.changes.length
+        ? `<ul class="vdiff-changes">${v.changes
+            .map((c) => `<li>${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noreferrer">${esc(c.text)}</a>` : esc(c.text)}</li>`)
+            .join("")}</ul>`
+        : '<p class="meta">No configuration of its own.</p>'}
+    </div>`;
+
+  return `<div class="ediff">
+      <div class="bar">
+        ${diff.types.map((x) => `<span class="chip">${esc(x)}</span>`).join("")}
+        <span class="meta">${esc(diff.audience)}</span>
+        ${diff.previewPath ? `<a class="meta" href="${esc(diff.previewPath)}" target="_blank" rel="noreferrer">preview the page</a>` : ""}
+      </div>
+      ${diff.description
+        ? `<p class="ediff-desc">${esc(diff.description)}</p>`
+        : '<p class="meta ediff-missing">No description written in Intelligems. What follows is derived from the variation configuration: it says what the test changes, not why.</p>'}
+      <div class="vdiffs">${[diff.control, ...diff.variants].filter(Boolean).map(variation).join("")}</div>
+    </div>`;
+}
+
 /* -------------------------------- test card -------------------------------- */
 
 function renderTestCard(test, ti) {
@@ -565,6 +597,7 @@ function renderTestCard(test, ti) {
   const body = open
     ? `<div class="test-body">
         <p class="meta">${esc(test.recommendation.reason)}</p>
+        ${renderExperienceDiff(test.experienceDiff)}
         ${renderNotes(test.id)}
         ${trees}
         <div class="bar tree-controls">
@@ -586,6 +619,7 @@ function renderTestCard(test, ti) {
         ${headlineChip}
         <span class="meta">${esc(test.daysRunning ?? "?")}d · ${esc(test.minOrdersPerGroup ?? "?")} orders${gate ? ` · ${esc(gate)}` : ""}</span>
       </button>
+      ${!open && test.experienceDiff?.summary ? `<div class="test-peek">${esc(test.experienceDiff.summary)}</div>` : ""}
       ${body}
     </div>`;
 }

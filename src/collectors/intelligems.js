@@ -11,6 +11,7 @@
 
 import { httpJson } from "../lib/http.js";
 import { daysBetween } from "../lib/time.js";
+import { describeExperience } from "./experience-diff.js";
 
 const METRICS_CONFIG_TTL_SECONDS = 7 * 24 * 60 * 60;
 
@@ -240,6 +241,9 @@ export function normalizeExperiment({ experiment, analysis, detail, config, now 
     metricNames,
     primaryMetric: primaryMetricFor(detail ?? experiment),
     metricsConfigured: metricNames.length > 0,
+    // What is actually different between control and variant. A number is unreadable
+    // without it.
+    experienceDiff: describeExperience(detail ?? experiment),
     // Whether profit metrics mean anything on this account at all.
     cogsConfigured: analysis?.cogsConfigured ?? null,
     cogsCoveragePct: num(analysis?.cogsCoveragePct),
