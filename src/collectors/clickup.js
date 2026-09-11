@@ -11,7 +11,11 @@
 import { httpJson, paginate } from "../lib/http.js";
 
 const FIELD_MAP_CACHE_KEY = "clickup/field-map";
-const FIELD_MAP_TTL_SECONDS = 24 * 60 * 60;
+// One hour, not one day. The map holds the dropdown LABELS, and a label changes the
+// moment somebody renames an option in ClickUp — which the cache cannot detect without
+// fetching, so the only lever is how long a stale name can survive. One request an hour
+// is nothing against a readout that names a project by a title nobody uses any more.
+const FIELD_MAP_TTL_SECONDS = 60 * 60;
 
 function authHeaders(token) {
   // ClickUp personal tokens go on Authorization with no scheme prefix.
@@ -322,10 +326,21 @@ export async function fetchTeamMembers({ config, token, logger, fetchImpl, sleep
  * The collector. Returns a snapshot, or throws. Callers treat a throw as "this section is
  * missing" and still render the rest of the readout.
  */
-export async function collectClickUp({ config, token, store, logger, fetchImpl, sleep, baseline = null, now = new Date() }) {
+export async function collectClickUp({ config, token, store, logger, fetchImpl, sleep, baseline = null, now = new Date(), mode = "refresh" }) {
   if (!token) throw new Error("CLICKUP_TOKEN is not set");
 
-  const fieldMap = await fetchFieldMap({ config, token, store, logger, fetchImpl, sleep });
+  // The official readout always fetches the map fresh. It is one request, once a day,
+  // and it is the difference between the 8 AM message naming a project correctly and
+  // naming it whatever it was called yesterday.
+  const fieldMap = await fetchFieldMap({
+    config,
+    token,
+    store,
+    logger,
+    fetchImpl,
+    sleep,
+    forceRefresh: mode === "official",
+  });
   const { items: rawTasks, pages, truncated } = await fetchTaskPages({ config, token, logger, fetchImpl, sleep });
 
   const tasks = rawTasks.map((task) =>

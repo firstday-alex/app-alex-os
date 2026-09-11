@@ -205,3 +205,61 @@ test("a rock is considered worked on when a ticket names its Big Swing", () => {
   const orphans = result.flags.filter((f) => f.rule === "crosslayer.priority_without_work").map((f) => f.subject.label);
   assert.ok(!orphans.includes("Subscription upsell"), "its Big Swing is being worked on");
 });
+
+/* --------------------- surviving a ClickUp option rename --------------------- */
+
+test("a renamed dropdown option does not break a rock linked by option id", async () => {
+  const { crossLayerCheck } = await import("../src/delta/crosslayer.js");
+
+  const config = { leadership: { crossLayer: {} }, clickup: { bauMarkers: [] } };
+  const leadership = {
+    roster: [{ clickupUserId: 1, name: "Dana" }],
+    queue: [{ state: "active", title: "ncAOV", clickupOptionId: "opt-1", clickupBigSwingOptionId: "swing-1" }],
+  };
+  const task = {
+    id: "t1",
+    name: "Ship the buy box",
+    bucket: "inProgress",
+    status: "in-progress",
+    assignees: [{ id: 1, username: "dana" }],
+    taskOwners: [],
+    // The option was renamed in ClickUp this morning. The id did not change.
+    bigSwing: { optionId: "swing-1", label: "New Problem Based Bundle Buy Box v2" },
+    leadershipPriority: { optionId: "opt-1", label: "ncAOV" },
+  };
+
+  const out = crossLayerCheck({ clickupDelta: { tasks: [task] }, leadership, config, dateKey: "2026-09-11" });
+  const dana = out.people.find((p) => p.name === "Dana");
+  assert.equal(dana.distinctBigSwings, 1, "the link held through the rename");
+  assert.equal(dana.bigSwings[0].linkedBy, "id");
+  assert.equal(dana.untetheredSwings.length, 0);
+});
+
+test("a rock linked only by title is reported, because a rename would break it silently", async () => {
+  const { crossLayerCheck } = await import("../src/delta/crosslayer.js");
+
+  const config = { leadership: { crossLayer: {} }, clickup: { bauMarkers: [] } };
+  const leadership = {
+    roster: [{ clickupUserId: 1, name: "Dana" }],
+    // No clickupOptionId: the only thing joining this rock to ClickUp is its title.
+    queue: [{ state: "active", title: "ncAOV", clickupOptionId: null }],
+  };
+  const task = {
+    id: "t1",
+    name: "Ship the buy box",
+    bucket: "inProgress",
+    status: "in-progress",
+    assignees: [{ id: 1, username: "dana" }],
+    taskOwners: [],
+    bigSwing: null,
+    leadershipPriority: { optionId: "opt-1", label: "ncAOV" },
+  };
+
+  const out = crossLayerCheck({ clickupDelta: { tasks: [task] }, leadership, config, dateKey: "2026-09-11" });
+  assert.equal(out.people.find((p) => p.name === "Dana").bigSwings[0].linkedBy, "title");
+
+  const flag = out.flags.find((f) => f.rule === "crosslayer.linked_by_title");
+  assert.ok(flag, "the fragile link is named before it breaks, not after");
+  assert.match(flag.message, /ncAOV/);
+  assert.match(flag.message, /renamed/);
+});

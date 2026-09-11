@@ -117,6 +117,7 @@ export async function runPipeline(opts = {}) {
         sleep,
         baseline: baselines.clickup.snapshot,
         now,
+        mode,
       }),
     ),
     runCollector("shopify", () =>

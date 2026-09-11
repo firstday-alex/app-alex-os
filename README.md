@@ -241,7 +241,13 @@ Severities: **p1** (Layer 1 items and material test movement), **attention**,
   interval skips its band check and says so. A null profit metric renders as "not
   configured", never as zero. Unknown days or orders is unknown, not zero.
 - **Dropdowns are matched by option id, not label.** Renaming an option in ClickUp does not
-  produce a phantom "priority changed" line.
+  produce a phantom "priority changed" line, and a rock stores only the option id, so a
+  rename never breaks the link. The one thing a rename does affect is the *name shown*,
+  which comes from a cached field map — cached for an hour, and always re-fetched for the
+  8 AM official run, so the readout never announces a project by a title nobody uses. A
+  rock that has no Rock Reference set is joined to ClickUp by title match instead, which
+  a rename *would* break silently; that is reported as hygiene before it breaks, not
+  after.
 - **Tokens never reach a log line.** Redaction happens inside the logger, by header name
   and by scrubbing registered secret values out of every string — including error messages,
   which is where a token usually escapes. There is a test for it.

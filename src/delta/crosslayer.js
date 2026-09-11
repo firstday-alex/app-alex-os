@@ -58,6 +58,13 @@ export function classifyTicketLink(task, { activeOptionIds, activeTitles, active
       // Named a big swing, but no active rock claims it. It is real work on a real
       // project that nothing at leadership level is currently tracking.
       untethered: !claimed,
+      linkedBy: activeBigSwingIds.has(String(swing.optionId))
+        ? "id"
+        : priority?.optionId && activeOptionIds.has(String(priority.optionId))
+          ? "id"
+          : priorityLabel && activeTitles.has(priorityLabel)
+            ? "title"
+            : null,
     };
   }
 
@@ -66,7 +73,18 @@ export function classifyTicketLink(task, { activeOptionIds, activeTitles, active
   const byId = priority.optionId && activeOptionIds.has(String(priority.optionId));
   const byLabel = priorityLabel && activeTitles.has(priorityLabel);
   // A rock is named but no Big Swing is. Counts as laddering up, just not as a project.
-  if (byId || byLabel) return { link: "leadership", label: priority.label, optionId: priority.optionId };
+  if (byId || byLabel) {
+    return {
+      link: "leadership",
+      label: priority.label,
+      optionId: priority.optionId,
+      // Which of the two did the work. A title match is a fallback for a rock nobody has
+      // linked yet, and it fails silently the next time someone renames the option — so
+      // the readout says when a link is resting on one, rather than waiting for it to
+      // vanish and be mistaken for work that stopped laddering up.
+      linkedBy: byId ? "id" : "title",
+    };
+  }
 
   return { link: "stale", label: priority.label, optionId: priority.optionId };
 }
@@ -120,6 +138,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
         id: task.id, name: task.name, url: task.url, status: task.status,
         priorityLabel: link.label ?? null,
         swing: link.swing ?? null, swingId: link.swingId ?? null,
+        linkedBy: link.linkedBy ?? null,
       };
       if (link.link === "bigSwing") {
         row.bigSwings.push(ref);
@@ -134,6 +153,24 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   const flags = [];
   const add = (spec) => flags.push(makeFlag(spec, { dateKey }));
   const pile = lc.unrelatedTicketPileThreshold ?? 5;
+
+  // Links resting on a title match rather than an option id. These work until somebody
+  // renames the dropdown option in ClickUp, at which point they stop working silently
+  // and the tickets look like work that ladders up to nothing. Said once, with the rocks
+  // to fix, rather than once per ticket.
+  const onTitle = new Set();
+  for (const row of people.values()) {
+    for (const ref of row.bigSwings) if (ref.linkedBy === "title" && ref.priorityLabel) onTitle.add(ref.priorityLabel);
+  }
+  if (onTitle.size) {
+    add({
+      id: "crosslayer.linked_by_title",
+      layer: "cross",
+      severity: "info",
+      rule: "crosslayer.linked_by_title",
+      message: `${onTitle.size === 1 ? "One rock is" : `${onTitle.size} rocks are`} linked to ClickUp by matching title rather than by option id: ${[...onTitle].join(", ")}. That match breaks the moment the dropdown option is renamed. Set the Rock Reference on ${onTitle.size === 1 ? "it" : "them"} to make the link survive a rename.`,
+    });
+  }
 
   for (const row of people.values()) {
     // Distinct big swings, not distinct tickets. Several tickets on one project are one
