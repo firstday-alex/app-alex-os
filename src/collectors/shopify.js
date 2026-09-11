@@ -246,7 +246,11 @@ export function windowDays(win, now) {
   return relative ? Number(relative[1]) : null;
 }
 
-export async function runQuery({ config, token, query, logger, fetchImpl, sleep, label }) {
+/**
+ * @param {boolean} [opts.raw] also return the untouched tableData. The cohort query
+ *   returns many rows, and parseTable deliberately collapses to the first.
+ */
+export async function runQuery({ config, token, query, logger, fetchImpl, sleep, label, raw = false }) {
   const sc = config.shopify;
   const safe = assertReadOnly(query);
   const http = config.system.http;
@@ -275,7 +279,8 @@ export async function runQuery({ config, token, query, logger, fetchImpl, sleep,
   if (!result?.tableData) {
     throw new Error(`shopifyql returned no table for: ${safe.slice(0, 70)}`);
   }
-  return parseTable(result.tableData);
+  const parsed = parseTable(result.tableData);
+  return raw ? { ...parsed, table: result.tableData } : parsed;
 }
 
 export async function collectShopify({ config, token, env = process.env, store, logger, fetchImpl, sleep, now = new Date() }) {

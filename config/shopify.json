@@ -187,5 +187,14 @@
       }
     ],
     "_comment": "Each step shows its count, its share of the step above (where the drop-off is) and its share of all sessions. Comparisons are on the STEP RATE, not the count: a window of a different length has a different number of sessions, so only the conversion between steps is comparable across windows."
+  },
+  "ltv": {
+    "_comment": "Where the LTV reference values come from. This answers the spec's open question: measured from Shopify's customer cohort analysis, split on whether the FIRST order carried a subscription, not entered by hand. The placeholder-row clauses in the query are what the cohort grid needs to return a full table; without them the query errors.",
+    "salesChannel": "Online Store",
+    "horizonMonths": 6,
+    "maxPeriod": 11,
+    "since": "startOfMonth(-12m)",
+    "until": "endOfMonth(-1m)",
+    "_comment_maturity": "Only cohorts old enough to HAVE the horizon month are used, and they are weighted by customer count. A cohort from last month has spent three weeks, not six, and averaging it in drags the figure toward zero while looking like a measurement. Cohorts that were excluded are named in the result rather than quietly dropped."
   }
 }

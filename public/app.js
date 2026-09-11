@@ -508,11 +508,15 @@ function renderNotes(testId) {
   const open = state.openTests.has(key);
   const filled = Object.keys(fields).filter((f) => note[f]).length;
 
+  const people = state.testNotes?.assignees ?? [];
+  const owner = people.find((p) => p.id === note.assignee);
+
   if (!open) {
     const summary = note.hypothesis || note.decision || note.notes;
     return `<div class="notes-peek">
-        <button class="ghost" data-node="${esc(key)}">${filled ? "Notes" : "Add notes"}</button>
-        ${summary ? `<span class="meta">${esc(String(summary).slice(0, 110))}${String(summary).length > 110 ? "…" : ""}</span>` : '<span class="meta">hypothesis, observations, the decision and why</span>'}
+        <button class="ghost" data-node="${esc(key)}">${filled || note.assignee ? "Notes" : "Add notes"}</button>
+        ${owner ? `<span class="chip owner">${esc(owner.name)}</span>` : '<span class="chip warn">no owner</span>'}
+        ${summary ? `<span class="meta">${esc(String(summary).slice(0, 100))}${String(summary).length > 100 ? "…" : ""}</span>` : '<span class="meta">hypothesis, observations, the decision and why</span>'}
         ${(note.tags ?? []).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}
       </div>`;
   }
@@ -523,7 +527,15 @@ function renderNotes(testId) {
       </label>`)
     .join("");
 
+  const options = [`<option value="">no owner</option>`]
+    .concat(people.map((p) => `<option value="${esc(p.id)}"${p.id === note.assignee ? " selected" : ""}>${esc(p.name)}</option>`))
+    .join("");
+
   return `<div class="notes-edit" data-test="${esc(testId)}">
+      <label class="wide">Owner
+        <select class="nt" data-f="assignee">${options}</select>
+        <span class="meta">One accountable person, from the ClickUp roster. Stored as their id, so a rename does not break it.</span>
+      </label>
       ${inputs}
       <label class="wide">Tags<input class="nt" data-f="tags" value="${esc((note.tags ?? []).join(", "))}" placeholder="comma separated"></label>
       <div class="bar">
@@ -1085,6 +1097,75 @@ $("settings-save").addEventListener("click", async () => {
     state.report = fresh.report;
     renderTests();
   }
+});
+
+
+/* Measure the LTV references from Shopify's cohort analysis.
+   Measuring and saving are separate on purpose: these two numbers are what every
+   projection rests on, so you see what it found before it replaces them. */
+$("measure-ltv").addEventListener("click", async () => {
+  const button = $("measure-ltv");
+  const out = $("ltv-result");
+  button.disabled = true;
+  button.textContent = "Measuring…";
+  out.innerHTML = '<p class="meta">Running two cohort queries against Shopify. This takes a few seconds.</p>';
+
+  try {
+    const res = await fetch(`${FN}/measure-ltv`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ horizonMonths: state.settings?.settings?.ltvHorizonMonths ?? 6 }),
+    });
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error ?? `HTTP ${res.status}`);
+
+    const money = (v) => (v == null ? "—" : `$${Number(v).toFixed(2)}`);
+    const block = (title, m) => `<tr>
+        <td>${esc(title)}</td>
+        <td><strong>${esc(money(m.value))}</strong></td>
+        <td>${esc(m.cohorts)} cohorts</td>
+        <td>${esc((m.customers ?? 0).toLocaleString())} customers</td>
+        <td class="meta">${esc(m.firstCohort ?? "")}${m.lastCohort ? ` to ${esc(m.lastCohort)}` : ""}${m.reason ? esc(m.reason) : ""}</td>
+      </tr>`;
+
+    const excluded = r.subscription.excludedCohorts ?? [];
+    out.innerHTML = `
+      <div class="fv">
+        <div class="scroll"><table>
+          <thead><tr><th>First order</th><th>${esc(r.horizonMonths)} month LTV</th><th></th><th></th><th>Cohorts used</th></tr></thead>
+          <tbody>
+            ${block("Subscription", r.subscription)}
+            ${block("One-time", r.oneTime)}
+          </tbody>
+        </table></div>
+        <p class="meta">${r.ratio ? `A subscriber is worth <strong>${r.ratio.toFixed(2)}x</strong> a one-time buyer over ${esc(r.horizonMonths)} months.` : ""}
+          ${excluded.length ? ` ${excluded.length} cohort(s) excluded for not having reached month ${esc(r.horizonMonths - 1)} yet: ${esc(excluded.join(", "))}. Including them would average incomplete lifetimes in and understate both figures.` : ""}</p>
+        <div class="bar">
+          <button id="apply-ltv" data-sub="${esc(r.subscription.value ?? "")}" data-one="${esc(r.oneTime.value ?? "")}">Use these values</button>
+          <span class="meta">Saves them as the references, dated today.</span>
+        </div>
+      </div>`;
+  } catch (err) {
+    out.innerHTML = `<div class="missing">Could not measure: ${esc(err.message)}</div>`;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Measure from Shopify";
+  }
+});
+
+document.addEventListener("click", async (event) => {
+  const apply = event.target.closest("#apply-ltv");
+  if (!apply) return;
+  const sub = apply.dataset.sub;
+  const one = apply.dataset.one;
+  if (!sub || !one) return;
+
+  for (const el of document.querySelectorAll("#settings-form .st")) {
+    if (el.dataset.k === "subscriptionLtv6mo") el.value = Number(sub).toFixed(2);
+    if (el.dataset.k === "oneTimeLtv6mo") el.value = Number(one).toFixed(2);
+    if (el.dataset.k === "ltvAsOf") el.value = new Date().toISOString().slice(0, 10);
+  }
+  $("settings-save").click();
 });
 
 $("settings-audit-wrap")?.addEventListener("toggle", async (event) => {

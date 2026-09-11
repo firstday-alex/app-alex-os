@@ -246,3 +246,82 @@ test("a stale note write is refused rather than clobbering a newer one", async (
   await notes.put("exp-1", { hypothesis: "first" });
   await assert.rejects(() => notes.put("exp-1", { hypothesis: "second" }, { expectedVersion: 0 }), /changed since you loaded/);
 });
+
+/* --------------------------- LTV from cohort data --------------------------- */
+
+import { weightedLtv, PERIOD_FOR_HORIZON, buildCohortQuery } from "../src/collectors/ltv.js";
+
+/** The real cohort rows the store returned for subscription-first customers. */
+const SUB_COHORTS = [
+  { month: "2025-09", period: 5, value: 197.988, customers: 12483 },
+  { month: "2025-10", period: 5, value: 200.541, customers: 16766 },
+  { month: "2025-11", period: 5, value: 209.941, customers: 15039 },
+  { month: "2025-12", period: 5, value: 249.245, customers: 15872 },
+  { month: "2026-01", period: 5, value: 253.485, customers: 13140 },
+  { month: "2026-02", period: 5, value: 229.355, customers: 10344 },
+  { month: "2026-03", period: 5, value: 228.17, customers: 9289 },
+  // Too young to have reached month 5.
+  { month: "2026-07", period: 1, value: 139.984, customers: 13891 },
+  { month: "2026-08", period: 0, value: 70.596, customers: 27383 },
+];
+
+test("six month LTV is the cumulative figure at period 5, not period 6", () => {
+  // amount_spent_per_customer is cumulative, so month 0 through 5 IS six months.
+  assert.equal(PERIOD_FOR_HORIZON(6), 5);
+  assert.equal(PERIOD_FOR_HORIZON(12), 11);
+});
+
+test("only cohorts old enough to have reached the horizon are counted", () => {
+  const result = weightedLtv(SUB_COHORTS, 6);
+  assert.equal(result.cohorts, 7, "the two young cohorts are excluded");
+  assert.deepEqual(result.excludedCohorts, ["2026-07", "2026-08"]);
+
+  // Including them would drag the figure toward zero while looking like a measurement:
+  // a cohort from last month has spent three weeks, not six months.
+  const naive = SUB_COHORTS.reduce((s, r) => s + r.value * r.customers, 0) / SUB_COHORTS.reduce((s, r) => s + r.customers, 0);
+  assert.ok(result.value - naive > 35, `averaging the young cohorts in understates LTV by $${(result.value - naive).toFixed(2)}`);
+});
+
+test("cohorts are weighted by customer count, not averaged flat", () => {
+  const result = weightedLtv(SUB_COHORTS, 6);
+  assert.ok(Math.abs(result.value - 223.49) < 0.01, `expected ~$223.49, got ${result.value}`);
+  assert.equal(result.customers, 92933);
+
+  // On this data the cohorts are similar sizes, so weighting moves the figure by about
+  // 60 cents. It is asserted anyway because that is an accident of these months, not a
+  // property of the method: a promo month with three times the customers would matter.
+  const flat = SUB_COHORTS.filter((r) => r.period === 5).reduce((s, r) => s + r.value, 0) / 7;
+  assert.notEqual(result.value, flat, "weighting is applied, even where it happens to change little");
+  assert.ok(Math.abs(result.value - flat) < 2, "and on these cohorts the effect is small");
+});
+
+test("no mature cohort yields no figure, with the reason, rather than a number", () => {
+  const result = weightedLtv([{ month: "2026-08", period: 0, value: 70, customers: 100 }], 6);
+  assert.equal(result.value, null);
+  assert.match(result.reason, /No cohort has reached month 5/);
+});
+
+test("the cohort query carries the placeholder clauses the grid requires", () => {
+  const { loadConfig } = { loadConfig: () => testConfig() };
+  const config = { ...testConfig(), shopify: { ...testConfig().shopify, ltv: { salesChannel: "Online Store", horizonMonths: 6, maxPeriod: 11, since: "startOfMonth(-12m)", until: "endOfMonth(-1m)" } } };
+
+  const sub = buildCohortQuery(config, { subscription: true });
+  const one = buildCohortQuery(config, { subscription: false });
+
+  assert.match(sub, /first_order_has_subscription = true/);
+  assert.match(one, /first_order_has_subscription = false/);
+  // Without the placeholder-row clauses the cohort query errors rather than returning
+  // fewer rows, which is a confusing way to fail.
+  assert.match(sub, /customer_cohorts_monthly_is_placeholder_row = true/);
+  assert.match(sub, /first_order_sales_channel = 'Online Store'/);
+  assert.match(sub, /HAVING customer_cohorts_monthly_periods_since_first_purchase >= 0/);
+
+  // The two queries must differ in exactly one clause, or they are not comparable.
+  assert.equal(sub.replace("= true", "= false"), one);
+});
+
+test("an assignee is stored as the ClickUp id, so a rename cannot break it", () => {
+  const note = normalizeNote({ assignee: "87349065", hypothesis: "x" });
+  assert.equal(note.assignee, "87349065");
+  assert.equal(normalizeNote({ assignee: "", hypothesis: "x" }).assignee, undefined, "no owner means absent");
+});

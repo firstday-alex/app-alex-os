@@ -26,6 +26,15 @@ export const FIELDS = {
   decision: { label: "Decision", help: "What you decided, and why. Filled in when the test ends." },
 };
 
+/**
+ * One accountable person per test, chosen from the ClickUp roster rather than typed.
+ *
+ * Stored as the ClickUp user id, not the name. Names change, get spelled differently and
+ * get re-used; the id is what survives, and it is also what lets a test be tied back to
+ * the person's sprint work in Layer 2.
+ */
+export const ASSIGNEE_FIELD = "assignee";
+
 const TAG_RE = /^[a-z0-9][a-z0-9 _-]{0,28}$/i;
 
 export function normalizeNote(input, existing = {}) {
@@ -40,6 +49,14 @@ export function normalizeNote(input, existing = {}) {
     // document stops being small.
     if (text) out[key] = text;
   }
+
+  // The owner of the test. Validated against the roster by the caller, which is the only
+  // place that knows who is on it.
+  const assigneeRaw = Object.prototype.hasOwnProperty.call(input, ASSIGNEE_FIELD)
+    ? input[ASSIGNEE_FIELD]
+    : existing[ASSIGNEE_FIELD];
+  const assignee = assigneeRaw == null || assigneeRaw === "" ? null : String(assigneeRaw).trim();
+  if (assignee) out[ASSIGNEE_FIELD] = assignee;
 
   const rawTags = Array.isArray(input.tags) ? input.tags : existing.tags ?? [];
   const tags = [...new Set(rawTags.map((t) => String(t).trim()).filter(Boolean))];
