@@ -35,7 +35,8 @@ function names(users) {
 /* --------------------------------- sections --------------------------------- */
 
 function renderStore(detail, section, lines) {
-  lines.push("STORE. Sitewide metrics against the previous period.");
+  const win = detail?.primaryWindow;
+  lines.push(`STORE. ${win?.label ?? "Store"} against ${(detail?.windows ?? []).filter((w) => w.key !== win?.key).map((w) => w.label).join(" and ")}. Totals compared per day.`);
   if (!section?.present) {
     lines.push(`  MISSING. ${section?.reason ?? "not collected"}`);
     lines.push("");
@@ -47,9 +48,15 @@ function renderStore(detail, section, lines) {
       continue;
     }
     const value =
-      tile.format === "percent" ? `${(tile.value * 100).toFixed(2)}%` : tile.format === "money" ? `${tile.value?.toFixed(0)}` : String(Math.round(tile.value));
-    const delta = tile.changePct == null ? "no prior period" : `${tile.changePct > 0 ? "+" : ""}${tile.changePct.toFixed(1)}% vs prev`;
-    lines.push(`  ${tile.label}: ${value} (${delta})`);
+      tile.format === "percent"
+        ? `${(tile.value * 100).toFixed(2)}%`
+        : tile.format === "money"
+          ? (tile.kind === "rate" ? tile.value.toFixed(2) : Math.round(tile.value).toLocaleString("en-US"))
+          : Math.round(tile.value).toLocaleString("en-US");
+    const cmps = (tile.comparisons ?? [])
+      .map((c) => (c.changePct == null ? `${c.label} n/a` : `${c.label} ${c.changePct > 0 ? "+" : ""}${c.changePct}%${c.basis === "per day" ? "/d" : ""}`))
+      .join(", ");
+    lines.push(`  ${tile.label}: ${value} (${cmps})`);
   }
   lines.push("");
 }

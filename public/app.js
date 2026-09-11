@@ -114,11 +114,12 @@ function render() {
 /* ------------------------- Layer 0. store metrics ------------------------- */
 
 const MONEY = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const MONEY2 = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const COUNT = new Intl.NumberFormat();
 
-function formatMetric(value, format) {
+function formatMetric(value, format, { precise = false } = {}) {
   if (value == null) return "—";
-  if (format === "money") return MONEY.format(value);
+  if (format === "money") return (precise ? MONEY2 : MONEY).format(value);
   if (format === "percent") return `${(value * 100).toFixed(2)}%`;
   return COUNT.format(Math.round(value));
 }
@@ -138,25 +139,35 @@ function renderStoreMetrics(report) {
       if (!t.available) {
         return `<div class="metric"><div class="metric-label">${esc(t.label)}</div><div class="metric-value muted">—</div><div class="metric-delta">${esc(t.reason ?? "unavailable")}</div></div>`;
       }
-      // Direction is not the same as good: discounts rising is not sales rising.
-      const up = (t.changePct ?? 0) > 0;
-      const good = t.changePct == null ? null : (t.goodDirection === "down" ? !up : up);
-      const tone = good == null ? "" : good ? "good" : "bad";
+
+      // A rate is shown to the cent; a large total does not need the cents.
+      const precise = t.kind === "rate" && t.format === "money";
+
+      const cmps = (t.comparisons ?? [])
+        .map((c) => {
+          if (c.changePct == null) return `<span class="cmp">${esc(c.label)} —</span>`;
+          const up = c.changePct > 0;
+          // Direction is not the same as good. Discounts are stored negative, so a rise
+          // means less discounting, which is why goodDirection lives on the tile.
+          const good = t.goodDirection === "down" ? !up : up;
+          return `<span class="cmp ${good ? "good" : "bad"}" title="${esc(c.label)} value ${esc(formatMetric(c.value, t.format, { precise }))}${c.basis === "per day" ? ", compared per day" : ""}">${esc(c.label)} ${up ? "+" : ""}${esc(c.changePct)}%${c.basis === "per day" ? "<span class=\"basis\">/d</span>" : ""}</span>`;
+        })
+        .join("");
+
       return `<div class="metric">
         <div class="metric-label">${esc(t.label)}</div>
-        <div class="metric-value">${esc(formatMetric(t.value, t.format))}</div>
-        <div class="metric-delta ${tone}">${
-          t.changePct == null
-            ? "no prior period"
-            : `${up ? "▲" : "▼"} ${Math.abs(t.changePct).toFixed(1)}% vs prev · ${esc(formatMetric(t.previous, t.format))}`
-        }</div>
+        <div class="metric-value">${esc(formatMetric(t.value, t.format, { precise }))}</div>
+        <div class="metric-cmps">${cmps}</div>
       </div>`;
     })
     .join("");
 
-  $("store-sub").textContent = data?.shopDomain
-    ? `${data.shopDomain} · against the previous period. Context for everything below: a sitewide move is not a test result.`
-    : $("store-sub").textContent;
+  const win = data?.primaryWindow;
+  const others = (data?.windows ?? []).filter((w) => w.key !== win?.key).map((w) => w.label).join(" and ");
+  $("store-sub").innerHTML =
+    `${esc(data?.shopDomain ?? "")} · showing <strong>${esc(win?.label ?? "")}</strong>${win?.days ? ` (${esc(win.days)} days elapsed)` : ""} against ${esc(others)}. ` +
+    `Totals are compared per day, marked <span class="basis">/d</span>, because a month-to-date total against a 7 day total measures the window, not the business. ` +
+    `Context for everything below: a sitewide move is not a test result.`;
 }
 
 function tile(n, k) {

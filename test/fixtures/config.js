@@ -73,12 +73,30 @@ export function testConfig(overrides = {}) {
       shopDomain: "test-shop.myshopify.com",
       apiVersion: "2026-07",
       currency: "USD",
-      queries: { sales: "FROM sales SHOW orders, total_sales SINCE -1d UNTIL today COMPARE TO previous_period" },
+      filters: { newOnline: "new_or_returning_customer = 'New' AND is_canceled_order = false" },
+      windows: {
+        mtd: { label: "MTD", since: "startOfMonth(0m)", until: "today", days: null, primary: true },
+        d7: { label: "7D", since: "-7d", until: "today", days: 7 },
+        d30: { label: "30D", since: "-30d", until: "today", days: 30 },
+      },
+      queries: {
+        acquisition: { schema: "sales", show: "gross_sales, discounts, shipping_charges, orders", filter: "newOnline", orderBy: null },
+      },
+      derived: {
+        net_aov: {
+          label: "Net AOV",
+          from: "acquisition",
+          formula: "(gross_sales + discounts + shipping_charges) / orders",
+          format: "money",
+          kind: "rate",
+          goodDirection: "up",
+        },
+      },
       tiles: [
-        { metric: "total_sales", from: "sales", label: "Total sales", format: "money", goodDirection: "up" },
-        { metric: "orders", from: "sales", label: "Orders", format: "integer", goodDirection: "up" },
+        { metric: "net_aov", from: "derived", label: "Net AOV", format: "money", kind: "rate", goodDirection: "up" },
+        { metric: "orders", from: "acquisition", label: "Orders", format: "integer", kind: "total", goodDirection: "up" },
       ],
-      alerts: { movePercentThreshold: 15 },
+      alerts: { movePercentThreshold: 15, compareAgainst: "d30" },
     },
   };
 

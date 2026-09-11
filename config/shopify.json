@@ -1,30 +1,65 @@
 {
-  "_comment": "Layer 0. Store-wide metrics from ShopifyQL, for the overview at the top of the dashboard. Queries are config, not code: adding or changing a metric is an edit here, never a deploy of new logic.",
-  "_VERIFIED": "Query syntax and response shape validated against the live First Day store on 2026-09-10. ShopifyQL is read-only aggregated reporting.",
+  "_comment": "Layer 0. Store-wide metrics from ShopifyQL, for the overview at the top of the dashboard. Queries and formulas are config, not code: adding a metric or changing a filter is an edit here, never a deploy of new logic.",
+  "_VERIFIED": "Every query and window below was run against the live First Day store on 2026-09-10 and returned rows. ShopifyQL is read-only aggregated reporting.",
 
   "shopDomain": "first-day-inc.myshopify.com",
   "apiVersion": "2026-07",
   "currency": "USD",
 
+  "filters": {
+    "newCustomerOnlineStore": "new_or_returning_customer = 'New' AND is_canceled_order = false AND sales_channel = 'Online Store' AND excludes_post_order_adjustments = true",
+    "_comment": "Reused across every window so the three numbers are genuinely comparable. Changing a filter in one window and not the others is how a comparison quietly stops meaning anything."
+  },
+
+  "windows": {
+    "mtd":  { "label": "MTD",  "since": "startOfMonth(0m)", "until": "today", "days": null, "primary": true },
+    "d7":   { "label": "7D",   "since": "-7d",              "until": "today", "days": 7 },
+    "d30":  { "label": "30D",  "since": "-30d",             "until": "today", "days": 30 },
+    "_comment": "The primary window is the number shown. The others are what it is compared against. `days` is used to put TOTALS on a per-day footing before comparing; a rate or an average needs no such adjustment."
+  },
+
   "queries": {
-    "sales": "FROM sales SHOW orders, gross_sales, discounts, net_sales, total_sales, average_order_value SINCE -1d UNTIL today COMPARE TO previous_period",
-    "sessions": "FROM sessions SHOW sessions, sessions_that_completed_checkout, conversion_rate SINCE -1d UNTIL today COMPARE TO previous_period",
-    "customers": "FROM sales SHOW customers, new_customers, returning_customers, returning_customer_rate SINCE -1d UNTIL today COMPARE TO previous_period",
-    "_comment": "SINCE -1d UNTIL today is yesterday plus today so far. COMPARE TO previous_period adds a comparison_<metric>__previous_period column for each metric, which is where the day over day arrow comes from. Every query must stay read-only: FROM ... SHOW, never a mutation."
+    "acquisition": {
+      "schema": "sales",
+      "show": "gross_sales, discounts, shipping_charges, orders, average_order_value",
+      "filter": "newCustomerOnlineStore",
+      "orderBy": null
+    },
+    "sessions": {
+      "schema": "sessions",
+      "show": "sessions, sessions_that_completed_checkout, conversion_rate",
+      "filter": null,
+      "orderBy": null
+    },
+    "_comment": "A query is run once per window. The collector assembles FROM <schema> SHOW <show> WHERE <filter> SINCE <since> UNTIL <until>."
+  },
+
+  "derived": {
+    "net_aov": {
+      "label": "Net AOV",
+      "from": "acquisition",
+      "formula": "(gross_sales + discounts + shipping_charges) / orders",
+      "_comment": "New-customer net AOV. Discounts come back NEGATIVE from ShopifyQL, so adding them subtracts them: gross + discounts + shipping is net revenue, over order count. This is deliberately not Shopify's built-in average_order_value, which is computed on a different base and reads about a dollar lower.",
+      "format": "money",
+      "kind": "rate",
+      "goodDirection": "up"
+    }
   },
 
   "tiles": [
-    { "metric": "total_sales",         "from": "sales",     "label": "Total sales",     "format": "money",   "goodDirection": "up" },
-    { "metric": "orders",              "from": "sales",     "label": "Orders",          "format": "integer", "goodDirection": "up" },
-    { "metric": "average_order_value", "from": "sales",     "label": "AOV",             "format": "money",   "goodDirection": "up" },
-    { "metric": "conversion_rate",     "from": "sessions",  "label": "Conversion",      "format": "percent", "goodDirection": "up" },
-    { "metric": "sessions",            "from": "sessions",  "label": "Sessions",        "format": "integer", "goodDirection": "up" },
-    { "metric": "new_customers",       "from": "customers", "label": "New customers",   "format": "integer", "goodDirection": "up" },
-    { "metric": "discounts",           "from": "sales",     "label": "Discounts",       "format": "money",   "goodDirection": "down" }
+    { "metric": "net_aov",          "from": "derived",     "label": "Net AOV (new)",   "format": "money",   "kind": "rate",  "goodDirection": "up" },
+    { "metric": "orders",           "from": "acquisition", "label": "New orders",      "format": "integer", "kind": "total", "goodDirection": "up" },
+    { "metric": "gross_sales",      "from": "acquisition", "label": "Gross sales",     "format": "money",   "kind": "total", "goodDirection": "up" },
+    { "metric": "discounts",        "from": "acquisition", "label": "Discounts",       "format": "money",   "kind": "total", "goodDirection": "up" },
+    { "metric": "shipping_charges", "from": "acquisition", "label": "Shipping",        "format": "money",   "kind": "total", "goodDirection": "up" },
+    { "metric": "conversion_rate",  "from": "sessions",    "label": "Conversion",      "format": "percent", "kind": "rate",  "goodDirection": "up" },
+    { "metric": "sessions",         "from": "sessions",    "label": "Sessions",        "format": "integer", "kind": "total", "goodDirection": "up" }
   ],
+  "_comment_kind": "kind is how a metric may be compared across windows of different lengths. A 'rate' (an average or a ratio) is already normalized and compares directly. A 'total' is not: MTD gross sales against a 7 day total measures the length of the window, not the business, so totals are compared per day. Discounts are goodDirection up because the value is negative, so a rise is less discounting.",
 
   "alerts": {
     "movePercentThreshold": 15,
-    "_comment": "A tile moving more than this against the previous period is flagged in the readout. Kept deliberately blunt: this is a sanity check that the store has not moved under a test, not a statistical claim. Layer 3 owns the statistics."
+    "compareAgainst": "d30",
+    "_comment": "A tile moving more than this against the named window is flagged in the readout. Deliberately blunt: this is a sanity check that the store has not moved under a test, not a statistical claim. Layer 3 owns the statistics."
   }
 }

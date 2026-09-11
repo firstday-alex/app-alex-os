@@ -45,43 +45,104 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-/**
- * Turn columns+rows into { metric: {value, previous, changePct} }.
- *
- * A COMPARE TO query returns the comparison as extra columns named
- * `comparison_<metric>__previous_period`, so the current and prior values arrive in the
- * same row and no second request is needed.
- */
+/** One row of a query result, as { metric: value }. Values arrive as strings. */
 export function parseTable(tableData) {
   const columns = (tableData?.columns ?? []).map((c) => c.name);
   const types = Object.fromEntries((tableData?.columns ?? []).map((c) => [c.name, c.dataType]));
   const row = (tableData?.rows ?? [])[0] ?? [];
 
-  const values = {};
-  columns.forEach((name, index) => {
-    values[name] = toNumber(row[index]);
-  });
-
   const metrics = {};
-  for (const name of columns) {
-    if (name.startsWith("comparison_")) continue;
-    const comparisonKey = `comparison_${name}__previous_period`;
-    const value = values[name];
-    const previous = Object.prototype.hasOwnProperty.call(values, comparisonKey) ? values[comparisonKey] : null;
-    metrics[name] = {
-      metric: name,
-      value,
-      previous,
-      dataType: types[name] ?? null,
-      // Percent change against the prior period. Null rather than Infinity when the prior
-      // period was zero: "up from nothing" is not a percentage.
-      changePct:
-        value == null || previous == null || previous === 0
-          ? null
-          : ((value - previous) / Math.abs(previous)) * 100,
-    };
+  columns.forEach((name, index) => {
+    metrics[name] = toNumber(row[index]);
+  });
+  return { metrics, types, columns, rowCount: (tableData?.rows ?? []).length };
+}
+
+/** Assembles FROM ... SHOW ... WHERE ... SINCE ... UNTIL ... from config. */
+export function buildQuery(config, queryName, windowName) {
+  const sc = config.shopify;
+  const spec = sc.queries?.[queryName];
+  const win = sc.windows?.[windowName];
+  if (!spec) throw new Error(`No Shopify query named "${queryName}"`);
+  if (!win) throw new Error(`No Shopify window named "${windowName}"`);
+
+  const where = spec.filter ? sc.filters?.[spec.filter] : null;
+  if (spec.filter && !where) throw new Error(`Query "${queryName}" names filter "${spec.filter}", which does not exist`);
+
+  return [
+    `FROM ${spec.schema}`,
+    `SHOW ${spec.show}`,
+    where ? `WHERE ${where}` : null,
+    `SINCE ${win.since} UNTIL ${win.until}`,
+    spec.orderBy ? `ORDER BY ${spec.orderBy}` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
+ * Evaluate a derived formula over the metrics of one window.
+ *
+ * Only identifiers, numbers, arithmetic and parentheses are permitted, and every
+ * identifier must be a metric the query actually returned. A formula is config, and
+ * config is editable by the learning skill, so it is parsed rather than eval'd.
+ */
+export function evaluateFormula(formula, metrics) {
+  const tokens = String(formula).match(/[A-Za-z_][A-Za-z0-9_]*|\d+(?:\.\d+)?|[()+\-*/]/g) ?? [];
+  const rebuilt = tokens.join(" ");
+  if (rebuilt.replace(/\s+/g, "") !== String(formula).replace(/\s+/g, "")) {
+    throw new Error(`Formula contains characters that are not arithmetic: ${formula}`);
   }
-  return { metrics, rowCount: (tableData?.rows ?? []).length, columns };
+
+  const values = [];
+  for (const token of tokens) {
+    if (/^[A-Za-z_]/.test(token)) {
+      if (!Object.prototype.hasOwnProperty.call(metrics, token)) {
+        throw new Error(`Formula references "${token}", which the query did not return`);
+      }
+      const value = metrics[token];
+      if (value == null) return null; // a missing input makes the result unknown, not zero
+      values.push(String(value));
+    } else {
+      values.push(token);
+    }
+  }
+
+  // eslint-disable-next-line no-new-func -- every token above is a number or an operator.
+  const result = Function(`"use strict"; return (${values.join(" ")});`)();
+  return Number.isFinite(result) ? result : null;
+}
+
+/**
+ * Compare a primary window against another.
+ *
+ * A 'rate' (an average, a ratio) is already normalized and compares directly. A 'total'
+ * is not: MTD gross sales against a 7 day total measures the length of the window, not
+ * the business. Totals are put on a per-day footing first.
+ */
+export function compareWindows(primary, other, { kind, primaryDays, otherDays }) {
+  if (primary == null || other == null) return { changePct: null, basis: kind === "total" ? "per day" : "direct" };
+
+  if (kind === "total") {
+    if (!primaryDays || !otherDays) return { changePct: null, basis: "per day", reason: "window length unknown" };
+    const a = primary / primaryDays;
+    const b = other / otherDays;
+    if (b === 0) return { changePct: null, basis: "per day" };
+    return { changePct: ((a - b) / Math.abs(b)) * 100, basis: "per day", primaryPerDay: a, otherPerDay: b };
+  }
+
+  if (other === 0) return { changePct: null, basis: "direct" };
+  return { changePct: ((primary - other) / Math.abs(other)) * 100, basis: "direct" };
+}
+
+/** Days elapsed in a window. MTD has no fixed length, so it is counted. */
+export function windowDays(win, now) {
+  if (win.days) return win.days;
+  if (String(win.since).startsWith("startOfMonth")) {
+    return now.getUTCDate(); // days elapsed this month, including today
+  }
+  const relative = String(win.since).match(/^-(\d+)d$/);
+  return relative ? Number(relative[1]) : null;
 }
 
 export async function runQuery({ config, token, query, logger, fetchImpl, sleep, label }) {
@@ -102,7 +163,6 @@ export async function runQuery({ config, token, query, logger, fetchImpl, sleep,
     backoffMsSchedule: http.backoffMsSchedule,
   });
 
-  // GraphQL answers 200 with an errors array. Surface it rather than returning nothing.
   if (body?.errors?.length) {
     throw new Error(`shopifyql: ${body.errors.map((e) => e.message).join("; ")}`);
   }
@@ -110,8 +170,6 @@ export async function runQuery({ config, token, query, logger, fetchImpl, sleep,
   if (result?.parseErrors?.length) {
     throw new Error(`shopifyql parse error: ${result.parseErrors.map((e) => e.message).join("; ")}`);
   }
-  // A tableData that is absent is different from one that is empty, and only the first
-  // is a problem.
   if (!result?.tableData) {
     throw new Error(`shopifyql returned no table for: ${safe.slice(0, 70)}`);
   }
@@ -123,32 +181,74 @@ export async function collectShopify({ config, token, logger, fetchImpl, sleep, 
   const sc = config.shopify;
   if (!sc?.shopDomain) throw new Error("config.shopify.shopDomain is not set");
 
+  const windowNames = Object.keys(sc.windows ?? {}).filter((k) => !k.startsWith("_"));
+  const queryNames = Object.keys(sc.queries ?? {}).filter((k) => !k.startsWith("_"));
+  const primaryName = windowNames.find((k) => sc.windows[k].primary) ?? windowNames[0];
+
+  /** results[window][query] = { metrics } */
   const results = {};
   const failures = [];
 
-  for (const [name, query] of Object.entries(sc.queries ?? {})) {
-    if (name.startsWith("_")) continue;
-    try {
-      results[name] = await runQuery({ config, token, query, logger, fetchImpl, sleep, label: `shopify.${name}` });
-    } catch (err) {
-      // One query failing loses that query's tiles, not the whole layer.
-      logger?.warn?.("shopify.query_failed", { query: name, err });
-      failures.push({ query: name, error: err.message });
+  for (const windowName of windowNames) {
+    results[windowName] = {};
+    for (const queryName of queryNames) {
+      try {
+        const query = buildQuery(config, queryName, windowName);
+        results[windowName][queryName] = await runQuery({
+          config, token, query, logger, fetchImpl, sleep,
+          label: `shopify.${queryName}.${windowName}`,
+        });
+      } catch (err) {
+        logger?.warn?.("shopify.query_failed", { query: queryName, window: windowName, err });
+        failures.push({ query: queryName, window: windowName, error: err.message });
+      }
+    }
+
+    // Derived metrics are computed per window from that window's own numbers.
+    results[windowName].derived = { metrics: {} };
+    for (const [name, spec] of Object.entries(sc.derived ?? {})) {
+      if (name.startsWith("_")) continue;
+      const source = results[windowName][spec.from]?.metrics;
+      if (!source) continue;
+      try {
+        results[windowName].derived.metrics[name] = evaluateFormula(spec.formula, source);
+      } catch (err) {
+        logger?.warn?.("shopify.formula_failed", { derived: name, window: windowName, err });
+        failures.push({ query: `derived.${name}`, window: windowName, error: err.message });
+      }
     }
   }
 
-  // Flatten to the tiles the dashboard renders, in configured order.
+  const daysFor = Object.fromEntries(windowNames.map((w) => [w, windowDays(sc.windows[w], now)]));
+  const comparisonWindows = windowNames.filter((w) => w !== primaryName);
+
   const tiles = (sc.tiles ?? []).map((tile) => {
-    const metric = results[tile.from]?.metrics?.[tile.metric] ?? null;
-    return {
-      ...tile,
-      value: metric?.value ?? null,
-      previous: metric?.previous ?? null,
-      changePct: metric?.changePct ?? null,
-      // A tile whose query failed is missing, not zero.
-      available: Boolean(metric),
-      reason: metric ? null : (failures.find((f) => f.query === tile.from)?.error ?? "metric not returned by its query"),
-    };
+    const value = results[primaryName]?.[tile.from]?.metrics?.[tile.metric] ?? null;
+    const kind = tile.kind ?? sc.derived?.[tile.metric]?.kind ?? "total";
+
+    const comparisons = comparisonWindows.map((windowName) => {
+      const other = results[windowName]?.[tile.from]?.metrics?.[tile.metric] ?? null;
+      const cmp = compareWindows(value, other, {
+        kind,
+        primaryDays: daysFor[primaryName],
+        otherDays: daysFor[windowName],
+      });
+      return {
+        window: windowName,
+        label: sc.windows[windowName].label,
+        value: other,
+        changePct: cmp.changePct == null ? null : Number(cmp.changePct.toFixed(1)),
+        basis: cmp.basis,
+      };
+    });
+
+    const reason =
+      value != null
+        ? null
+        : (failures.find((f) => f.query === tile.from || f.query === `derived.${tile.metric}`)?.error ??
+           "metric not returned by its query");
+
+    return { ...tile, kind, value, comparisons, available: value != null, reason };
   });
 
   return {
@@ -156,11 +256,11 @@ export async function collectShopify({ config, token, logger, fetchImpl, sleep, 
     takenAt: now.toISOString(),
     shopDomain: sc.shopDomain,
     currency: sc.currency ?? null,
-    // `items` is what the storage layer counts to decide whether a snapshot collapsed.
+    primaryWindow: { key: primaryName, label: sc.windows[primaryName].label, days: daysFor[primaryName] },
+    windows: windowNames.map((w) => ({ key: w, label: sc.windows[w].label, days: daysFor[w] })),
     items: tiles.filter((t) => t.available),
     tiles,
-    queries: results,
     failures,
-    meta: { queries: Object.keys(results).length, failed: failures.length, tiles: tiles.length },
+    meta: { windows: windowNames.length, queries: queryNames.length, failed: failures.length, tiles: tiles.length },
   };
 }

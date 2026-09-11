@@ -316,6 +316,8 @@ export function computeFlags({ snapshots, baselines, config, dateKey, nowIso, lo
   if (snapshots.shopify) {
     shopify = snapshots.shopify;
     const threshold = config.shopify?.alerts?.movePercentThreshold ?? 15;
+    const against = config.shopify?.alerts?.compareAgainst ?? null;
+
     for (const tile of shopify.tiles ?? []) {
       if (!tile.available) {
         flags.push(
@@ -331,11 +333,13 @@ export function computeFlags({ snapshots, baselines, config, dateKey, nowIso, lo
         );
         continue;
       }
-      if (tile.changePct == null) continue;
-      if (Math.abs(tile.changePct) < threshold) continue;
 
-      // "Good" depends on the metric: discounts rising is not the same as sales rising.
-      const movedUp = tile.changePct > 0;
+      // Flag against one named window, not all of them, or a single move produces a
+      // flag per comparison and the readout says the same thing twice.
+      const cmp = (tile.comparisons ?? []).find((c) => c.window === against) ?? (tile.comparisons ?? [])[0];
+      if (!cmp || cmp.changePct == null || Math.abs(cmp.changePct) < threshold) continue;
+
+      const movedUp = cmp.changePct > 0;
       const good = tile.goodDirection === "down" ? !movedUp : movedUp;
       flags.push(
         makeFlag({
@@ -343,11 +347,12 @@ export function computeFlags({ snapshots, baselines, config, dateKey, nowIso, lo
           rule: "shopify.metric_moved",
           severity: good ? "info" : "attention",
           subject: { type: "metric", id: `shopify:${tile.metric}`, label: tile.label },
-          message: `Store-wide ${tile.label} is ${movedUp ? "up" : "down"} ${Math.abs(tile.changePct).toFixed(1)}% against the previous period. Worth knowing before reading any test result as a win or a loss.`,
-          values: { metric: tile.metric, value: tile.value, previous: tile.previous, changePct: Number(tile.changePct.toFixed(2)), threshold },
+          message: `Store-wide ${tile.label} is ${movedUp ? "up" : "down"} ${Math.abs(cmp.changePct).toFixed(1)}%${cmp.basis === "per day" ? " per day" : ""} against ${cmp.label}. Worth knowing before reading any test result as a win or a loss.`,
+          values: { metric: tile.metric, window: cmp.label, value: tile.value, comparedWith: cmp.value, changePct: cmp.changePct, basis: cmp.basis, threshold },
         }, { dateKey }),
       );
     }
+
     sections.shopify = { present: true, tiles: (shopify.tiles ?? []).length, shopDomain: shopify.shopDomain };
   } else {
     sections.shopify = { present: false, reason: snapshots.errors?.shopify ?? "collector did not run" };

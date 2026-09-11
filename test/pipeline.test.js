@@ -88,8 +88,10 @@ function fakeUpstreams({ fail = [], slackCalls = [] } = {}) {
 
     if (target.includes("myshopify.com")) {
       if (fail.includes("shopify")) return reply({ errors: [{ message: "access denied" }] });
-      // The real Admin GraphQL shape: tableData.columns + rows, values as strings, and a
-      // comparison_<metric>__previous_period column per metric from COMPARE TO.
+      // The real Admin GraphQL shape: tableData.columns + rows, values as strings. One
+      // query per window, so the window is read back out of the sent query.
+      const sent = JSON.parse(options.body).variables.q;
+      const scale = sent.includes("startOfMonth") ? 1 : sent.includes("-7d") ? 0.8 : 3.5;
       return reply({
         data: {
           shopifyqlQuery: {
@@ -97,12 +99,12 @@ function fakeUpstreams({ fail = [], slackCalls = [] } = {}) {
             parseErrors: [],
             tableData: {
               columns: [
+                { name: "gross_sales", dataType: "MONEY" },
+                { name: "discounts", dataType: "MONEY" },
+                { name: "shipping_charges", dataType: "MONEY" },
                 { name: "orders", dataType: "INTEGER" },
-                { name: "total_sales", dataType: "MONEY" },
-                { name: "comparison_orders__previous_period", dataType: "INTEGER" },
-                { name: "comparison_total_sales__previous_period", dataType: "MONEY" },
               ],
-              rows: [["3327", "240397.18", "3748", "270289.98"]],
+              rows: [[String(1000000 * scale), String(-400000 * scale), String(8000 * scale), String(Math.round(9900 * scale))]],
             },
           },
         },
