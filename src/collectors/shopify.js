@@ -72,13 +72,16 @@ export async function getAccessToken({ config, env = process.env, store, logger,
   return { token, source: "exchange", expiresAt };
 }
 
+// Introspected from the live Admin schema rather than assumed. `shopifyqlQuery` returns
+// ShopifyqlQueryResponse, a plain object: there is no union and no inline fragment.
+// `parseErrors` is a list of STRINGS, and `rows` is a JSON scalar, not a typed list.
 const GRAPHQL = `query Run($q: String!) {
   shopifyqlQuery(query: $q) {
-    __typename
-    ... on TableResponse {
-      tableData { columns { name dataType } rows }
+    parseErrors
+    tableData {
+      columns { name displayName dataType }
+      rows
     }
-    parseErrors { code message range { start { line character } end { line character } } }
   }
 }`;
 
@@ -105,16 +108,32 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** One row of a query result, as { metric: value }. Values arrive as strings. */
+/**
+ * One row of a query result, as { metric: number }.
+ *
+ * `rows` is a JSON scalar, so its shape is not pinned by the schema. The Admin API
+ * returns an array of OBJECTS keyed by column name; other surfaces return positional
+ * arrays. Both are handled, because assuming one and getting the other produces a row
+ * of nulls and no error at all.
+ *
+ * Values arrive as strings, including for INTEGER and MONEY.
+ */
 export function parseTable(tableData) {
   const columns = (tableData?.columns ?? []).map((c) => c.name);
   const types = Object.fromEntries((tableData?.columns ?? []).map((c) => [c.name, c.dataType]));
-  const row = (tableData?.rows ?? [])[0] ?? [];
+  const row = (tableData?.rows ?? [])[0];
 
   const metrics = {};
-  columns.forEach((name, index) => {
-    metrics[name] = toNumber(row[index]);
-  });
+  if (Array.isArray(row)) {
+    columns.forEach((name, index) => {
+      metrics[name] = toNumber(row[index]);
+    });
+  } else if (row && typeof row === "object") {
+    for (const name of columns) metrics[name] = toNumber(row[name]);
+  } else {
+    for (const name of columns) metrics[name] = null;
+  }
+
   return { metrics, types, columns, rowCount: (tableData?.rows ?? []).length };
 }
 
@@ -250,7 +269,8 @@ export async function runQuery({ config, token, query, logger, fetchImpl, sleep,
   }
   const result = body?.data?.shopifyqlQuery;
   if (result?.parseErrors?.length) {
-    throw new Error(`shopifyql parse error: ${result.parseErrors.map((e) => e.message).join("; ")}`);
+    // parseErrors is a list of plain strings.
+    throw new Error(`shopifyql parse error: ${result.parseErrors.join("; ")}`);
   }
   if (!result?.tableData) {
     throw new Error(`shopifyql returned no table for: ${safe.slice(0, 70)}`);

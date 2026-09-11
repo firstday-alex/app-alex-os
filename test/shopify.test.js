@@ -178,7 +178,7 @@ test("a failing window loses its comparison, not the tile", async () => {
   const fetchImpl = async (url, opts) => {
     const q = JSON.parse(opts.body).variables.q;
     if (q.includes("-30d")) {
-      return { status: 200, headers: new Headers(), text: async () => JSON.stringify({ data: { shopifyqlQuery: { parseErrors: [{ message: "boom" }] } } }) };
+      return { status: 200, headers: new Headers(), text: async () => JSON.stringify({ data: { shopifyqlQuery: { parseErrors: ["boom"] } } }) };
     }
     return liveFetch(url, opts);
   };
@@ -199,7 +199,7 @@ test("a failing window loses its comparison, not the tile", async () => {
 test("a ShopifyQL parse error is raised, not returned as empty data", () => {
   const fetchImpl = async () => ({
     status: 200, headers: new Headers(),
-    text: async () => JSON.stringify({ data: { shopifyqlQuery: { parseErrors: [{ message: "unknown field 'ordrs'" }] } } }),
+    text: async () => JSON.stringify({ data: { shopifyqlQuery: { parseErrors: ["unknown field 'ordrs'"] } } }),
   });
   return assert.rejects(
     () => runQuery({ config: testConfig(), token: "shpat_x", query: "FROM sales SHOW ordrs", fetchImpl, sleep: async () => {} }),
@@ -416,4 +416,21 @@ test("an exchange that returns no token says what to check", async () => {
     () => getAccessToken({ config: testConfig(), env: { SHOPIFY_CLIENT_ID: "a", SHOPIFY_CLIENT_SECRET: "b" }, fetchImpl, sleep: async () => {} }),
     /app is installed on test-shop\.myshopify\.com/,
   );
+});
+
+test("both row shapes parse, because rows is a JSON scalar with no schema guarantee", () => {
+  // The Admin API returns rows as objects keyed by column name; other surfaces return
+  // positional arrays. Assuming one and getting the other yields a row of nulls and no
+  // error at all, which is the failure mode this guards.
+  const columns = [{ name: "gross_sales", dataType: "MONEY" }, { name: "orders", dataType: "INTEGER" }];
+
+  const keyed = parseTable({ columns, rows: [{ gross_sales: "1095264.61", orders: "9936" }] });
+  assert.equal(keyed.metrics.gross_sales, 1095264.61);
+  assert.equal(keyed.metrics.orders, 9936);
+
+  const positional = parseTable({ columns, rows: [["1095264.61", "9936"]] });
+  assert.deepEqual(positional.metrics, keyed.metrics);
+
+  const empty = parseTable({ columns, rows: [] });
+  assert.equal(empty.metrics.orders, null, "no rows means unknown, not zero");
 });
