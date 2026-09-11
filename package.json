@@ -13,13 +13,11 @@
     "check": "node scripts/syntax-check.js",
     "readout:dry": "node scripts/run-local.js --mode=refresh --dry-run",
     "readout:local": "node scripts/run-local.js --mode=official",
-    "dev": "netlify dev"
+    "dev": "netlify dev",
+    "_comment_dev": "netlify dev needs the Netlify CLI: npm i -g netlify-cli"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.0",
     "@netlify/blobs": "^8.1.0"
-  },
-  "devDependencies": {
-    "netlify-cli": "^17.0.0"
   }
 }
