@@ -15,6 +15,37 @@ import { describeExperience } from "./experience-diff.js";
 
 const METRICS_CONFIG_TTL_SECONDS = 7 * 24 * 60 * 60;
 
+/**
+ * The timeseries endpoint accepts a DIFFERENT and much smaller metric vocabulary than the
+ * analytics endpoint, verified against the live API by asking it for a nonsense metric
+ * and reading what it offered back. Notably it calls AOV `aov`, where the analytics
+ * response calls the same number `net_revenue_per_order`.
+ *
+ * Sending an unsupported name fails the whole call with a 400, so anything not on this
+ * list is translated if there is an equivalent and dropped if there is not.
+ */
+export const TIMESERIES_METRICS = new Set([
+  "conversion_rate",
+  "net_revenue_per_visitor",
+  "gross_profit_per_visitor",
+  "aov",
+  "n_visitors",
+  "n_orders",
+  "net_revenue",
+]);
+
+const TIMESERIES_ALIASES = { net_revenue_per_order: "aov" };
+
+export function timeseriesMetrics(names) {
+  const out = [];
+  for (const name of names ?? []) {
+    const mapped = TIMESERIES_ALIASES[name] ?? name;
+    if (TIMESERIES_METRICS.has(mapped) && !out.includes(mapped)) out.push(mapped);
+  }
+  // Always ask for something: an empty list is also a 400.
+  return out.length ? out : ["conversion_rate"];
+}
+
 function authHeaders(config, token) {
   return { [config.intelligems.authHeader]: token };
 }
@@ -259,13 +290,28 @@ export function normalizeExperiment({ experiment, analysis, detail, config, now 
  * the verdict says.
  */
 export function assessStability(timeseries, { window = 3, tolerancePct = 2 } = {}) {
-  const points = timeseries?.points ?? timeseries?.data ?? timeseries?.series ?? [];
-  const values = points
-    .map((p) => (typeof p.value === "number" ? p.value : typeof p.cumulative === "number" ? p.cumulative : null))
-    .filter((v) => v != null);
-  if (values.length < window + 1) return { stabilized: null, reason: "not enough points" };
+  // The real shape: { segments: { "<variation name>": { data: [{ dt, <metric>: value }] } } }.
+  // Not a flat points array, which is what an earlier version looked for — and finding
+  // nothing, it reported "not enough points" on every test forever.
+  const segments = timeseries?.segments;
+  let series = [];
 
-  const recent = values.slice(-(window + 1));
+  if (segments && typeof segments === "object") {
+    const first = Object.values(segments).find((s) => Array.isArray(s?.data) && s.data.length);
+    if (first) {
+      const metricKey = Object.keys(first.data[0] ?? {}).find((k) => k !== "dt");
+      series = first.data.map((point) => point[metricKey]).filter((v) => typeof v === "number");
+    }
+  } else {
+    const points = timeseries?.points ?? timeseries?.data ?? [];
+    series = points
+      .map((p) => (typeof p.value === "number" ? p.value : typeof p.cumulative === "number" ? p.cumulative : null))
+      .filter((v) => v != null);
+  }
+
+  if (series.length < window + 1) return { stabilized: null, reason: "not enough points" };
+
+  const recent = series.slice(-(window + 1));
   const swings = [];
   for (let i = 1; i < recent.length; i += 1) {
     const prev = recent[i - 1];
@@ -274,7 +320,7 @@ export function assessStability(timeseries, { window = 3, tolerancePct = 2 } = {
   }
   if (swings.length === 0) return { stabilized: null, reason: "no comparable points" };
   const worst = Math.max(...swings);
-  return { stabilized: worst <= tolerancePct, worstSwingPct: Number(worst.toFixed(2)) };
+  return { stabilized: worst <= tolerancePct, worstSwingPct: Number(worst.toFixed(2)), points: series.length };
 }
 
 /* -------------------------------- collection -------------------------------- */
@@ -373,7 +419,7 @@ export async function collectIntelligems({ config, token, store, logger, fetchIm
         detail = null;
       }
       if (!detail) {
-        detail = await call({
+        const body = await call({
           config,
           token,
           logger,
@@ -382,6 +428,10 @@ export async function collectIntelligems({ config, token, store, logger, fetchIm
           endpointName: "experience",
           params: { experienceId },
         });
+        // The experience endpoint wraps its payload: { experience: {...} }. The roster
+        // endpoint does not. Unwrap defensively rather than assuming either shape — an
+        // earlier check that unwrapped it by hand is exactly how this went unnoticed.
+        detail = body?.experience ?? body;
         // Only cache something worth reading back.
         if (store && usable(detail)) await store.setCached(`intelligems/experience/${experienceId}`, detail);
         else if (!usable(detail)) {
@@ -421,7 +471,9 @@ export async function collectIntelligems({ config, token, store, logger, fetchIm
           body: {
             granularity: "day",
             mode: "cumulative",
-            metrics: (test.primaryMetric ? [test.primaryMetric] : []).concat(config.intelligems.metrics?.p0 ?? []).slice(0, 6),
+            metrics: timeseriesMetrics(
+              (test.primaryMetric ? [test.primaryMetric] : []).concat(config.intelligems.metrics?.p0 ?? []),
+            ),
           },
         });
         test.timeseriesStabilized = assessStability(timeseries);

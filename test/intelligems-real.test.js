@@ -230,3 +230,54 @@ test("every metric the tree names is pulled, or the branches read as No data", a
     assert.ok(pulled.has(metric), `${metric} is in the tree but would be filtered out of the snapshot`);
   }
 });
+
+/* ------------------- response shapes, verified against the API ------------------- */
+
+test("the experience endpoint wraps its payload, the roster endpoint does not", async () => {
+  // An earlier check unwrapped this by hand before inspecting it, concluded the response
+  // was flat, and the bug survived a deploy: every test rendered unclassified with no
+  // control/variant difference and no primary metric.
+  const unwrap = (body) => body?.experience ?? body;
+  assert.deepEqual(unwrap({ experience: { id: "a", variations: [1] } }), { id: "a", variations: [1] });
+  assert.deepEqual(unwrap({ id: "a", variations: [1] }), { id: "a", variations: [1] }, "a flat body still works");
+});
+
+test("timeseries accepts a different, smaller metric vocabulary than analytics", async () => {
+  const { timeseriesMetrics, TIMESERIES_METRICS } = await import("../src/collectors/intelligems.js");
+
+  // Verified live by asking the endpoint for a nonsense metric and reading what it
+  // offered back. Sending an unsupported name fails the WHOLE call with a 400.
+  assert.equal(TIMESERIES_METRICS.size, 7);
+  assert.ok(TIMESERIES_METRICS.has("aov"));
+  assert.ok(!TIMESERIES_METRICS.has("net_revenue_per_order"), "the same number, a different name");
+
+  // AOV is translated rather than dropped.
+  assert.deepEqual(timeseriesMetrics(["net_revenue_per_order"]), ["aov"]);
+  // Unsupported names are dropped rather than failing the call.
+  assert.deepEqual(timeseriesMetrics(["add_to_cart_rate", "conversion_rate"]), ["conversion_rate"]);
+  // An empty list is also a 400, so there is always something to ask for.
+  assert.deepEqual(timeseriesMetrics([]), ["conversion_rate"]);
+  assert.deepEqual(timeseriesMetrics(["nonsense"]), ["conversion_rate"]);
+});
+
+test("stability reads the segments shape the API actually returns", async () => {
+  const { assessStability } = await import("../src/collectors/intelligems.js");
+
+  // { segments: { "<variation>": { data: [{ dt, <metric> }] } } }, not a flat points
+  // array. Looking for points found nothing and reported "not enough points" forever.
+  const real = {
+    segments: {
+      New: { data: [1, 1.02, 1.01, 1.03, 1.02].map((v, i) => ({ dt: `2026-09-0${i + 1}`, conversion_rate: v })) },
+      Old: { data: [] },
+    },
+  };
+  const result = assessStability(real);
+  assert.equal(result.points, 5);
+  assert.equal(typeof result.stabilized, "boolean");
+
+  // A swinging series is not called stable.
+  const swinging = { segments: { New: { data: [1, 1.4, 0.9, 1.3, 1.1].map((v, i) => ({ dt: `d${i}`, conversion_rate: v })) } } };
+  assert.equal(assessStability(swinging).stabilized, false);
+
+  assert.equal(assessStability({ segments: { New: { data: [] } } }).stabilized, null);
+});
