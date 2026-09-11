@@ -92,6 +92,17 @@ function fakeUpstreams({ fail = [], slackCalls = [] } = {}) {
       // query per window, so the window is read back out of the sent query.
       const sent = JSON.parse(options.body).variables.q;
       const scale = sent.includes("startOfMonth") ? 1 : sent.includes("-7d") ? 0.8 : 3.5;
+      if (sent.includes("subscription_or_one_time")) {
+        return reply({
+          data: {
+            shopifyqlQuery: {
+              __typename: "TableResponse",
+              parseErrors: [],
+              tableData: { columns: [{ name: "orders", dataType: "INTEGER" }], rows: [[String(Math.round(7385 * scale))]] },
+            },
+          },
+        });
+      }
       return reply({
         data: {
           shopifyqlQuery: {

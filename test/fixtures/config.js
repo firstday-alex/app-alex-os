@@ -73,7 +73,10 @@ export function testConfig(overrides = {}) {
       shopDomain: "test-shop.myshopify.com",
       apiVersion: "2026-07",
       currency: "USD",
-      filters: { newOnline: "new_or_returning_customer = 'New' AND is_canceled_order = false" },
+      filters: {
+        newOnline: "new_or_returning_customer = 'New' AND is_canceled_order = false",
+        newOnlineSub: "new_or_returning_customer = 'New' AND is_canceled_order = false AND subscription_or_one_time = 'subscription'",
+      },
       windows: {
         mtd: { label: "MTD", since: "startOfMonth(0m)", until: "today", days: null, primary: true },
         d7: { label: "7D", since: "-7d", until: "today", days: 7 },
@@ -81,10 +84,19 @@ export function testConfig(overrides = {}) {
       },
       queries: {
         acquisition: { schema: "sales", show: "gross_sales, discounts, shipping_charges, orders", filter: "newOnline", orderBy: null },
+        subscription: { schema: "sales", show: "orders", filter: "newOnlineSub", orderBy: null },
       },
       derived: {
+        sub_optin: {
+          label: "Sub. Opt-In",
+          from: null,
+          formula: "subscription.orders / acquisition.orders",
+          format: "percent",
+          kind: "rate",
+          goodDirection: "up",
+        },
         net_aov: {
-          label: "Net AOV",
+          label: "ncAOV",
           from: "acquisition",
           formula: "(gross_sales + discounts + shipping_charges) / orders",
           format: "money",
@@ -93,7 +105,8 @@ export function testConfig(overrides = {}) {
         },
       },
       tiles: [
-        { metric: "net_aov", from: "derived", label: "Net AOV", format: "money", kind: "rate", goodDirection: "up" },
+        { metric: "net_aov", from: "derived", label: "ncAOV", format: "money", kind: "rate", goodDirection: "up" },
+        { metric: "sub_optin", from: "derived", label: "Sub. Opt-In", format: "percent", kind: "rate", goodDirection: "up" },
         { metric: "orders", from: "acquisition", label: "Orders", format: "integer", kind: "total", goodDirection: "up" },
       ],
       alerts: { movePercentThreshold: 15, compareAgainst: "d30" },

@@ -208,3 +208,22 @@ main { max-width: 940px; margin: 0 auto; padding: 22px 18px 80px; }
 .cmp.bad  { color: var(--red);   background: var(--red-bg); }
 .basis { opacity: .6; font-size: 9px; margin-left: 1px; }
 #store-head { margin-top: 0; }
+
+/* metric info affordance */
+.metric { position: relative; }
+.info {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; margin-left: 5px; padding: 0; vertical-align: middle;
+  border-radius: 50%; border: 1px solid var(--line); background: #fff;
+  color: var(--muted); font-size: 9px; font-style: italic; font-weight: 700; line-height: 1; cursor: pointer;
+}
+.info:hover { border-color: var(--green); color: var(--green); }
+.info-pop {
+  position: absolute; z-index: 20; top: 26px; left: 10px; right: 10px;
+  background: #fff; border: 1px solid var(--green); border-radius: 4px;
+  padding: 10px 12px; box-shadow: 0 6px 20px rgba(28,43,42,.14);
+  font-size: 12px; line-height: 1.45; text-transform: none; letter-spacing: 0; color: var(--ink);
+}
+.info-pop strong { display: block; margin-bottom: 4px; color: var(--green); }
+.info-pop p { margin: 0 0 6px; }
+.info-pop p:last-child { margin-bottom: 0; }

@@ -1,23 +1,36 @@
 {
   "_comment": "Layer 0. Store-wide metrics from ShopifyQL, for the overview at the top of the dashboard. Queries and formulas are config, not code: adding a metric or changing a filter is an edit here, never a deploy of new logic.",
   "_VERIFIED": "Every query and window below was run against the live First Day store on 2026-09-10 and returned rows. ShopifyQL is read-only aggregated reporting.",
-
   "shopDomain": "first-day-inc.myshopify.com",
   "apiVersion": "2026-07",
   "currency": "USD",
-
   "filters": {
     "newCustomerOnlineStore": "new_or_returning_customer = 'New' AND is_canceled_order = false AND sales_channel = 'Online Store' AND excludes_post_order_adjustments = true",
-    "_comment": "Reused across every window so the three numbers are genuinely comparable. Changing a filter in one window and not the others is how a comparison quietly stops meaning anything."
+    "_comment": "Reused across every window so the three numbers are genuinely comparable. The subscription filter is the acquisition filter plus one clause, so the opt-in numerator and denominator share an identical base. subscription_or_one_time takes the values 'subscription' and 'one_time', lowercase.",
+    "newCustomerOnlineStoreSubscription": "new_or_returning_customer = 'New' AND is_canceled_order = false AND sales_channel = 'Online Store' AND excludes_post_order_adjustments = true AND subscription_or_one_time = 'subscription'"
   },
-
   "windows": {
-    "mtd":  { "label": "MTD",  "since": "startOfMonth(0m)", "until": "today", "days": null, "primary": true },
-    "d7":   { "label": "7D",   "since": "-7d",              "until": "today", "days": 7 },
-    "d30":  { "label": "30D",  "since": "-30d",             "until": "today", "days": 30 },
+    "mtd": {
+      "label": "MTD",
+      "since": "startOfMonth(0m)",
+      "until": "today",
+      "days": null,
+      "primary": true
+    },
+    "d7": {
+      "label": "7D",
+      "since": "-7d",
+      "until": "today",
+      "days": 7
+    },
+    "d30": {
+      "label": "30D",
+      "since": "-30d",
+      "until": "today",
+      "days": 30
+    },
     "_comment": "The primary window is the number shown. The others are what it is compared against. `days` is used to put TOTALS on a per-day footing before comparing; a rate or an average needs no such adjustment."
   },
-
   "queries": {
     "acquisition": {
       "schema": "sales",
@@ -31,32 +44,103 @@
       "filter": null,
       "orderBy": null
     },
-    "_comment": "A query is run once per window. The collector assembles FROM <schema> SHOW <show> WHERE <filter> SINCE <since> UNTIL <until>."
+    "_comment": "A query is run once per window. The collector assembles FROM <schema> SHOW <show> WHERE <filter> SINCE <since> UNTIL <until>.",
+    "subscription": {
+      "schema": "sales",
+      "show": "orders",
+      "filter": "newCustomerOnlineStoreSubscription",
+      "orderBy": null,
+      "_comment": "The numerator for Sub. Opt-In. Deliberately NOT a GROUP BY subscription_or_one_time: an order containing both a subscription line and a one-time line appears in both groups, so the groups sum to 12,968 against 9,902 distinct orders. Dividing by that sum understates opt-in by about 18 points."
+    }
   },
-
   "derived": {
     "net_aov": {
-      "label": "Net AOV",
+      "label": "ncAOV",
       "from": "acquisition",
       "formula": "(gross_sales + discounts + shipping_charges) / orders",
       "_comment": "New-customer net AOV. Discounts come back NEGATIVE from ShopifyQL, so adding them subtracts them: gross + discounts + shipping is net revenue, over order count. This is deliberately not Shopify's built-in average_order_value, which is computed on a different base and reads about a dollar lower.",
       "format": "money",
       "kind": "rate",
+      "goodDirection": "up",
+      "description": "New Customer AOV. (gross sales + discounts + shipping charges) / orders, for new customers on the Online Store, excluding cancelled orders and post-order adjustments. Discounts arrive negative from ShopifyQL, so adding them subtracts them. This is deliberately not Shopify's built-in average_order_value, which is computed on a different base and reads about a dollar lower."
+    },
+    "sub_optin": {
+      "label": "Sub. Opt-In",
+      "from": null,
+      "formula": "subscription.orders / acquisition.orders",
+      "description": "New Customer Subscription Opt-in. The share of new-customer orders that contain a subscription line. The denominator is the same order count ncAOV is built on, so the two tiles describe the same population. It is NOT the subscription share of a GROUP BY subscription_or_one_time: an order can contain both a subscription and a one-time line and is counted in both groups, so that denominator double-counts and understates opt-in by roughly 18 points.",
+      "format": "percent",
+      "kind": "rate",
       "goodDirection": "up"
     }
   },
-
   "tiles": [
-    { "metric": "net_aov",          "from": "derived",     "label": "Net AOV (new)",   "format": "money",   "kind": "rate",  "goodDirection": "up" },
-    { "metric": "orders",           "from": "acquisition", "label": "New orders",      "format": "integer", "kind": "total", "goodDirection": "up" },
-    { "metric": "gross_sales",      "from": "acquisition", "label": "Gross sales",     "format": "money",   "kind": "total", "goodDirection": "up" },
-    { "metric": "discounts",        "from": "acquisition", "label": "Discounts",       "format": "money",   "kind": "total", "goodDirection": "up" },
-    { "metric": "shipping_charges", "from": "acquisition", "label": "Shipping",        "format": "money",   "kind": "total", "goodDirection": "up" },
-    { "metric": "conversion_rate",  "from": "sessions",    "label": "Conversion",      "format": "percent", "kind": "rate",  "goodDirection": "up" },
-    { "metric": "sessions",         "from": "sessions",    "label": "Sessions",        "format": "integer", "kind": "total", "goodDirection": "up" }
+    {
+      "metric": "net_aov",
+      "from": "derived",
+      "label": "ncAOV",
+      "format": "money",
+      "kind": "rate",
+      "goodDirection": "up"
+    },
+    {
+      "metric": "sub_optin",
+      "from": "derived",
+      "label": "Sub. Opt-In",
+      "format": "percent",
+      "kind": "rate",
+      "goodDirection": "up"
+    },
+    {
+      "metric": "orders",
+      "from": "acquisition",
+      "label": "New orders",
+      "format": "integer",
+      "kind": "total",
+      "goodDirection": "up"
+    },
+    {
+      "metric": "gross_sales",
+      "from": "acquisition",
+      "label": "Gross sales",
+      "format": "money",
+      "kind": "total",
+      "goodDirection": "up"
+    },
+    {
+      "metric": "discounts",
+      "from": "acquisition",
+      "label": "Discounts",
+      "format": "money",
+      "kind": "total",
+      "goodDirection": "up"
+    },
+    {
+      "metric": "shipping_charges",
+      "from": "acquisition",
+      "label": "Shipping",
+      "format": "money",
+      "kind": "total",
+      "goodDirection": "up"
+    },
+    {
+      "metric": "conversion_rate",
+      "from": "sessions",
+      "label": "Conversion",
+      "format": "percent",
+      "kind": "rate",
+      "goodDirection": "up"
+    },
+    {
+      "metric": "sessions",
+      "from": "sessions",
+      "label": "Sessions",
+      "format": "integer",
+      "kind": "total",
+      "goodDirection": "up"
+    }
   ],
   "_comment_kind": "kind is how a metric may be compared across windows of different lengths. A 'rate' (an average or a ratio) is already normalized and compares directly. A 'total' is not: MTD gross sales against a 7 day total measures the length of the window, not the business, so totals are compared per day. Discounts are goodDirection up because the value is negative, so a rise is less discounting.",
-
   "alerts": {
     "movePercentThreshold": 15,
     "compareAgainst": "d30",

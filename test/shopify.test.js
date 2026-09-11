@@ -31,9 +31,18 @@ const tableFor = (row) => ({
   rows: [Object.values(row).map(String)],
 });
 
+const SUB_ORDERS = { mtd: 7385, d7: 5800, d30: 26000 };
+
 const liveFetch = async (url, opts) => {
   const q = JSON.parse(opts.body).variables.q;
   const win = q.includes("startOfMonth") ? "mtd" : q.includes("-7d") ? "d7" : "d30";
+  if (q.includes("subscription_or_one_time")) {
+    return {
+      status: 200, headers: new Headers(),
+      text: async () => JSON.stringify({ data: { shopifyqlQuery: { __typename: "TableResponse", parseErrors: [],
+        tableData: { columns: [{ name: "orders", dataType: "INTEGER" }], rows: [[String(SUB_ORDERS[win])]] } } } }),
+    };
+  }
   return {
     status: 200,
     headers: new Headers(),
@@ -87,31 +96,35 @@ test("values arrive as strings and are parsed to numbers", () => {
 
 /* -------------------------------- formulas -------------------------------- */
 
-test("Net AOV is (gross + discounts + shipping) / orders, and discounts arrive negative", () => {
-  const value = evaluateFormula("(gross_sales + discounts + shipping_charges) / orders", LIVE.mtd);
+/** The scope shape a formula is evaluated against: one entry per query. */
+const scopeOf = (row, extra = {}) => ({ acquisition: { metrics: row }, ...extra });
+
+test("ncAOV is (gross + discounts + shipping) / orders, and discounts arrive negative", () => {
+  const value = evaluateFormula("(gross_sales + discounts + shipping_charges) / orders", scopeOf(LIVE.mtd), { defaultQuery: "acquisition" });
   // Adding a negative discounts figure subtracts it. 69.97 against Shopify's own
   // average_order_value of 69.148 on the same window.
   assert.ok(Math.abs(value - 69.97) < 0.01, `expected ~69.97, got ${value}`);
 });
 
 test("a formula may only contain arithmetic and metrics the query returned", () => {
-  assert.throws(() => evaluateFormula("orders + fetch('x')", LIVE.mtd), /not arithmetic|did not return/);
-  assert.throws(() => evaluateFormula("gross_sales / nonexistent_metric", LIVE.mtd), /did not return/);
+  assert.throws(() => evaluateFormula("orders + fetch('x')", scopeOf(LIVE.mtd), { defaultQuery: "acquisition" }), /not arithmetic|did not return/);
+  assert.throws(() => evaluateFormula("gross_sales / nonexistent_metric", scopeOf(LIVE.mtd), { defaultQuery: "acquisition" }), /did not return/);
 });
 
 test("a formula with a missing input is unknown, not zero", () => {
-  assert.equal(evaluateFormula("gross_sales / orders", { gross_sales: 100, orders: null }), null);
+  assert.equal(evaluateFormula("gross_sales / orders", scopeOf({ gross_sales: 100, orders: null }), { defaultQuery: "acquisition" }), null);
 });
 
 test("a formula that divides by zero yields null rather than Infinity", () => {
-  assert.equal(evaluateFormula("gross_sales / orders", { gross_sales: 100, orders: 0 }), null);
+  assert.equal(evaluateFormula("gross_sales / orders", scopeOf({ gross_sales: 100, orders: 0 }), { defaultQuery: "acquisition" }), null);
 });
 
 /* ------------------------------- comparisons ------------------------------- */
 
 test("a rate compares directly across windows of different lengths", () => {
-  const mtd = evaluateFormula("(gross_sales + discounts + shipping_charges) / orders", LIVE.mtd);
-  const d30 = evaluateFormula("(gross_sales + discounts + shipping_charges) / orders", LIVE.d30);
+  const f = "(gross_sales + discounts + shipping_charges) / orders";
+  const mtd = evaluateFormula(f, scopeOf(LIVE.mtd), { defaultQuery: "acquisition" });
+  const d30 = evaluateFormula(f, scopeOf(LIVE.d30), { defaultQuery: "acquisition" });
   const cmp = compareWindows(mtd, d30, { kind: "rate", primaryDays: 11, otherDays: 30 });
   assert.equal(cmp.basis, "direct");
   assert.ok(Math.abs(cmp.changePct - 2.4) < 0.2, `expected ~+2.4%, got ${cmp.changePct}`);
@@ -207,4 +220,46 @@ test("a GraphQL-level error is raised rather than silently yielding no metrics",
 
 test("a missing token fails loudly rather than reporting an empty store", async () => {
   await assert.rejects(() => collectShopify({ config: testConfig(), token: undefined }), /SHOPIFY_ADMIN_TOKEN is not set/);
+});
+
+/* ------------------------- Sub. Opt-In, and its denominator ------------------------- */
+
+test("a formula can divide one query's numerator by another query's denominator", () => {
+  // This is what lets Sub. Opt-In share a filter base with ncAOV rather than inventing
+  // its own denominator.
+  const scope = {
+    acquisition: { metrics: { orders: 9902, gross_sales: 1091905.36, discounts: -407198.9, shipping_charges: 8118.1 } },
+    subscription: { metrics: { orders: 7385 } },
+  };
+  const optin = evaluateFormula("subscription.orders / acquisition.orders", scope);
+  assert.ok(Math.abs(optin - 0.7458) < 0.001, `expected ~74.6%, got ${(optin * 100).toFixed(1)}%`);
+});
+
+test("the opt-in denominator is distinct orders, not the sum of a GROUP BY", () => {
+  // Live MTD: 7,385 subscription + 5,582 one-time = 12,967 grouped rows against 9,902
+  // distinct orders, because an order can contain both a subscription and a one-time
+  // line and is counted in both groups. Dividing by the group sum understates opt-in
+  // by about 18 points, which is the difference between "most new customers subscribe"
+  // and "most do not".
+  const correct = 7385 / 9902;
+  const doubleCounted = 7385 / (7385 + 5582);
+  assert.ok(Math.abs(correct - 0.746) < 0.002);
+  assert.ok(Math.abs(doubleCounted - 0.5696) < 0.002);
+  assert.ok(correct - doubleCounted > 0.17, "the two definitions differ by more than 17 points");
+});
+
+test("a formula referencing a query that failed yields no value rather than a wrong one", () => {
+  const scope = { acquisition: { metrics: { orders: 9902 } } };
+  assert.throws(() => evaluateFormula("subscription.orders / acquisition.orders", scope), /query "subscription", which did not return/);
+});
+
+test("every tile carries the definition that explains it", async () => {
+  const snapshot = await collectShopify({
+    config: testConfig(), token: "shpat_x", fetchImpl: liveFetch, sleep: async () => {},
+    now: new Date("2026-09-11T02:00:00Z"),
+  });
+  const aov = snapshot.tiles.find((t) => t.metric === "net_aov");
+  assert.equal(aov.label, "ncAOV");
+  assert.ok(aov.formula, "the formula is surfaced for the info hover");
+  assert.ok(aov.filter, "so is the filter it was computed under");
 });

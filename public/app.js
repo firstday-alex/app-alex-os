@@ -154,8 +154,22 @@ function renderStoreMetrics(report) {
         })
         .join("");
 
+      // An info affordance only where there is something to explain.
+      const detail = [
+        t.description,
+        t.formula ? `Formula: ${t.formula}` : null,
+        t.filter ? `Filter: ${t.filter}` : null,
+        t.kind === "total" ? "Compared per day, because the windows are different lengths." : null,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+      const info = detail
+        ? `<button class="info" data-detail="${esc(detail)}" data-title="${esc(t.label)}" aria-label="What is ${esc(t.label)}?">i</button>`
+        : "";
+
       return `<div class="metric">
-        <div class="metric-label">${esc(t.label)}</div>
+        <div class="metric-label">${esc(t.label)}${info}</div>
         <div class="metric-value">${esc(formatMetric(t.value, t.format, { precise }))}</div>
         <div class="metric-cmps">${cmps}</div>
       </div>`;
@@ -690,6 +704,19 @@ document.addEventListener("click", (event) => {
   const open = event.target.closest("[data-open]");
   if (open) return openRock(open.dataset.open);
 });
+// The info popover on a metric tile. Click rather than hover only, so it works on touch.
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("button.info");
+  document.querySelectorAll(".info-pop").forEach((n) => n.remove());
+  if (!button) return;
+  event.stopPropagation();
+
+  const pop = document.createElement("div");
+  pop.className = "info-pop";
+  pop.innerHTML = `<strong>${esc(button.dataset.title)}</strong><p>${esc(button.dataset.detail).replace(/\n\n/g, "</p><p>")}</p>`;
+  button.closest(".metric").appendChild(pop);
+});
+
 $("new-rock-btn").addEventListener("click", () => openRock(null));
 $("rock-close").addEventListener("click", closeRock);
 $("rock-save").addEventListener("click", saveRock);

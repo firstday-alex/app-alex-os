@@ -81,35 +81,52 @@ export function buildQuery(config, queryName, windowName) {
 }
 
 /**
- * Evaluate a derived formula over the metrics of one window.
+ * Evaluate a derived formula over one window's results.
+ *
+ * An identifier is either a bare metric (resolved against the formula's own `from` query)
+ * or a `query.metric` reference, which is what lets Sub. Opt-In divide one query's
+ * numerator by another query's denominator while both share a filter base.
  *
  * Only identifiers, numbers, arithmetic and parentheses are permitted, and every
- * identifier must be a metric the query actually returned. A formula is config, and
- * config is editable by the learning skill, so it is parsed rather than eval'd.
+ * identifier must be a metric a query actually returned. Formulas are config, and config
+ * is editable by the learning skill, so this is parsed rather than eval'd.
  */
-export function evaluateFormula(formula, metrics) {
-  const tokens = String(formula).match(/[A-Za-z_][A-Za-z0-9_]*|\d+(?:\.\d+)?|[()+\-*/]/g) ?? [];
-  const rebuilt = tokens.join(" ");
-  if (rebuilt.replace(/\s+/g, "") !== String(formula).replace(/\s+/g, "")) {
+export function evaluateFormula(formula, scope, { defaultQuery = null } = {}) {
+  const tokens = String(formula).match(/[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?|\d+(?:\.\d+)?|[()+\-*/]/g) ?? [];
+  if (tokens.join(" ").replace(/\s+/g, "") !== String(formula).replace(/\s+/g, "")) {
     throw new Error(`Formula contains characters that are not arithmetic: ${formula}`);
   }
 
-  const values = [];
-  for (const token of tokens) {
-    if (/^[A-Za-z_]/.test(token)) {
-      if (!Object.prototype.hasOwnProperty.call(metrics, token)) {
-        throw new Error(`Formula references "${token}", which the query did not return`);
+  const resolve = (name) => {
+    if (name.includes(".")) {
+      const [queryName, metricName] = name.split(".");
+      const metrics = scope?.[queryName]?.metrics;
+      if (!metrics) throw new Error(`Formula references query "${queryName}", which did not return`);
+      if (!Object.prototype.hasOwnProperty.call(metrics, metricName)) {
+        throw new Error(`Formula references "${name}", which query "${queryName}" did not return`);
       }
-      const value = metrics[token];
-      if (value == null) return null; // a missing input makes the result unknown, not zero
-      values.push(String(value));
-    } else {
-      values.push(token);
+      return metrics[metricName];
     }
+    const metrics = defaultQuery ? scope?.[defaultQuery]?.metrics : null;
+    if (!metrics || !Object.prototype.hasOwnProperty.call(metrics, name)) {
+      throw new Error(`Formula references "${name}", which the query did not return`);
+    }
+    return metrics[name];
+  };
+
+  const parts = [];
+  for (const token of tokens) {
+    if (!/^[A-Za-z_]/.test(token)) {
+      parts.push(token);
+      continue;
+    }
+    const value = resolve(token);
+    if (value == null) return null; // a missing input makes the result unknown, not zero
+    parts.push(String(value));
   }
 
   // eslint-disable-next-line no-new-func -- every token above is a number or an operator.
-  const result = Function(`"use strict"; return (${values.join(" ")});`)();
+  const result = Function(`"use strict"; return (${parts.join(" ")});`)();
   return Number.isFinite(result) ? result : null;
 }
 
@@ -208,10 +225,10 @@ export async function collectShopify({ config, token, logger, fetchImpl, sleep, 
     results[windowName].derived = { metrics: {} };
     for (const [name, spec] of Object.entries(sc.derived ?? {})) {
       if (name.startsWith("_")) continue;
-      const source = results[windowName][spec.from]?.metrics;
-      if (!source) continue;
       try {
-        results[windowName].derived.metrics[name] = evaluateFormula(spec.formula, source);
+        results[windowName].derived.metrics[name] = evaluateFormula(spec.formula, results[windowName], {
+          defaultQuery: spec.from ?? null,
+        });
       } catch (err) {
         logger?.warn?.("shopify.formula_failed", { derived: name, window: windowName, err });
         failures.push({ query: `derived.${name}`, window: windowName, error: err.message });
@@ -248,7 +265,22 @@ export async function collectShopify({ config, token, logger, fetchImpl, sleep, 
         : (failures.find((f) => f.query === tile.from || f.query === `derived.${tile.metric}`)?.error ??
            "metric not returned by its query");
 
-    return { ...tile, kind, value, comparisons, available: value != null, reason };
+    // The plain-language definition, for the info hover. A metric nobody can check the
+    // definition of is a metric nobody should act on.
+    const description = sc.derived?.[tile.metric]?.description ?? tile.description ?? null;
+    const filterName = sc.queries?.[tile.from]?.filter ?? sc.queries?.[sc.derived?.[tile.metric]?.from]?.filter ?? null;
+
+    return {
+      ...tile,
+      kind,
+      value,
+      comparisons,
+      available: value != null,
+      reason,
+      description,
+      formula: sc.derived?.[tile.metric]?.formula ?? null,
+      filter: filterName ? sc.filters?.[filterName] ?? null : null,
+    };
   });
 
   return {
