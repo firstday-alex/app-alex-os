@@ -145,6 +145,22 @@ pre { background: var(--code); padding: 12px; border-radius: 4px; overflow-x: au
 }
 .nav:hover { background: var(--code); }
 .nav.active { background: var(--green); color: #fff; }
+/* Tools sit below the views and above the footer, separated, because a button that
+   posts to a shared Slack channel should not sit in the same run as the navigation. */
+.drawer-tools { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.drawer-label {
+  margin: 0 0 6px; padding: 0 10px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+}
+.nav-tool {
+  display: block; width: 100%; text-align: left; background: none; color: var(--ink);
+  border: 1px solid var(--line); padding: 9px 10px; border-radius: 4px; font: inherit; cursor: pointer;
+}
+.nav-tool:hover:not(:disabled) { background: var(--code); border-color: var(--green); }
+.nav-tool:disabled { opacity: .55; cursor: default; }
+.nav-tool.armed { border-color: var(--amber); background: var(--code); font-weight: 600; }
+.drawer-tools .meta { margin: 6px 0 0; padding: 0 10px; font-size: 11px; line-height: 1.45; color: var(--muted); }
+
 .drawer-foot { margin-top: auto; padding: 10px; border-top: 1px solid var(--line); }
 .drawer-foot .meta { margin: 2px 0; font-size: 11px; color: var(--muted); }
 #scrim { position: fixed; inset: 0; background: rgba(28,43,42,.35); z-index: 35; }

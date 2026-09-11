@@ -220,6 +220,14 @@ Severities: **p1** (Layer 1 items and material test movement), **attention**,
   yesterday's baseline survives an outage.
 - **Running twice is safe.** The Slack post is keyed on the run date and checked before
   sending, so Netlify's free background-function retry cannot double post.
+- **The daily alert can be tested by hand, without touching tomorrow.** *Send a test
+  readout* in the hamburger menu posts through the same sender the 8 AM run uses, so it
+  proves the parts a dry run cannot reach: channel membership, a scope lost to a
+  reinstall, blocks Slack will accept. It runs as mode `test`, which matters twice — only
+  an `official` snapshot enters the baseline index, and only an `official` report claims
+  the per-date Slack key. A test send therefore cannot leave tomorrow comparing against
+  this afternoon, and cannot suppress the real readout. It arms on the first click and
+  posts on the second, because it goes to a channel other people read.
 - **Nothing is compared against a value that was not returned.** A missing confidence
   interval skips its band check and says so. A null profit metric renders as "not
   configured", never as zero. Unknown days or orders is unknown, not zero.

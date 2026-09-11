@@ -171,3 +171,30 @@ test("a partial logger cannot crash a request", async () => {
   const result = await httpJson("https://x/y", { fetchImpl, sleep: async () => {}, logger: { warn() {} } });
   assert.equal(result.status, 200);
 });
+
+test("every dashboard function gates on isAuthorized before doing anything", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const { repoRoot } = await import("../src/config.js");
+
+  const dir = path.join(repoRoot, "netlify", "functions");
+  // Background functions are invoked by the other functions, so they check a shared
+  // internal secret rather than a browser cookie.
+  const internal = new Set(["run-pipeline-background.mjs", "advisor-background.mjs", "learning-background.mjs"]);
+  // Slack's own endpoints verify an HMAC signature; login is the thing that issues the
+  // cookie. The scheduled function reads no request at all: it is cron-invoked, and
+  // shouldRunScheduled means an unsolicited call outside 8 AM Central does nothing.
+  const ungated = new Set(["slack-events.mjs", "slack-interactive.mjs", "login.mjs", "scheduled-readout.mjs"]);
+
+  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".mjs"))) {
+    const src = fs.readFileSync(path.join(dir, file), "utf8");
+    if (internal.has(file)) {
+      assert.match(src, /isInternalCall/, `${file} must check isInternalCall`);
+      continue;
+    }
+    if (ungated.has(file)) continue;
+    // A new endpoint added without a gate is the failure this catches. test-readout
+    // posts to a shared Slack channel, so it is exactly the kind that must not slip.
+    assert.match(src, /isAuthorized\(req\)/, `${file} must gate on isAuthorized`);
+  }
+});

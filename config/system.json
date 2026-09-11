@@ -43,7 +43,9 @@
   },
   "dashboard": {
     "sessionTtlHours": 12,
-    "refreshMinIntervalSeconds": 60
+    "refreshMinIntervalSeconds": 60,
+    "testReadoutMinIntervalSeconds": 300,
+    "_comment_testReadout": "The test readout posts a real message to a channel other people read, and a post cannot be unposted. Five minutes, against the refresh button's one: the throttle here is about the channel, not the API."
   },
   "slack": {
     "advisorButtonText": "Ask for recommendation",

@@ -67,7 +67,7 @@ function render() {
   const report = state.report;
   const s = report.summary;
 
-  $("chip-mode").textContent = report.mode === "official" ? "8 AM readout" : "refreshed";
+  $("chip-mode").textContent = { official: "8 AM readout", test: "test send" }[report.mode] ?? "refreshed";
   $("drawer-baseline").textContent = `Baseline ${report.baseline.describe}`;
   $("drawer-generated").textContent = `Pulled ${new Date(report.generatedAt).toLocaleString()}`;
 
@@ -819,6 +819,92 @@ $("refresh").addEventListener("click", async () => {
     button.textContent = "Refresh now";
   }
 });
+
+
+/* ------------------------------ test readout ------------------------------
+   Proving the 8 AM Slack send works, on demand. The parts that break are the parts a
+   dry run cannot reach: channel membership, a scope lost to a reinstall, blocks Slack
+   will not accept. Those only fail against the real API.
+
+   It posts to a channel other people read, so it arms first and sends on the second
+   click. The arming lapses on its own, because a button left armed is a button that
+   posts by accident. */
+
+const TEST_READOUT_LABEL = "Send a test readout";
+let armTimer = null;
+
+function disarmTestReadout() {
+  const button = $("test-readout");
+  if (!button) return;
+  clearTimeout(armTimer);
+  armTimer = null;
+  button.dataset.armed = "";
+  button.classList.remove("armed");
+  button.textContent = TEST_READOUT_LABEL;
+}
+
+$("test-readout")?.addEventListener("click", async () => {
+  const button = $("test-readout");
+  const note = $("test-readout-note");
+
+  if (button.dataset.armed !== "1") {
+    button.dataset.armed = "1";
+    button.classList.add("armed");
+    button.textContent = "Click again to post to Slack";
+    note.textContent = "This posts a real message to the readout channel. It is labelled as a test. Click away to cancel.";
+    // Arming lapses by itself rather than waiting to be clicked days later.
+    armTimer = setTimeout(disarmTestReadout, 8000);
+    return;
+  }
+
+  clearTimeout(armTimer);
+  armTimer = null;
+  button.classList.remove("armed");
+  button.dataset.armed = "";
+  button.disabled = true;
+  button.textContent = "Posting…";
+
+  try {
+    const response = await fetch(`${FN}/test-readout`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirm: "send-test-readout" }),
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (!body.started) {
+      button.textContent = TEST_READOUT_LABEL;
+      note.textContent = body.reason ?? "The test readout did not start.";
+      return;
+    }
+
+    // The send rides the same background run as a refresh, so the dashboard picks up the
+    // new report the same way and the readout on screen is the one that was posted.
+    note.textContent = "Pulling live data and posting. This takes about as long as a refresh.";
+    const before = state.report?.runId ?? null;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const check = await fetch(`${FN}/report`).then((r) => r.json()).catch(() => null);
+      if (check && !check.empty && check.report.runId !== before) {
+        state.report = check.report;
+        state.openItems = check.openItems ?? state.openItems;
+        render();
+        note.textContent = "Posted. Check the readout channel in Slack for the message marked TEST.";
+        return;
+      }
+    }
+    note.textContent = "Still running. The post may land shortly — check Slack rather than clicking again.";
+  } catch (err) {
+    note.textContent = `The test readout failed: ${err.message}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = TEST_READOUT_LABEL;
+  }
+});
+
+// Opening a view, or closing the drawer, cancels an armed send.
+for (const nav of document.querySelectorAll(".nav")) nav.addEventListener("click", disarmTestReadout);
+$("scrim")?.addEventListener("click", disarmTestReadout);
 
 
 // Already signed in from a previous visit? The cookie will tell us.

@@ -217,11 +217,24 @@ function renderCrossLayer(detail, section, lines) {
 
 /* ---------------------------------- report ---------------------------------- */
 
+// One table, because the text and the Slack rendering used to carry the same ternary in
+// two places and a third mode is exactly how those drift apart.
+const MODE_LABEL = {
+  official: "8 AM official readout",
+  refresh: "On demand refresh",
+  test: "Test send, triggered by hand",
+};
+
 export function renderText(report) {
   const lines = [];
   const { detail, sections, config, flags } = report._render;
 
-  lines.push(`TURNPUPS READOUT. ${report.dateKey}. ${report.mode === "official" ? "8 AM official" : "on demand refresh"}.`);
+  if (report.mode === "test") {
+    // The whole point of a test send is to look exactly like the real thing. That is
+    // also the danger, so the label goes first, before anyone reads a number.
+    lines.push("*** TEST SEND. Triggered by hand from the dashboard. This is NOT the 8 AM readout. ***");
+  }
+  lines.push(`TURNPUPS READOUT. ${report.dateKey}. ${MODE_LABEL[report.mode] ?? "on demand refresh"}.`);
   lines.push(`Run ${report.runId}. Baseline: ${report.baseline.describe}.`);
   if (report.missing.length) {
     lines.push(`PARTIAL. Missing: ${report.missing.map((m) => `${m.section} (${m.reason})`).join("; ")}.`);
@@ -264,16 +277,26 @@ export function renderSlackBlocks(report, config) {
   const blocks = [];
   const flags = report._render.flags;
 
+  if (report.mode === "test") {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: ":test_tube: *TEST SEND* — triggered by hand from the dashboard to check that the readout posts and renders. *This is not the 8 AM readout* and it does not replace it. The numbers are live.",
+      },
+    });
+  }
+
   blocks.push({
     type: "header",
-    text: { type: "plain_text", text: `Turnpups readout. ${report.dateKey}` },
+    text: { type: "plain_text", text: `${report.mode === "test" ? "[TEST] " : ""}Turnpups readout. ${report.dateKey}` },
   });
   blocks.push({
     type: "context",
     elements: [
       {
         type: "mrkdwn",
-        text: `${report.mode === "official" ? "8 AM official readout" : "On demand refresh"} · baseline ${report.baseline.describe} · run \`${report.runId}\``,
+        text: `${MODE_LABEL[report.mode] ?? "On demand refresh"} · baseline ${report.baseline.describe} · run \`${report.runId}\``,
       },
     ],
   });

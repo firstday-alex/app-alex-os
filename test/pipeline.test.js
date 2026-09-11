@@ -189,6 +189,60 @@ test("a refresh run never posts to Slack", async () => {
   assert.match(result.delivery.reason, /8 AM send is the official readout/);
 });
 
+/* ------------------------------ the test send ------------------------------
+   A by-hand send exists to prove the Slack path. Its whole risk is that it damages
+   tomorrow morning, so both ways it could are asserted here rather than left to the
+   mode string being spelled right. */
+
+test("a test send posts to Slack, labelled as a test in every rendering", async () => {
+  const ctx = await setup();
+  const result = await runPipeline({ ...ctx, mode: "test", now: new Date("2026-09-10T19:00:00Z"), env: baseEnv });
+
+  assert.equal(result.delivery.sent, true);
+  assert.equal(ctx.slackCalls.length, 1);
+
+  // It looks like the real readout on purpose, which is exactly why it has to say what
+  // it is before it says anything else. The fallback text matters as much as the blocks:
+  // it is what a notification shows.
+  const posted = ctx.slackCalls[0];
+  assert.match(posted.text, /TEST SEND/);
+  assert.match(posted.blocks[1].text.text, /TEST SEND/, "the banner sits above the header");
+  assert.match(posted.blocks[2].text.text, /^\[TEST\] /, "the header itself is marked");
+});
+
+test("a test send does not claim the day's Slack key, so the 8 AM readout still goes out", async () => {
+  const ctx = await setup();
+
+  // A test at 7 AM, then the real 8 AM run.
+  const tested = await runPipeline({ ...ctx, mode: "test", now: new Date("2026-09-10T12:00:00Z"), env: baseEnv });
+  assert.equal(tested.delivery.sent, true);
+
+  const official = await runPipeline({ ...ctx, mode: "official", now: new Date("2026-09-10T13:00:00Z"), env: baseEnv });
+  assert.equal(official.delivery.sent, true, "the test send must not suppress the official readout");
+  assert.equal(ctx.slackCalls.length, 2);
+
+  // And it can be repeated, because it never wrote a receipt to check against.
+  const again = await runPipeline({ ...ctx, mode: "test", now: new Date("2026-09-10T14:00:00Z"), env: baseEnv });
+  assert.equal(again.delivery.sent, true);
+});
+
+test("a test send does not become the pinned baseline", async () => {
+  const ctx = await setup();
+
+  // The real 8 AM run, then a test send later the same day.
+  await runPipeline({ ...ctx, mode: "official", now: new Date("2026-09-10T13:00:00Z"), env: baseEnv });
+  const index = await ctx.store.readIndex("clickup");
+  const officialKey = index.officialByDate["2026-09-10"];
+  assert.ok(officialKey, "the 8 AM run is the day's official snapshot");
+
+  await runPipeline({ ...ctx, mode: "test", now: new Date("2026-09-10T19:00:00Z"), env: baseEnv });
+
+  // Tomorrow reads officialByDate. If a 2 PM test send landed there, tomorrow would
+  // compare against this afternoon instead of this morning.
+  const after = await ctx.store.readIndex("clickup");
+  assert.equal(after.officialByDate["2026-09-10"], officialKey, "a test send must not overwrite the day's baseline");
+});
+
 test("partial failure: the Intelligems collector throws and the ClickUp section still renders", async () => {
   const ctx = await setup({ fail: ["intelligems"] });
   const result = await runPipeline({ ...ctx, mode: "official", now: new Date("2026-09-10T13:00:00Z"), env: baseEnv });

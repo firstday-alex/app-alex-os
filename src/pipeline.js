@@ -22,16 +22,28 @@ import { sendReadout } from "./send/slack.js";
 
 /**
  * @param {object} opts
- * @param {'official'|'refresh'} opts.mode
+ * @param {'official'|'refresh'|'test'} opts.mode
  *   official - the scheduled 8 AM send. Writes the day's baseline snapshot, posts to Slack.
  *   refresh  - the dashboard's on demand re-pull. Same pinned baseline, no Slack post.
+ *   test     - a by-hand send, to prove the Slack path works. Posts, labelled as a test.
+ *
+ * Why `test` is its own mode rather than `official` with a flag. Two things in this
+ * system key off the exact string "official", and getting either wrong breaks tomorrow
+ * morning rather than today's test:
+ *   1. Only an official snapshot enters `officialByDate`, which is what the pinned
+ *      baseline reads. A test run at 3 PM writing an official snapshot would leave
+ *      tomorrow comparing against this afternoon instead of this morning's 8 AM.
+ *   2. Only an official report claims the per-date Slack idempotence key. A test send
+ *      claiming today's key would silently suppress the real readout.
  * @param {Date} [opts.now]
  * @param {boolean} [opts.dryRun] run everything, skip the Slack post
  */
+const MODES = new Set(["official", "refresh", "test"]);
+
 export async function runPipeline(opts = {}) {
   const config = opts.config ?? loadConfig();
   const now = opts.now ?? new Date();
-  const mode = opts.mode ?? "refresh";
+  const mode = MODES.has(opts.mode) ? opts.mode : "refresh";
   const env = opts.env ?? process.env;
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   // Injectable so tests do not sit through the real retry backoff.
@@ -201,7 +213,11 @@ export async function runPipeline(opts = {}) {
   let delivery = { sent: false, reason: "not attempted" };
   if (opts.dryRun) {
     delivery = { sent: false, reason: "dry run" };
-  } else if (mode === "official") {
+  } else if (mode === "official" || mode === "test") {
+    // A test send posts through exactly the same path, so it proves the real thing:
+    // token, channel membership, scopes, block rendering. It differs only in that
+    // sendReadout neither checks nor claims the per-date key for a non-official mode,
+    // so it can be run twice and cannot suppress the 8 AM send.
     delivery = await sendReadout({
       report,
       store,

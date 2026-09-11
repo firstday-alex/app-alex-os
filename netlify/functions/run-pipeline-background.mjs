@@ -20,7 +20,9 @@ export default async (req) => {
   }
 
   const payload = await req.json().catch(() => ({}));
-  const mode = payload.mode === "official" ? "official" : "refresh";
+  // Anything unrecognised falls to refresh, the mode that neither posts nor writes a
+  // baseline. An unknown mode should be the harmless one.
+  const mode = ["official", "test"].includes(payload.mode) ? payload.mode : "refresh";
 
   try {
     const result = await runPipeline({ config, mode, runId: payload.runId, logger });
