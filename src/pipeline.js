@@ -108,7 +108,8 @@ export async function runPipeline(opts = {}) {
     runCollector("shopify", () =>
       collectShopify({
         config,
-        token: env.SHOPIFY_ADMIN_TOKEN,
+        env,
+        store,
         logger: logger.child({ collector: "shopify" }),
         fetchImpl,
         sleep,

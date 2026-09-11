@@ -63,7 +63,8 @@ Connect the repo. Build settings come from `netlify.toml`; there is no build ste
 | Variable | Notes |
 |---|---|
 | `CLICKUP_TOKEN` | personal API token, `pk_...` |
-| `SHOPIFY_ADMIN_TOKEN` | `shpat_...`, scopes `read_reports` + `read_analytics` only |
+| `SHOPIFY_CLIENT_ID` | Dev Dashboard app client id |
+| `SHOPIFY_CLIENT_SECRET` | its client secret. Exchanged for a 24h token at runtime. |
 | `INTELLIGEMS_TOKEN` | External API key |
 | `SLACK_BOT_TOKEN` | `xoxb-...`, scope `chat:write` |
 | `SLACK_SIGNING_SECRET` | verifies inbound Slack requests |
@@ -72,6 +73,29 @@ Connect the repo. Build settings come from `netlify.toml`; there is no build ste
 | `GITHUB_TOKEN` | scoped to this repo: contents + pull requests write |
 | `DASHBOARD_PASSWORD` | the shared dashboard password |
 | `DASHBOARD_COOKIE_SECRET` | `openssl rand -base64 32`. Also gates internal function calls. |
+
+### Shopify auth, after the 2026 cutoff
+
+Legacy custom apps — the ones that revealed an `shpat_` Admin API token in the store
+admin — could not be created after **1 January 2026**. Creating one now is not an option,
+and the store admin says so.
+
+The replacement: build the app in the **Dev Dashboard**, give it `read_reports` and
+`read_analytics`, install it on the store, and use its **Client ID and Client Secret**.
+Those are exchanged for an access token by the client credentials grant:
+
+```
+POST https://{shop}.myshopify.com/admin/oauth/access_token
+{ "client_id": "...", "client_secret": "...", "grant_type": "client_credentials" }
+```
+
+The token lasts **24 hours**, which is why the credentials rather than a token go in the
+environment. The collector caches the token with its expiry and refreshes it five minutes
+early, so a dashboard refresh does not re-exchange on every click and a token cannot
+expire mid-run.
+
+An app that predates the cutoff still works: set `SHOPIFY_ADMIN_TOKEN` and no exchange
+happens.
 
 **Never use a value that appears in the repo.** Netlify scans the build output for every
 environment value and fails the build when it finds one. That is not a nuisance to be

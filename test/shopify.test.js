@@ -218,8 +218,11 @@ test("a GraphQL-level error is raised rather than silently yielding no metrics",
   );
 });
 
-test("a missing token fails loudly rather than reporting an empty store", async () => {
-  await assert.rejects(() => collectShopify({ config: testConfig(), token: undefined }), /SHOPIFY_ADMIN_TOKEN is not set/);
+test("missing credentials fail loudly rather than reporting an empty store", async () => {
+  await assert.rejects(
+    () => collectShopify({ config: testConfig(), token: undefined, env: {} }),
+    /Shopify credentials are not set/,
+  );
 });
 
 /* ------------------------- Sub. Opt-In, and its denominator ------------------------- */
@@ -331,4 +334,86 @@ test("both readings of subscription opt-in are computed, and they differ materia
   assert.ok(Math.abs(ofOrders - 0.746) < 0.002, "share of distinct orders");
   assert.ok(Math.abs(ofMix - 0.5696) < 0.002, "share of the subscription/one-time split, as the Shopify report shows");
   assert.ok(ofOrders - ofMix > 0.17, "the two answer different questions and differ by 17+ points");
+});
+
+/* ----------------------------- token exchange ----------------------------- */
+
+import { getAccessToken } from "../src/collectors/shopify.js";
+import { Store } from "../src/lib/storage.js";
+
+const memoryStore = async () => Store.open({ config: testConfig(), mode: "memory" });
+
+test("client id and secret are exchanged for a token by the client credentials grant", async () => {
+  // Legacy custom apps, and their static shpat_ tokens, could not be created after
+  // 1 January 2026. The replacement grant returns a token valid for 24 hours.
+  const calls = [];
+  const fetchImpl = async (url, opts) => {
+    calls.push({ url, body: JSON.parse(opts.body) });
+    return { status: 200, headers: new Headers(), text: async () => JSON.stringify({ access_token: "shpua_fresh", expires_in: 86399, scope: "read_reports" }) };
+  };
+
+  const result = await getAccessToken({
+    config: testConfig(),
+    env: { SHOPIFY_CLIENT_ID: "abc", SHOPIFY_CLIENT_SECRET: "shh" },
+    store: await memoryStore(),
+    fetchImpl,
+    sleep: async () => {},
+    now: 1_000_000,
+  });
+
+  assert.equal(result.token, "shpua_fresh");
+  assert.equal(result.source, "exchange");
+  assert.match(calls[0].url, /\/admin\/oauth\/access_token$/);
+  assert.equal(calls[0].body.grant_type, "client_credentials");
+  assert.equal(calls[0].body.client_id, "abc");
+  assert.equal(result.expiresAt, 1_000_000 + 86399 * 1000);
+});
+
+test("a cached token is reused until it is close to expiring", async () => {
+  const store = await memoryStore();
+  let exchanges = 0;
+  const fetchImpl = async () => {
+    exchanges += 1;
+    return { status: 200, headers: new Headers(), text: async () => JSON.stringify({ access_token: `t${exchanges}`, expires_in: 86399 }) };
+  };
+  const env = { SHOPIFY_CLIENT_ID: "abc", SHOPIFY_CLIENT_SECRET: "shh" };
+  const opts = { config: testConfig(), env, store, fetchImpl, sleep: async () => {} };
+
+  const first = await getAccessToken({ ...opts, now: 0 });
+  const second = await getAccessToken({ ...opts, now: 60_000 });
+  assert.equal(exchanges, 1, "the second call reuses the cached token");
+  assert.equal(second.source, "cache");
+  assert.equal(second.token, first.token);
+
+  // Inside the safety margin, a fresh token is fetched rather than risking expiry mid-run.
+  const late = await getAccessToken({ ...opts, now: 86399 * 1000 - 60_000 });
+  assert.equal(exchanges, 2);
+  assert.equal(late.source, "exchange");
+});
+
+test("an existing legacy static token is still honoured and needs no exchange", async () => {
+  let exchanges = 0;
+  const result = await getAccessToken({
+    config: testConfig(),
+    env: { SHOPIFY_ADMIN_TOKEN: "shpat_legacy" },
+    fetchImpl: async () => { exchanges += 1; throw new Error("should not be called"); },
+  });
+  assert.equal(result.token, "shpat_legacy");
+  assert.equal(result.source, "static");
+  assert.equal(exchanges, 0);
+});
+
+test("missing credentials name both accepted forms rather than one", async () => {
+  await assert.rejects(
+    () => getAccessToken({ config: testConfig(), env: {} }),
+    /SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET.*SHOPIFY_ADMIN_TOKEN/s,
+  );
+});
+
+test("an exchange that returns no token says what to check", async () => {
+  const fetchImpl = async () => ({ status: 200, headers: new Headers(), text: async () => JSON.stringify({}) });
+  await assert.rejects(
+    () => getAccessToken({ config: testConfig(), env: { SHOPIFY_CLIENT_ID: "a", SHOPIFY_CLIENT_SECRET: "b" }, fetchImpl, sleep: async () => {} }),
+    /app is installed on test-shop\.myshopify\.com/,
+  );
 });

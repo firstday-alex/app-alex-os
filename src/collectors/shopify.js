@@ -12,6 +12,66 @@
 
 import { httpJson } from "../lib/http.js";
 
+const TOKEN_CACHE_KEY = "shopify/access-token";
+// Refresh a few minutes early so a token cannot expire mid-run.
+const TOKEN_SAFETY_MARGIN_MS = 5 * 60 * 1000;
+
+/**
+ * Get an Admin API access token.
+ *
+ * Legacy custom apps, the ones that handed you a static `shpat_` token in the admin,
+ * could not be created after 1 January 2026. The replacement is a client credentials
+ * grant: exchange the app's client id and secret for a token that is valid for 24 hours.
+ *
+ * That expiry is the reason this exists rather than an env var holding a token. The
+ * result is cached with its expiry so a dashboard refresh does not re-exchange on every
+ * click, and a static token is still honoured if one is supplied, because existing
+ * legacy apps keep working.
+ */
+export async function getAccessToken({ config, env = process.env, store, logger, fetchImpl, sleep, now = Date.now() }) {
+  // An existing legacy app's token still works, and needs no exchange.
+  if (env.SHOPIFY_ADMIN_TOKEN) return { token: env.SHOPIFY_ADMIN_TOKEN, source: "static" };
+
+  const clientId = env.SHOPIFY_CLIENT_ID;
+  const clientSecret = env.SHOPIFY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error(
+      "Shopify credentials are not set. Provide SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET (Dev Dashboard app), or SHOPIFY_ADMIN_TOKEN for an existing legacy custom app.",
+    );
+  }
+
+  const cached = await store?.getCached(TOKEN_CACHE_KEY);
+  if (cached?.token && cached.expiresAt - TOKEN_SAFETY_MARGIN_MS > now) {
+    return { token: cached.token, source: "cache", expiresAt: cached.expiresAt };
+  }
+
+  const http = config.system.http;
+  const { body } = await httpJson(`https://${config.shopify.shopDomain}/admin/oauth/access_token`, {
+    method: "POST",
+    body: { client_id: clientId, client_secret: clientSecret, grant_type: "client_credentials" },
+    logger,
+    label: "shopify.token_exchange",
+    fetchImpl,
+    sleep,
+    timeoutMs: http.timeoutMs,
+    maxAttempts: http.maxAttempts,
+    backoffMsSchedule: http.backoffMsSchedule,
+  });
+
+  const token = body?.access_token;
+  if (!token) {
+    throw new Error(
+      `Shopify token exchange returned no access_token. Check that the app is installed on ${config.shopify.shopDomain} and that the client id and secret belong to it.`,
+    );
+  }
+
+  // expires_in is seconds; the docs give 86399, one second under 24 hours.
+  const expiresAt = now + (Number(body.expires_in) || 86399) * 1000;
+  await store?.setCached(TOKEN_CACHE_KEY, { token, expiresAt });
+  logger?.info?.("shopify.token_exchanged", { expiresInSeconds: body.expires_in ?? null, scopes: body.scope ?? null });
+  return { token, source: "exchange", expiresAt };
+}
+
 const GRAPHQL = `query Run($q: String!) {
   shopifyqlQuery(query: $q) {
     __typename
@@ -198,10 +258,16 @@ export async function runQuery({ config, token, query, logger, fetchImpl, sleep,
   return parseTable(result.tableData);
 }
 
-export async function collectShopify({ config, token, logger, fetchImpl, sleep, now = new Date() }) {
-  if (!token) throw new Error("SHOPIFY_ADMIN_TOKEN is not set");
+export async function collectShopify({ config, token, env = process.env, store, logger, fetchImpl, sleep, now = new Date() }) {
   const sc = config.shopify;
   if (!sc?.shopDomain) throw new Error("config.shopify.shopDomain is not set");
+
+  // A caller may pass a token directly (tests); otherwise resolve one, exchanging the
+  // client credentials if needed.
+  const resolved = token
+    ? { token, source: "provided" }
+    : await getAccessToken({ config, env, store, logger, fetchImpl, sleep, now: now.getTime() });
+  token = resolved.token;
 
   const windowNames = Object.keys(sc.windows ?? {}).filter((k) => !k.startsWith("_"));
   const queryNames = Object.keys(sc.queries ?? {}).filter((k) => !k.startsWith("_"));
@@ -356,6 +422,7 @@ export async function collectShopify({ config, token, logger, fetchImpl, sleep, 
     items: tiles.filter((t) => t.available),
     tiles,
     failures,
+    auth: { source: resolved.source, expiresAt: resolved.expiresAt ?? null },
     meta: { windows: windowNames.length, queries: queryNames.length, failed: failures.length, tiles: tiles.length },
   };
 }
