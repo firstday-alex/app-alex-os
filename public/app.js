@@ -424,8 +424,106 @@ function renderLayer2(report) {
     <h3>Not started</h3>
     <div class="scroll"><table>${head}<tbody>${taskRows(delta.boards.notStarted) || '<tr><td colspan="7">Nothing not started.</td></tr>'}</tbody></table></div>
     <h3>Day over day</h3>
-    ${renderDayOverDay(delta)}`;
+    <div class="dod-windows" role="group" aria-label="Compare against">
+      ${Object.entries(DOD_WINDOWS).map(([id, w]) => `<button type="button" class="ghost dod-window${id === dodWindow ? " on" : ""}" data-window="${id}" aria-pressed="${id === dodWindow}">${esc(w.label)}</button>`).join("")}
+    </div>
+    <p class="meta" id="dod-basis">${delta.baselineDate ? `Against the readout baseline from ${esc(fmtWhen(delta.baselineDate))}.` : ""}</p>
+    <div id="dod">${renderDayOverDay(delta)}</div>
+    <div id="dod-rocks"></div>`;
+  // Always fetched, even for the readout window: it is what brings the rock changes.
+  loadDodWindow(dodWindow);
 }
+
+/* -------------------------- day over day: windows --------------------------
+   The 8 AM readout always compares against the previous working day's 8 AM snapshot.
+   Here the same view can also be asked about the last 24 hours, or today since
+   midnight. Each answer names the snapshot it actually compared against. */
+
+const DOD_WINDOWS = {
+  readout: { label: "Since 8 AM readout" },
+  "24h": { label: "Last 24 hours" },
+  today: { label: "Today" },
+};
+let dodWindow = (() => {
+  try {
+    const saved = localStorage.getItem("mos.dodWindow");
+    return DOD_WINDOWS[saved] ? saved : "readout";
+  } catch {
+    return "readout";
+  }
+})();
+
+function fmtWhen(iso) {
+  const d = new Date(iso);
+  const day = d.toDateString() === new Date().toDateString() ? "today" : d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return `${day} ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+}
+
+async function loadDodWindow(window) {
+  const basis = $("dod-basis");
+  if (!basis) return;
+  const res = await fetch(`${FN}/compare?window=${encodeURIComponent(window)}`).catch(() => null);
+  const body = res ? await res.json().catch(() => ({})) : {};
+  if (window !== dodWindow || !$("dod")) return; // the toggle moved on while this loaded
+  if (!res?.ok) {
+    basis.textContent = body.error ?? "Could not load that comparison.";
+    return;
+  }
+  const gap = body.gapMinutes;
+  basis.innerHTML = `Snapshot from ${esc(fmtWhen(body.current.takenAt))} against ${esc(fmtWhen(body.baseline.takenAt))}${
+    window === "readout" ? " (the readout baseline)" : ""
+  }.${
+    !body.coversWindow
+      ? ` <strong>Covers less than the window:</strong> the oldest snapshot stored is from ${esc(fmtWhen(body.baseline.takenAt))}.`
+      : gap != null && gap > 90
+        ? ` The nearest snapshot was ${esc(Math.round(gap / 60))}h before the window's start, so this covers a little more than it says.`
+        : ""
+  }`;
+  $("dod").innerHTML = renderDayOverDay(body.delta);
+  $("dod-rocks").innerHTML = renderRockChanges(body.rockChanges ?? []);
+}
+
+const ROCK_FIELD_LABEL = {
+  title: "renamed", status: "status", state: "queue", owner: "owner", kpi: "KPI", startDate: "start", checkInDate: "check-in",
+  shippedAt: "shipped", clickupOptionId: "Rock Reference link", clickupBigSwingOptionId: "Big Swing link",
+  intelligemsExperienceId: "experiment", standupRockId: "standup link", websiteUrl: "website", notes: "notes",
+};
+
+/** What changed on the rocks in the window, from the audit trail. */
+function renderRockChanges(entries) {
+  const changes = entries.flatMap((e) => e.changes.map((c) => ({ ...c, at: e.at, actor: e.actor })));
+  const head = `<h3>Rocks in this window</h3>`;
+  if (!changes.length) return `${head}<p class="sub">No rock changes in this window.</p>`;
+  const people = new Map((state.rocks?.people ?? []).map((p) => [p.id, p.name]));
+  const statusLabels = { on_track: "On Track", at_risk: "At Risk", done: "Done", ...(state.rocks?.statusLabels ?? {}) };
+  const show = (field, v) =>
+    v == null || v === "" ? "none" : field === "owner" ? people.get(v) ?? v : field === "status" ? statusLabels[v] ?? v : v;
+  const row = (c) => {
+    const move = c.change === "created" ? "new" : c.change === "removed" ? "gone" : c.diff?.status ? (c.diff.status.to === "at_risk" ? "back" : "forward") : "talk";
+    const label = { created: "+ Added", removed: "✕ Removed", updated: "• Changed" }[c.change];
+    const diffs = Object.entries(c.diff ?? {}).map(([f, d]) =>
+      f === "notes"
+        ? `<div class="dod-note">notes edited</div>`
+        : `<div class="dod-note">${esc(ROCK_FIELD_LABEL[f] ?? f)}: <span class="dod-person">${esc(show(f, d.from))}</span> → <span class="dod-person">${esc(show(f, d.to))}</span></div>`,
+    ).join("");
+    return `<li class="dod-row ${move}"><span class="dod-badge ${move}">${label}</span>
+      <div class="dod-main"><div class="dod-name">${esc(c.title ?? c.id)}</div>${diffs}
+      <div class="dod-note">${esc(fmtWhen(c.at))} · ${esc(c.actor)}</div></div></li>`;
+  };
+  return `${head}<ul class="dod-list">${changes.map(row).join("")}</ul>`;
+}
+
+document.addEventListener("click", (event) => {
+  const button = event.target.closest(".dod-window");
+  if (!button) return;
+  dodWindow = button.dataset.window;
+  try { localStorage.setItem("mos.dodWindow", dodWindow); } catch { /* per-viewer nicety only */ }
+  document.querySelectorAll(".dod-window").forEach((b) => {
+    b.classList.toggle("on", b === button);
+    b.setAttribute("aria-pressed", String(b === button));
+  });
+  loadDodWindow(dodWindow);
+});
 
 /* ------------------------------ day over day ------------------------------
    One row per ticket, not one line per change: a ticket that shipped, was reassigned

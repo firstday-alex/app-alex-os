@@ -432,3 +432,8 @@ tr.underpowered td { opacity: .5; }
 @media (max-width: 560px) {
   .dod-row { grid-template-columns: 1fr; gap: 4px; }
 }
+
+.dod-windows { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin: 0 0 6px; }
+.dod-windows .dod-window { border: 0; border-radius: 0; margin: 0; padding: 6px 12px; background: var(--panel); color: var(--ink); }
+.dod-windows .dod-window + .dod-window { border-left: 1px solid var(--line); }
+.dod-windows .dod-window.on { background: var(--green); color: #fff; }

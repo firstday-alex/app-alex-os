@@ -17,6 +17,8 @@
     "indexKey": "index.json",
     "sentKeyPrefix": "reports/sent",
     "keepSnapshotIndexEntries": 400,
+    "hourlySnapshots": true,
+    "hourlySnapshotDays": 14,
     "baselineLookbackWorkingDays": 10
   },
   "http": {
