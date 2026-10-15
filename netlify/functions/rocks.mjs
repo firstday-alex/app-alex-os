@@ -4,7 +4,8 @@
 //   GET    /rocks?audit=true   the change trail
 //   POST   /rocks              create or update one rock
 //   DELETE /rocks?id=...       remove one
-//   POST   /rocks?import=preview   { text } pasted from the standup -> the proposed plan
+//   POST   /rocks?import=preview   { text } pasted from the standup -> the proposed plan, and
+//                                  for a page paste, its tactics against the ClickUp sprint
 //   POST   /rocks?import=apply     { items, version } -> renames and creates, in one write
 //
 // Every write carries the version it was based on. A stale version is rejected rather
@@ -18,6 +19,7 @@ import { fetchFieldMap } from "../../src/collectors/clickup.js";
 import { isAuthorized, unauthorized, json } from "../../src/lib/dashboard-auth.js";
 import { buildRockReadout } from "../../src/store/rock-readout.js";
 import { parseStandupRocks, planRockImport } from "../../src/store/rock-import.js";
+import { parseStandupTactics, matchTacticsToTickets } from "../../src/store/tactic-match.js";
 
 /**
  * The options on the ClickUp dropdowns a rock can be linked to.
@@ -132,8 +134,21 @@ export default async (req) => {
         bigSwingOptions: bigSwing.options,
         ownTeam: parsed.ownTeam ?? null,
       });
+      // A page paste also carries the team's tactics. Compared against the latest stored
+      // sprint snapshot rather than a fresh pull: it is what the readout reports from, and
+      // a paste preview should not cost a full ClickUp crawl.
+      let tactics = null;
+      if (parsed.format === "html") {
+        const { snapshot: clickup } = await store.getLatestSnapshot("clickup");
+        const list = parseStandupTactics(body.text);
+        tactics = clickup
+          ? { takenAt: clickup.takenAt ?? null, count: list.length, ...matchTacticsToTickets({ tactics: list, tasks: clickup.items }) }
+          : { takenAt: null, count: list.length, unavailable: "No ClickUp snapshot is stored yet. Run a refresh, then paste again." };
+      }
+
       return json({
         ...plan,
+        tactics,
         format: parsed.format,
         ownTeam: parsed.ownTeam ?? null,
         skipped: parsed.skipped,

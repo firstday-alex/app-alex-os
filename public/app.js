@@ -1420,10 +1420,38 @@ function renderImportPlan() {
     ${plan.notInPaste.length ? `
       <h4 class="form-head">Here but not in the paste</h4>
       <p class="meta">Left as they are. Remove or ship them from the rock editor if they are gone from the standup.</p>
-      ${plan.notInPaste.map((r) => `<p class="meta">${esc(r.title)} · ${esc(r.state)}</p>`).join("")}` : ""}`;
+      ${plan.notInPaste.map((r) => `<p class="meta">${esc(r.title)} · ${esc(r.state)}</p>`).join("")}` : ""}
+    ${renderTacticCheck(plan.tactics)}`;
 
   $("import-preview").classList.add("hidden");
   $("import-apply").classList.remove("hidden");
+}
+
+/** The page paste's tactics against the sprint. Read only: nothing here is applied. */
+function renderTacticCheck(t) {
+  if (!t) return "";
+  if (t.unavailable) return `<h4 class="form-head">Tactics vs the ClickUp sprint</h4><div class="note">${esc(t.unavailable)}</div>`;
+
+  const ticket = (k) => `<a href="${esc(k.url)}" target="_blank" rel="noreferrer">${esc(k.name)}</a>`;
+  const tacticMeta = (x) => esc([x.owner ?? "no owner", x.rockTitle, x.status?.replace("_", " ")].filter(Boolean).join(" · "));
+
+  const matched = t.matched.map((m) => `
+    <tr>
+      <td><strong>${esc(m.tactic.title)}</strong><br><span class="meta">${tacticMeta(m.tactic)}</span></td>
+      <td>${m.tickets.map((k) => `${ticket(k)} <span class="meta">${esc(k.status ?? "")} · ${Math.round(k.score * 100)}%${k.sameOwner ? " · same owner" : ""}</span>`).join("<br>")}</td>
+    </tr>`).join("");
+
+  return `
+    <h4 class="form-head">Tactics vs the ClickUp sprint</h4>
+    <p class="meta">${esc(plural(t.count, "tactic", "tactics"))} on the page, matched by name against the sprint snapshot${
+      t.takenAt ? ` taken ${esc(new Date(t.takenAt).toLocaleString())}` : ""
+    }. Nothing here is applied; it is a list to act on.</p>
+    ${matched ? `<div class="scroll"><table><thead><tr><th>Tactic</th><th>Looks like these tickets</th></tr></thead><tbody>${matched}</tbody></table></div>` : ""}
+    <h4 class="form-head">On the standup, not in the sprint (${esc(t.tacticsWithoutTicket.length)})</h4>
+    ${t.tacticsWithoutTicket.map((x) => `<p class="meta"><strong>${esc(x.title)}</strong> · ${tacticMeta(x)}</p>`).join("") || '<p class="meta">None.</p>'}
+    <h4 class="form-head">In the sprint, not on the standup (${esc(t.ticketsWithoutTactic.length)})</h4>
+    ${t.ticketsWithoutTactic.map((k) => `<p class="meta">${ticket(k)} · ${esc(k.status ?? "")} · ${esc(k.owners.join(", ") || "no owner")}${
+      k.bigSwing ? ` · swing: ${esc(k.bigSwing)}` : ""}${k.rockReference ? ` · rock: ${esc(k.rockReference)}` : ""}</p>`).join("") || '<p class="meta">None.</p>'}`;
 }
 
 function collectImport() {
