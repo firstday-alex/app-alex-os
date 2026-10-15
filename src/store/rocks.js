@@ -186,6 +186,9 @@ export function normalizeRock(input, existing = null) {
     // the outcome; a big swing is the project meant to produce it.
     clickupBigSwingOptionId: str(input.clickupBigSwingOptionId ?? existing?.clickupBigSwingOptionId),
     intelligemsExperienceId: str(input.intelligemsExperienceId ?? existing?.intelligemsExperienceId),
+    // The rock's id on the marketing standup, set by a paste import. It lets the next
+    // import follow a rename made on the standup instead of guessing from the words.
+    standupRockId: str(input.standupRockId ?? existing?.standupRockId),
 
     // Links. Up to three Intelligems experiments, one live page, and up to three other
     // reports for quick reference. The experiment links carry the experience id pulled
@@ -293,6 +296,55 @@ export class RocksStore {
     return rock;
   }
 
+  /**
+   * Applies a standup import in one write: one version, one audit entry.
+   *
+   * Each item is { rockId, title, standupRockId, clickupOptionId, clickupBigSwingOptionId }.
+   * With a rockId it renames that rock; without one it creates an active rock. A ClickUp
+   * id is only ever set here, never cleared: leaving a link alone is the safe default for
+   * a bulk change.
+   */
+  async importFromStandup(items, { expectedVersion, actor = "standup-import" } = {}) {
+    const doc = await this.readDoc();
+    const rocks = [...(doc.rocks ?? [])];
+    let renamed = 0;
+    let created = 0;
+    const touched = new Set();
+
+    for (const item of items ?? []) {
+      const links = {};
+      if (item.standupRockId) links.standupRockId = item.standupRockId;
+      if (item.clickupOptionId) links.clickupOptionId = item.clickupOptionId;
+      if (item.clickupBigSwingOptionId) links.clickupBigSwingOptionId = item.clickupBigSwingOptionId;
+
+      if (item.rockId) {
+        const index = rocks.findIndex((r) => r.id === item.rockId);
+        if (index < 0) throw new RockValidationError(`No rock with id "${item.rockId}".`, "rockId");
+        if (touched.has(item.rockId)) {
+          throw new RockValidationError(`Two pasted rocks are both matched to "${rocks[index].title}". Pick one.`, "rockId");
+        }
+        touched.add(item.rockId);
+        if (rocks[index].title !== String(item.title ?? "").trim()) renamed += 1;
+        rocks[index] = normalizeRock({ ...links, id: item.rockId, title: item.title, updatedBy: actor }, rocks[index]);
+      } else {
+        const rock = normalizeRock({ ...links, title: item.title, state: "active", updatedBy: actor });
+        // Ids come from titles, so a new rock can collide with an old one of the same
+        // name. Suffix rather than refuse: the title is what the person asked for.
+        let id = rock.id;
+        for (let n = 2; rocks.some((r) => r.id === id); n += 1) id = `${rock.id}-${n}`;
+        rocks.push({ ...rock, id });
+        created += 1;
+      }
+    }
+
+    const written = await this.writeAll(rocks, {
+      expectedVersion: expectedVersion ?? doc.version,
+      reason: `imported from the marketing standup: ${renamed} renamed, ${created} created, ${(items ?? []).length} in all`,
+      actor,
+    });
+    return { version: written.version, renamed, created };
+  }
+
   async remove(id, { expectedVersion, actor = "dashboard" } = {}) {
     const doc = await this.readDoc();
     const rocks = (doc.rocks ?? []).filter((r) => r.id !== id);
@@ -319,7 +371,7 @@ export class RocksStore {
         changes.push({ id, change: "created", title: rock.title });
         continue;
       }
-      const fields = ["title", "status", "state", "owner", "kpi", "startDate", "checkInDate", "shippedAt", "clickupOptionId", "clickupBigSwingOptionId", "intelligemsExperienceId", "websiteUrl", "notes"];
+      const fields = ["title", "status", "state", "owner", "kpi", "startDate", "checkInDate", "shippedAt", "clickupOptionId", "clickupBigSwingOptionId", "intelligemsExperienceId", "standupRockId", "websiteUrl", "notes"];
       const diff = {};
       for (const field of fields) {
         if (prior[field] !== rock[field]) diff[field] = { from: prior[field], to: rock[field] };

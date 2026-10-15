@@ -4,6 +4,8 @@
 //   GET    /rocks?audit=true   the change trail
 //   POST   /rocks              create or update one rock
 //   DELETE /rocks?id=...       remove one
+//   POST   /rocks?import=preview   { text } pasted from the standup -> the proposed plan
+//   POST   /rocks?import=apply     { items, version } -> renames and creates, in one write
 //
 // Every write carries the version it was based on. A stale version is rejected rather
 // than silently overwriting someone else's change.
@@ -15,6 +17,7 @@ import { RocksStore, RockValidationError, STATES, STATUSES, STATUS_LABELS } from
 import { fetchFieldMap } from "../../src/collectors/clickup.js";
 import { isAuthorized, unauthorized, json } from "../../src/lib/dashboard-auth.js";
 import { buildRockReadout } from "../../src/store/rock-readout.js";
+import { parseStandupRocks, planRockImport } from "../../src/store/rock-import.js";
 
 /**
  * The options on the ClickUp dropdowns a rock can be linked to.
@@ -109,6 +112,44 @@ export default async (req) => {
           return { clickupOptions: leadershipPriority, bigSwingOptions: bigSwing };
         })()),
       });
+    }
+
+    if (req.method === "POST" && url.searchParams.get("import") === "preview") {
+      const body = await req.json().catch(() => ({}));
+      let parsed;
+      try {
+        parsed = parseStandupRocks(body.text);
+      } catch (err) {
+        return json({ error: err.message }, 400);
+      }
+      if (!parsed.rocks.length) return json({ error: "Nothing to import: no rock titles found in what was pasted." }, 400);
+      const listed = await rocks.list();
+      const { leadershipPriority, bigSwing } = await clickupDropdowns({ config, store, logger });
+      const plan = planRockImport({
+        pasted: parsed.rocks,
+        rocks: listed.rocks,
+        rockReferenceOptions: leadershipPriority.options,
+        bigSwingOptions: bigSwing.options,
+        ownTeam: parsed.ownTeam ?? null,
+      });
+      return json({
+        ...plan,
+        format: parsed.format,
+        ownTeam: parsed.ownTeam ?? null,
+        skipped: parsed.skipped,
+        version: listed.version,
+        rocks: listed.rocks.map((r) => ({ id: r.id, title: r.title, state: r.state })),
+        clickupOptions: leadershipPriority,
+        bigSwingOptions: bigSwing,
+      });
+    }
+
+    if (req.method === "POST" && url.searchParams.get("import") === "apply") {
+      const body = await req.json().catch(() => ({}));
+      if (!Array.isArray(body.items) || !body.items.length) return json({ error: "No rocks were selected to import." }, 400);
+      const result = await rocks.importFromStandup(body.items, { expectedVersion: body.version, actor: "standup-import" });
+      const listed = await rocks.list();
+      return json({ ok: true, ...result, rocks: listed.rocks });
     }
 
     if (req.method === "POST") {

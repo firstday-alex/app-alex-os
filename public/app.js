@@ -1297,7 +1297,11 @@ $("rock-close").addEventListener("click", closeRock);
 $("rock-save").addEventListener("click", saveRock);
 $("rock-delete").addEventListener("click", deleteRock);
 $("rock-modal").addEventListener("click", (e) => { if (e.target.id === "rock-modal") closeRock(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("rock-modal").hidden) closeRock(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!$("import-modal").hidden) closeImport();
+  else if (!$("rock-modal").hidden) closeRock();
+});
 $("rock-filter").addEventListener("input", renderRocks);
 $("rock-state-filter").addEventListener("change", renderRocks);
 
@@ -1316,6 +1320,162 @@ $("rocks-audit-wrap")?.addEventListener("toggle", async (event) => {
         </div>`).join("")
     : '<p class="sub">No changes recorded yet.</p>';
 });
+
+/* ------------------------------ standup import ------------------------------
+   The standup names the rocks; this screen links them to ClickUp. A paste carries the
+   names across. Preview shows every proposed rename, new rock and ClickUp link, each one
+   changeable, and nothing is written until Apply. */
+
+let importPlan = null;
+
+const STANDUP_SNIPPET = 'copy(await api("get-rocks"))';
+
+function openImport() {
+  importPlan = null;
+  $("import-error").classList.add("hidden");
+  $("import-apply").classList.add("hidden");
+  $("import-preview").classList.remove("hidden");
+  $("import-body").innerHTML = `
+    <p class="meta">Best: on the standup site, signed in, open the browser console (Cmd+Option+J) and run
+      <code>${esc(STANDUP_SNIPPET)}</code>, then paste here. That carries each rock's standup id, so the next
+      paste follows a rename instead of guessing. The page's own HTML also works (on the Submit update
+      screen, Inspect → right-click &lt;html&gt; → Copy outerHTML), and so does one title per line.</p>
+    <textarea id="import-text" rows="12" placeholder="Paste the get-rocks JSON, or one rock title per line"></textarea>`;
+  $("import-modal").hidden = false;
+  $("import-text").focus();
+}
+
+function closeImport() {
+  $("import-modal").hidden = true;
+  importPlan = null;
+}
+
+function importError(message) {
+  const box = $("import-error");
+  if (!message) return box.classList.add("hidden");
+  box.textContent = message;
+  box.classList.remove("hidden");
+}
+
+async function previewImport() {
+  importError(null);
+  const res = await fetch(`${FN}/rocks?import=preview`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: $("import-text").value }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return importError(body.error ?? `HTTP ${res.status}`);
+  importPlan = body;
+  renderImportPlan();
+}
+
+function renderImportPlan() {
+  const plan = importPlan;
+  const cu = plan.clickupOptions ?? { available: false, options: [] };
+  const swings = plan.bigSwingOptions ?? { available: false, options: [] };
+  const labelOf = (list, id) => list.options.find((o) => String(o.id) === String(id))?.label;
+
+  const select = (cls, i, list, selected, blank) =>
+    `<select class="${cls}" data-i="${i}">
+      <option value="">${esc(blank)}</option>
+      ${list.map((o) => `<option value="${esc(o.id)}"${String(selected ?? "") === String(o.id) ? " selected" : ""}>${esc(o.label)}</option>`).join("")}
+    </select>`;
+
+  // A link that already exists is shown, not offered for change: a bulk paste is the
+  // wrong place to relink a rock someone linked by hand. The rock editor is the right one.
+  const linkCell = (cls, item, list, currentId, suggestion) => {
+    if (currentId) return `<span class="meta">linked: ${esc(labelOf(list, currentId) ?? "an option no longer on the field")}</span>`;
+    if (!list.available) return `<span class="meta">options unavailable</span>`;
+    const hint = suggestion ? `<br><span class="meta">${suggestion.match === "exact" ? "same name" : "similar name"}</span>` : "";
+    return select(cls, item.index, list.options, suggestion?.id, "not linked") + hint;
+  };
+
+  const actionText = (item) =>
+    item.action === "create"
+      ? `<span class="chip warn">new rock</span>`
+      : item.action === "rename"
+        ? `<span class="chip">rename</span><br><span class="meta">was "${esc(item.currentTitle)}" · ${esc(item.matchedBy)}${item.matchScore != null ? ` ${Math.round(item.matchScore * 100)}%` : ""}</span>`
+        : `<span class="chip good">same name</span>`;
+
+  const rows = plan.items.map((item) => `
+    <tr data-row="${item.index}" class="${item.include ? "" : "skip"}">
+      <td><input type="checkbox" class="im-include" data-i="${item.index}"${item.include ? " checked" : ""}></td>
+      <td><strong>${esc(item.title)}</strong><br><span class="meta">${esc([item.team, item.quarter].filter(Boolean).join(" · "))}</span></td>
+      <td>${select("im-rock", item.index, plan.rocks.map((r) => ({ id: r.id, label: `${r.title} (${r.state})` })), item.rockId, "create as a new rock")}
+        <div class="im-action" data-i="${item.index}">${actionText(item)}</div></td>
+      <td>${linkCell("im-ref", item, cu, item.currentRockReferenceId, item.suggestedRockReference)}</td>
+      <td>${linkCell("im-swing", item, swings, item.currentBigSwingId, item.suggestedBigSwing)}</td>
+    </tr>`).join("");
+
+  $("import-body").innerHTML = `
+    <p class="meta">${esc(plural(plan.items.length, "rock", "rocks"))} read from a ${({ json: "get-rocks paste", html: "standup page paste", lines: "list of titles" })[plan.format] ?? "paste"}${
+      plan.latestQuarter ? ` · only ${esc(plan.latestQuarter)} is ticked by default` : ""
+    }${plan.ownTeam ? ` · new rocks from teams other than ${esc(plan.ownTeam)} start unticked` : ""}${plan.skipped?.length ? ` · ${esc(plan.skipped.length)} skipped (business as usual or untitled)` : ""}. Check the matches, then Apply.</p>
+    ${!cu.available ? `<div class="note"><strong>ClickUp options unavailable.</strong> ${esc(cu.reason ?? "")} Renames still work; link in the rock editor later.</div>` : ""}
+    <div class="scroll"><table>
+      <thead><tr><th></th><th>On the standup</th><th>Rock here</th><th>Rock Reference</th><th>Big Swing</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    ${plan.notInPaste.length ? `
+      <h4 class="form-head">Here but not in the paste</h4>
+      <p class="meta">Left as they are. Remove or ship them from the rock editor if they are gone from the standup.</p>
+      ${plan.notInPaste.map((r) => `<p class="meta">${esc(r.title)} · ${esc(r.state)}</p>`).join("")}` : ""}`;
+
+  $("import-preview").classList.add("hidden");
+  $("import-apply").classList.remove("hidden");
+}
+
+function collectImport() {
+  const body = $("import-body");
+  const val = (cls, i) => body.querySelector(`.${cls}[data-i="${i}"]`)?.value || null;
+  return importPlan.items
+    .filter((item) => body.querySelector(`.im-include[data-i="${item.index}"]`)?.checked)
+    .map((item) => ({
+      rockId: val("im-rock", item.index),
+      title: item.title,
+      standupRockId: item.standupId,
+      clickupOptionId: val("im-ref", item.index),
+      clickupBigSwingOptionId: val("im-swing", item.index),
+    }));
+}
+
+async function applyImport() {
+  importError(null);
+  const items = collectImport();
+  if (!items.length) return importError("Nothing is ticked.");
+  const res = await fetch(`${FN}/rocks?import=apply`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ items, version: importPlan.version }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return importError(body.error ?? `HTTP ${res.status}`);
+  closeImport();
+  await loadRocks();
+}
+
+$("import-body").addEventListener("change", (event) => {
+  const i = event.target.dataset.i;
+  if (event.target.classList.contains("im-include")) {
+    event.target.closest("tr").classList.toggle("skip", !event.target.checked);
+  }
+  // Re-pointing a row at a different rock changes what Apply does to it, so say so.
+  if (event.target.classList.contains("im-rock")) {
+    const item = importPlan.items.find((x) => String(x.index) === i);
+    const rock = importPlan.rocks.find((r) => r.id === event.target.value);
+    $("import-body").querySelector(`.im-action[data-i="${i}"]`).innerHTML = !rock
+      ? `<span class="chip warn">new rock</span>`
+      : rock.title === item.title
+        ? `<span class="chip good">same name</span>`
+        : `<span class="chip">rename</span><br><span class="meta">was "${esc(rock.title)}" · picked by hand</span>`;
+  }
+});
+$("import-rocks-btn").addEventListener("click", openImport);
+$("import-close").addEventListener("click", closeImport);
+$("import-preview").addEventListener("click", previewImport);
+$("import-apply").addEventListener("click", applyImport);
+$("import-modal").addEventListener("click", (e) => { if (e.target.id === "import-modal") closeImport(); });
 
 /* ----------------------------------- nav ----------------------------------- */
 

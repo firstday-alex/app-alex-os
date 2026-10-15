@@ -99,6 +99,7 @@
           <option value="shipped">Shipped</option>
           <option value="backlog">Backlog</option>
         </select>
+        <button class="ghost" id="import-rocks-btn">Paste from standup</button>
         <button id="new-rock-btn">New rock</button>
       </div>
       <p class="sub">The leadership queue. Every change is recorded with what it was before.</p>
@@ -163,6 +164,23 @@
       <button id="rock-save">Save</button>
       <button class="ghost" id="rock-delete">Remove</button>
       <span class="err hidden" id="rock-form-error"></span>
+    </div>
+  </div>
+</div>
+
+<!-- standup import: paste, check the plan, apply -->
+<div id="import-modal" class="modal-wrap" hidden>
+  <div class="modal-card wide">
+    <div class="bar">
+      <strong>Paste rocks from the standup</strong>
+      <span class="grow"></span>
+      <button class="ghost" id="import-close">Close</button>
+    </div>
+    <div id="import-body"></div>
+    <div class="bar">
+      <button id="import-preview">Preview</button>
+      <button id="import-apply" class="hidden">Apply</button>
+      <span class="err hidden" id="import-error"></span>
     </div>
   </div>
 </div>
