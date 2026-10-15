@@ -152,6 +152,11 @@ export function clickupDelta(baseline, current, { config, now = Date.now(), comm
 
   return {
     hasBaseline: Boolean(baseline),
+    // The board's statuses in workflow order, so the dashboard can tell a ticket moving
+    // forward from one moving back without carrying config of its own.
+    statusOrder: ["notStarted", "inProgress", "done"].flatMap((b) =>
+      (config?.clickup?.statusMap?.[b] ?? []).map((name) => ({ name: String(name).trim().toLowerCase(), bucket: b })),
+    ),
     baselineDate: baseline?.takenAt ?? null,
     tasks,
     boards: { notStarted, inProgress, done },

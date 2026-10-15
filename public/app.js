@@ -416,19 +416,6 @@ function renderLayer2(report) {
 
   const head = `<thead><tr><th>Signal</th><th>Task</th><th>Status</th><th>Owner</th><th>Assignees</th><th>Leadership priority</th><th>Untouched</th><th>In status</th></tr></thead>`;
 
-  const ch = delta.changes;
-  const changeLines = [
-    ...ch.statusChanges.map((t) => `status · ${esc(t.name)}: ${esc(t.from)} → ${esc(t.to)}`),
-    ...ch.assigneeChanges.map((t) => `assignee · ${esc(t.name)}: ${esc(t.from)} → ${esc(t.to)}`),
-    ...ch.ownerChanges.map((t) => `owner · ${esc(t.name)}: ${esc(t.from)} → ${esc(t.to)}`),
-    ...ch.priorityChanges.map((t) => `priority · ${esc(t.name)}: ${esc(t.from)} → ${esc(t.to)}`),
-    ...ch.newComments.map(
-      (t) => `comment · ${esc(t.name)}: +${esc(t.added)}${t.latest?.user ? ` by ${esc(t.latest.user)}` : ""}${t.latest?.text ? ` — "${esc(t.latest.text.slice(0, 140))}"` : ""}`,
-    ),
-    ...ch.newTasks.map((t) => `new · ${esc(t.name)} (${esc(t.status)})`),
-    ...ch.disappeared.map((t) => `gone · ${esc(t.name)} (was ${esc(t.status)})`),
-  ];
-
   $("layer2").innerHTML = `
     <p class="sub">${c.total} tasks. ${c.notStarted} not started, ${c.inProgress} in progress, ${c.done} done. ${c.stalled} stalled, ${c.changed} changed since the baseline.</p>
     ${delta.hasBaseline ? "" : `<div class="note"><strong>First run.</strong> There is no previous snapshot, so there is no day over day comparison yet.</div>`}
@@ -437,7 +424,102 @@ function renderLayer2(report) {
     <h3>Not started</h3>
     <div class="scroll"><table>${head}<tbody>${taskRows(delta.boards.notStarted) || '<tr><td colspan="7">Nothing not started.</td></tr>'}</tbody></table></div>
     <h3>Day over day</h3>
-    ${changeLines.length ? `<ul>${changeLines.map((l) => `<li>${l}</li>`).join("")}</ul>` : '<p class="sub">No changes since the baseline.</p>'}`;
+    ${renderDayOverDay(delta)}`;
+}
+
+/* ------------------------------ day over day ------------------------------
+   One row per ticket, not one line per change: a ticket that shipped, was reassigned
+   and got three comments is one story, and reading it as five scattered bullets is
+   how the story gets lost. Rows are ordered by what needs a look first. */
+
+const MOVE = {
+  back: { label: "Moved back", icon: "↩", rank: 0 },
+  shipped: { label: "Shipped", icon: "✓", rank: 1 },
+  forward: { label: "Moved forward", icon: "→", rank: 2 },
+  new: { label: "New", icon: "+", rank: 3 },
+  gone: { label: "Gone", icon: "✕", rank: 4 },
+  talk: { label: "Activity", icon: "•", rank: 5 },
+};
+
+function renderDayOverDay(delta) {
+  const ch = delta.changes;
+  const order = delta.statusOrder ?? [];
+  const norm = (s) => String(s ?? "").trim().toLowerCase();
+  const rankOf = (s) => order.findIndex((o) => o.name === norm(s));
+  const bucketOf = (s) => order.find((o) => o.name === norm(s))?.bucket ?? null;
+
+  // The stepper shows only the statuses this board actually uses, in workflow order.
+  const used = new Set([...(delta.tasks ?? []).map((t) => norm(t.status)), ...ch.statusChanges.flatMap((t) => [norm(t.from), norm(t.to)])]);
+  const stages = order.filter((o) => used.has(o.name)).filter((o, i, all) => all.findIndex((x) => x.name === o.name) === i);
+
+  const byId = new Map();
+  const row = (t) => {
+    const key = String(t.id ?? t.name);
+    if (!byId.has(key)) byId.set(key, { id: key, name: t.name, url: t.url, move: null, from: null, to: null, notes: [], comments: [] });
+    return byId.get(key);
+  };
+
+  for (const t of ch.statusChanges) {
+    const r = row(t);
+    r.from = t.from;
+    r.to = t.to;
+    const [a, b] = [rankOf(t.from), rankOf(t.to)];
+    r.move =
+      bucketOf(t.to) === "done" && bucketOf(t.from) !== "done" ? "shipped"
+      : norm(t.to) === "blocked" || (a >= 0 && b >= 0 && b < a) ? "back"
+      : "forward";
+  }
+  for (const t of ch.newTasks) Object.assign(row(t), { move: "new", to: t.status });
+  for (const t of ch.disappeared) Object.assign(row(t), { move: "gone", from: t.status });
+  for (const [list, what] of [[ch.assigneeChanges, "assignee"], [ch.ownerChanges, "owner"], [ch.priorityChanges, "priority"]]) {
+    for (const t of list) row(t).notes.push({ what, from: t.from, to: t.to });
+  }
+  for (const t of ch.newComments) row(t).comments.push({ added: t.added, user: t.latest?.user, text: t.latest?.text });
+
+  const rows = [...byId.values()].map((r) => ({ ...r, move: r.move ?? "talk" }));
+  if (!rows.length) return '<p class="sub">No changes since the baseline.</p>';
+  rows.sort((x, y) => MOVE[x.move].rank - MOVE[y.move].rank || String(x.name).localeCompare(String(y.name)));
+
+  const count = (m) => rows.filter((r) => r.move === m).length;
+  const commented = rows.filter((r) => r.comments.length).length;
+  const tiles = [
+    ["shipped", count("shipped")], ["forward", count("forward")], ["back", count("back")], ["new", count("new")],
+  ].map(([m, n]) => `<div class="dod-tile ${m}${n ? "" : " zero"}"><span class="dod-n">${n}</span><span class="dod-l">${MOVE[m].icon} ${MOVE[m].label}</span></div>`).join("")
+    + `<div class="dod-tile talk${commented ? "" : " zero"}"><span class="dod-n">${commented}</span><span class="dod-l">💬 Discussed</span></div>`;
+
+  // A dot per stage: where it was (hollow), where it is now (filled), the run between lit.
+  const stepper = (r) => {
+    if (r.from == null && r.to == null) return "";
+    const [a, b] = [stages.findIndex((s) => s.name === norm(r.from)), stages.findIndex((s) => s.name === norm(r.to))];
+    if ((r.from != null && a < 0) || (r.to != null && b < 0) || !stages.length) {
+      return `<span class="dod-text">${esc(r.from ?? "")}${r.from != null && r.to != null ? " → " : ""}${esc(r.to ?? "")}</span>`;
+    }
+    const lo = Math.min(a < 0 ? b : a, b < 0 ? a : b);
+    const hi = Math.max(a, b);
+    const dots = stages.map((s, i) => {
+      const cls = [i === b ? "now" : "", i === a ? "was" : "", i > lo && i < hi ? "pass" : "", i > lo && i <= hi && a >= 0 && b >= 0 ? "lit" : ""].filter(Boolean).join(" ");
+      return `<span class="dod-stage ${cls}" title="${esc(s.name)}"><span class="dod-dot"></span></span>`;
+    }).join("");
+    return `<span class="dod-stepper ${r.move}" role="img" aria-label="${esc(`${r.from ?? "new"} to ${r.to ?? "removed"}`)}">${dots}</span>
+      <span class="dod-text">${r.from != null ? `<s>${esc(r.from)}</s> → ` : ""}<strong>${esc(r.to ?? "removed")}</strong></span>`;
+  };
+
+  const people = (v) => esc(v ?? "none");
+  const item = (r) => `
+    <li class="dod-row ${r.move}">
+      <span class="dod-badge ${r.move}">${MOVE[r.move].icon} ${MOVE[r.move].label}</span>
+      <div class="dod-main">
+        <div class="dod-name">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noreferrer">${esc(r.name)}</a>` : esc(r.name)}</div>
+        <div class="dod-move">${stepper(r)}</div>
+        ${r.notes.map((n) => `<div class="dod-note">${esc(n.what)}: <span class="dod-person">${people(n.from)}</span> → <span class="dod-person">${people(n.to)}</span></div>`).join("")}
+        ${r.comments.map((c) => `<blockquote class="dod-comment"><span class="meta">💬 +${esc(c.added)}${c.user ? ` · ${esc(c.user)}` : ""}</span>${c.text ? `<span class="dod-quote">${esc(c.text)}</span>` : ""}</blockquote>`).join("")}
+      </div>
+    </li>`;
+
+  return `
+    <div class="dod-tiles">${tiles}</div>
+    ${stages.length ? `<p class="meta dod-legend">Pipeline: ${stages.map((s) => esc(s.name)).join(" → ")}. Hollow dot is where a ticket was yesterday, filled is where it is now.</p>` : ""}
+    <ul class="dod-list">${rows.map(item).join("")}</ul>`;
 }
 
 /* ------------------------- Layer 3. experiment trees -------------------------
