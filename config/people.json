@@ -5,7 +5,7 @@
     {
       "clickupUserId": "87349065",
       "name": "Robson Lopes",
-      "slackUserId": null,
+      "slackUserId": "U09KFSKDCPQ",
       "countsTowardCapacity": true,
       "_openTasks": 6
     },
@@ -14,26 +14,28 @@
       "name": "Blake Tucker",
       "slackUserId": null,
       "countsTowardCapacity": true,
-      "_openTasks": 2
+      "_openTasks": 2,
+      "_TODO_slack": "Slack has one Blake (U050NDP5N8P, blake@firstday.com) but no surname to confirm it is Blake Tucker. Set slackUserId once confirmed."
     },
     {
       "clickupUserId": "81872941",
       "name": "Oleksandr Zghonnyk",
       "slackUserId": null,
       "countsTowardCapacity": true,
-      "_openTasks": 1
+      "_openTasks": 1,
+      "_TODO_slack": "Not found in Slack search by name. Set slackUserId by hand."
     },
     {
       "clickupUserId": "87471371",
       "name": "Cristobal Alanis",
-      "slackUserId": null,
+      "slackUserId": "U0BTG0KRRFZ",
       "countsTowardCapacity": true,
       "_openTasks": 2
     },
     {
       "clickupUserId": "87365453",
       "name": "Alex Turney",
-      "slackUserId": null,
+      "slackUserId": "U09RXGL86GL",
       "countsTowardCapacity": false,
       "_comment": "Alex reads the readout rather than holding a queue in it, but currently holds 2 open tickets. countsTowardCapacity is false so Alex is not counted in the 'everyone is full' denominator. Flip it if Alex should carry a big swing like everyone else."
     }
@@ -42,8 +44,7 @@
     "clickupUserId": "87365453",
     "name": "Alex Turney",
     "email": "alex.turney@firstday.com",
-    "slackUserId": null,
-    "_TODO": "Alex's Slack member id. Until it is set, ANY human reply in a readout thread will drive the learning skill, and the system warns about that on every event."
+    "slackUserId": "U09RXGL86GL"
   },
   "_knownMembers": {
     "_comment": "A few ids confirmed live, kept here as a convenience when filling in the team array. Not used by the system.",

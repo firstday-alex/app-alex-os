@@ -51,7 +51,11 @@
   },
   "slack": {
     "advisorButtonText": "Ask for recommendation",
-    "postPartialReadouts": true
+    "postPartialReadouts": true,
+    "nudges": {
+      "_comment": "Nudge owner posts to SLACK_NUDGE_CHANNEL, falling back to SLACK_READOUT_CHANNEL, tagging the owner so replies land in a thread Alex can see. Pick a channel the team is in, or they will not be notified. Replies in a nudge thread never reach the learning skill.",
+      "channelEnv": "SLACK_NUDGE_CHANNEL"
+    }
   },
   "anthropic": {
     "model": "claude-opus-5",
@@ -63,5 +67,10 @@
     "repo": "firstday-alex/app-alex-os",
     "defaultBranch": "main",
     "_comment": "Where the learning skill opens its proposal pull requests. NOT secrets: a repo name and a branch name are public, and putting them in the environment was a mistake. Netlify's secrets scanner treats every environment value as something to hunt for in the build output, so GITHUB_DEFAULT_BRANCH=main failed the build on every occurrence of the word 'main' in an HTML tag or a CSS selector. Only GITHUB_TOKEN belongs in the environment."
+  },
+  "flags": {
+    "_comment": "How long a flag can sit before it is treated as more urgent, and how long a wait lasts by default. Working days, so a weekend does not age a flag.",
+    "escalateAfterWorkingDays": 5,
+    "waitingCheckBackWorkingDays": 2
   }
 }

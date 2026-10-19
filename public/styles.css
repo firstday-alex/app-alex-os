@@ -453,3 +453,22 @@ tr.underpowered td { opacity: .5; }
   background: var(--code); color: var(--green); border: 1px solid var(--line);
 }
 .flag-links a:hover { background: #fff; border-color: var(--green); }
+
+/* Flag triage: age badges, the actions row, and the inline panels */
+.tiles-inline { display: contents; }
+.flag-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
+.flag-badges:empty { display: none; }
+.flag-badges .chip { font-size: 12px; padding: 1px 8px; }
+.flag-badges .age-new { background: #eef4ef; border-color: var(--green); color: var(--green); }
+.triage-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+button.sm, select.sm { font-size: 13px; padding: 4px 10px; }
+select.sm { font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--green); }
+.triage-panel { margin-top: 10px; padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 4px; display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.triage-panel label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.triage-panel label.wide { flex: 1 1 100%; }
+.triage-panel textarea { font: inherit; width: 100%; padding: 6px 9px; border: 1px solid var(--line); border-radius: 4px; box-sizing: border-box; }
+.triage-panel .meta { font-family: inherit; }
+.triage-error { flex: 1 1 100%; margin: 0; color: var(--red); }
+.triage-state { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.link-btn { background: none; border: 0; padding: 0 0 0 8px; color: var(--green); text-decoration: underline; cursor: pointer; font: inherit; }
+.flag[data-triaged] { opacity: .85; }

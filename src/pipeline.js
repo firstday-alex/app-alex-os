@@ -12,12 +12,14 @@ import { Store } from "./lib/storage.js";
 import { RocksStore } from "./store/rocks.js";
 import { SettingsStore } from "./store/settings.js";
 import { StatusLedger } from "./store/status-ledger.js";
+import { FlagLedger, annotateFlags } from "./store/flag-ledger.js";
 import { dateKey as toDateKey, zonedParts, baselineCandidateKeys } from "./lib/time.js";
 import { collectClickUp } from "./collectors/clickup.js";
 import { collectIntelligems } from "./collectors/intelligems.js";
 import { collectLeadership } from "./collectors/leadership.js";
 import { collectShopify } from "./collectors/shopify.js";
 import { computeFlags } from "./delta/index.js";
+import { sortFlags } from "./delta/flags.js";
 import { buildReport } from "./render/report.js";
 import { sendReadout } from "./send/slack.js";
 
@@ -199,7 +201,7 @@ export async function runPipeline(opts = {}) {
     logger.warn("settings.unavailable", { err, note: "falling back to defaults" });
   }
 
-  const { flags, sections, detail } = computeFlags({
+  const computed = computeFlags({
     snapshots,
     baselines,
     config,
@@ -209,6 +211,34 @@ export async function runPipeline(opts = {}) {
     nowIso: now.toISOString(),
     logger,
   });
+  const { sections, detail } = computed;
+
+  /* ------------------------------ flag ledger ------------------------------
+     How long each flag has been open, and whether Alex has already dealt with it. A flag
+     left at Attention for a working week is escalated to P1 here, before the report is
+     rendered, so the readout and the dashboard agree on its severity. If the ledger
+     cannot be read the flags go out as they are: a readout without ages beats none. */
+  let flags = computed.flags;
+  try {
+    const flagLedger = new FlagLedger(store.backend, logger);
+    const flagRules = config.system.flags ?? {};
+    const workingWeekdays = config.system.schedule?.workingWeekdays;
+    let { entries } = await flagLedger.read();
+    if (!Object.keys(entries).length) {
+      entries = await flagLedger.backfillFirstSeen(store, flags, { dateKey, workingWeekdays });
+    }
+    const annotated = annotateFlags(flags, entries, {
+      dateKey,
+      sections,
+      escalateAfterWorkingDays: flagRules.escalateAfterWorkingDays ?? 5,
+      workingWeekdays,
+    });
+    // Re-sorted, because an escalation changes a severity and severity is the sort key.
+    flags = sortFlags(annotated.flags);
+    await flagLedger.saveObservations(annotated.entries);
+  } catch (err) {
+    logger.warn("flag_ledger.unavailable", { err, note: "flags render without age or triage" });
+  }
 
   /* -------------------------------- render -------------------------------- */
 

@@ -225,6 +225,25 @@ const MODE_LABEL = {
   test: "Test send, triggered by hand",
 };
 
+const isAttention = (f) => f.severity === "p1" || f.severity === "attention";
+
+/** " (open 4 working days)" on a flag that is not new. Nothing on a flag with no ledger. */
+function ageNote(flag) {
+  if (!flag.openDays) return "";
+  return ` (open ${plural(flag.openDays, "working day")}${flag.escalated ? ", escalated from attention" : ""})`;
+}
+
+/** "1 done, 2 snoozed, 1 not a problem", or null when nothing is parked. */
+function parkedSummary(flags) {
+  const count = (status) => flags.filter((f) => f.triage?.status === status).length;
+  const parts = [
+    [count("done"), "done"],
+    [count("snoozed"), "snoozed"],
+    [count("dismissed"), "not a problem"],
+  ].filter(([n]) => n > 0);
+  return parts.length ? parts.map(([n, label]) => `${n} ${label}`).join(", ") : null;
+}
+
 export function renderText(report) {
   const lines = [];
   const { detail, sections, config, flags } = report._render;
@@ -241,14 +260,42 @@ export function renderText(report) {
   }
   lines.push("");
 
-  const needsAttention = flags.filter((f) => f.severity === "p1" || f.severity === "attention");
-  const prompts = flags.filter((f) => f.severity === "prompt");
-  lines.push(`NEEDS YOUR ATTENTION. ${needsAttention.length} item(s).`);
+  const open = flags.filter((f) => !f.triage);
+  const needsAttention = open.filter(isAttention);
+  const prompts = open.filter((f) => f.severity === "prompt");
+  const line = (flag) => `[${flag.severity.toUpperCase()}] [${layerLabel(flag.layer)}] ${flag.message}${ageNote(flag)}`;
+
+  // Without a ledger there is no age to split on, and the list reads as it always did.
+  const aged = needsAttention.some((f) => f.isNew !== undefined);
+  const fresh = needsAttention.filter((f) => f.isNew);
+  const still = needsAttention.filter((f) => !f.isNew);
+  lines.push(
+    `NEEDS YOUR ATTENTION. ${needsAttention.length} item(s).${aged && needsAttention.length ? ` ${fresh.length} new today, ${still.length} still open.` : ""}`,
+  );
   if (needsAttention.length === 0) lines.push("  nothing flagged");
-  for (const flag of needsAttention) {
-    lines.push(`  [${flag.severity.toUpperCase()}] [${layerLabel(flag.layer)}] ${flag.message}`);
+  if (aged) {
+    if (fresh.length) lines.push("  NEW TODAY");
+    for (const flag of fresh) lines.push(`    ${line(flag)}`);
+    if (still.length) lines.push("  STILL OPEN");
+    for (const flag of still) lines.push(`    ${line(flag)}`);
+  } else {
+    for (const flag of needsAttention) lines.push(`  ${line(flag)}`);
   }
   lines.push("");
+
+  const waiting = flags.filter((f) => f.triage?.status === "waiting");
+  if (waiting.length) {
+    lines.push(`WAITING ON SOMEONE. ${waiting.length} item(s). Back on the list when the wait runs out, if still raised.`);
+    for (const flag of waiting) {
+      lines.push(`  [${layerLabel(flag.layer)}] ${flag.message} - waiting on ${flag.triage.waitingOn} until ${flag.triage.until}`);
+    }
+    lines.push("");
+  }
+  const parked = parkedSummary(flags);
+  if (parked) {
+    lines.push(`PARKED. ${parked}. On the dashboard.`);
+    lines.push("");
+  }
 
   if (prompts.length) {
     lines.push(`OWNER PROMPTS. ${prompts.length} item(s) that did not move and need a next step from their owner.`);
@@ -262,7 +309,7 @@ export function renderText(report) {
   renderClickUp(detail.clickup, sections.clickup, lines);
   renderIntelligems(detail.intelligems, sections.intelligems, lines, config);
 
-  const info = flags.filter((f) => f.severity === "info");
+  const info = open.filter((f) => f.severity === "info");
   if (info.length) {
     lines.push(`HYGIENE. ${info.length} item(s). Not urgent.`);
     for (const flag of info) lines.push(`  ${flag.message}`);
@@ -317,13 +364,17 @@ export function renderSlackBlocks(report, config) {
     text: {
       type: "mrkdwn",
       text: [
-        `*${counts.p1} P1* · *${counts.attention} need attention* · ${counts.prompt} owner prompt(s)`,
+        `*${counts.p1} P1* · *${counts.attention} need attention* · ${counts.prompt} owner prompt(s)${counts.newToday == null ? "" : ` · ${counts.newToday} new today`}`,
+        ...(counts.triaged && (counts.triaged.waiting || counts.parked)
+          ? [`${counts.triaged.waiting} waiting on someone · ${counts.parked} parked`]
+          : []),
         `Layer 1: ${counts.byLayer["1"] ?? 0} · Cross layer: ${counts.byLayer.cross ?? 0} · Layer 2: ${counts.byLayer["2"] ?? 0} · Layer 3: ${counts.byLayer["3"] ?? 0}`,
       ].join("\n"),
     },
   });
 
-  const shown = flags.filter((f) => f.severity !== "info").slice(0, 40);
+  const actionable = flags.filter((f) => f.severity !== "info" && !f.triage);
+  const shown = actionable.slice(0, 40);
   if (shown.length === 0) {
     blocks.push({ type: "section", text: { type: "mrkdwn", text: "Nothing flagged this morning." } });
   }
@@ -333,7 +384,7 @@ export function renderSlackBlocks(report, config) {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `${flag.severity === "p1" ? ":red_circle:" : flag.severity === "attention" ? ":large_orange_circle:" : ":speech_balloon:"} *${layerLabel(flag.layer)}* ${flag.message}`,
+        text: `${flag.severity === "p1" ? ":red_circle:" : flag.severity === "attention" ? ":large_orange_circle:" : ":speech_balloon:"} *${layerLabel(flag.layer)}*${flag.isNew ? " _new_" : ""} ${flag.message}${ageNote(flag)}`,
       },
     };
     if (flag.advisable) {
@@ -347,10 +398,21 @@ export function renderSlackBlocks(report, config) {
     blocks.push(block);
   }
 
-  if (flags.filter((f) => f.severity !== "info").length > shown.length) {
+  if (actionable.length > shown.length) {
     blocks.push({
       type: "context",
-      elements: [{ type: "mrkdwn", text: `${flags.length - shown.length} more item(s) in the full readout on the dashboard.` }],
+      elements: [{ type: "mrkdwn", text: `${actionable.length - shown.length} more item(s) in the full readout on the dashboard.` }],
+    });
+  }
+
+  const waiting = flags.filter((f) => f.triage?.status === "waiting");
+  if (waiting.length) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: [`*Waiting on someone* (${waiting.length})`, ...waiting.slice(0, 15).map((f) => `• ${f.triage.waitingOn}: ${f.message}`)].join("\n").slice(0, 2900),
+      },
     });
   }
 
@@ -368,8 +430,13 @@ export function renderSlackBlocks(report, config) {
  * before the report is stored, so the stored JSON stays a clean artifact.
  */
 export function buildReport({ runId, mode, dateKey, nowIso, flags, sections, detail, baseline, config }) {
+  // The counts are of what is still open. A flag Alex has already dealt with is in the
+  // report, marked, but it is not something that needs attention this morning.
+  const open = flags.filter((f) => !f.triage);
   const byLayer = {};
-  for (const flag of flags) byLayer[String(flag.layer)] = (byLayer[String(flag.layer)] ?? 0) + 1;
+  for (const flag of open) byLayer[String(flag.layer)] = (byLayer[String(flag.layer)] ?? 0) + 1;
+  const triageCount = (status) => flags.filter((f) => f.triage?.status === status).length;
+  const aged = flags.some((f) => f.isNew !== undefined);
 
   const missing = Object.entries(sections)
     .filter(([, section]) => section.present === false)
@@ -384,12 +451,16 @@ export function buildReport({ runId, mode, dateKey, nowIso, flags, sections, det
     partial: missing.length > 0,
     missing,
     summary: {
-      total: flags.length,
-      p1: flags.filter((f) => f.severity === "p1").length,
-      attention: flags.filter((f) => f.severity === "attention").length,
-      prompt: flags.filter((f) => f.severity === "prompt").length,
-      info: flags.filter((f) => f.severity === "info").length,
+      total: open.length,
+      p1: open.filter((f) => f.severity === "p1").length,
+      attention: open.filter((f) => f.severity === "attention").length,
+      prompt: open.filter((f) => f.severity === "prompt").length,
+      info: open.filter((f) => f.severity === "info").length,
       byLayer,
+      newToday: aged ? open.filter((f) => f.isNew && isAttention(f)).length : null,
+      escalated: open.filter((f) => f.escalated).length,
+      triaged: { done: triageCount("done"), snoozed: triageCount("snoozed"), waiting: triageCount("waiting"), dismissed: triageCount("dismissed") },
+      parked: triageCount("done") + triageCount("snoozed") + triageCount("dismissed"),
     },
     flags,
     sections,

@@ -4,6 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runPipeline } from "../src/pipeline.js";
+import { FlagLedger } from "../src/store/flag-ledger.js";
 import { Store } from "../src/lib/storage.js";
 import { createLogger } from "../src/lib/logger.js";
 import { testConfig } from "./fixtures/config.js";
@@ -333,4 +334,26 @@ test("the Slack post identifies itself as Claude, every time", async () => {
   const posted = ctx.slackCalls[0];
   assert.match(posted.text, /Claude/);
   assert.match(JSON.stringify(posted.blocks[0]), /Claude/, "and in the rendered blocks, not just the fallback text");
+});
+
+/* ------------------------------ the flag ledger ------------------------------
+   Two mornings in a row, with a flag handled in between. The second readout has to know
+   both how long the rest have been open and that the handled one is handled. */
+
+test("a flag handled on the dashboard stays handled at the next 8 AM, and the rest age", async () => {
+  const ctx = await setup();
+  const first = await runPipeline({ ...ctx, mode: "official", now: new Date("2026-09-10T13:00:00Z"), env: baseEnv });
+  assert.ok(first.report.flags.length >= 1, "the fixture raises at least one flag");
+  assert.ok(first.report.flags.every((f) => f.isNew && f.key));
+
+  const handled = first.report.flags[0];
+  await new FlagLedger(ctx.store.backend).setTriage(handled.key, { status: "done" }, { today: "2026-09-10" });
+
+  const second = await runPipeline({ ...ctx, mode: "official", now: new Date("2026-09-11T13:00:00Z"), env: baseEnv });
+  const again = second.report.flags.find((f) => f.key === handled.key);
+  assert.equal(again?.triage?.status, "done");
+  assert.equal(again.openDays, 1);
+  assert.ok(second.report.flags.filter((f) => f.key !== handled.key && first.report.flags.some((p) => p.key === f.key)).every((f) => !f.isNew));
+  assert.ok(!second.report.text.includes(handled.message), "a done flag is not listed anywhere in the readout");
+  assert.match(second.report.text, /PARKED\. 1 done\./);
 });

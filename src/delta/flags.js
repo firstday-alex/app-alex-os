@@ -20,6 +20,9 @@ export function makeFlag(spec, { dateKey } = {}) {
   const subjectId = spec.subject?.id ?? "none";
   return {
     id: `${dateKey ?? "nodate"}:${spec.rule}:${subjectId}`,
+    // The same flag on another day. What triage and age are tracked against, because the
+    // id changes every morning by design.
+    key: `${spec.rule}:${subjectId}`,
     layer: spec.layer,
     rule: spec.rule,
     severity: spec.severity,

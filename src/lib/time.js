@@ -136,6 +136,29 @@ export function baselineCandidateKeys(now = new Date(), config) {
   return { today, candidates: keys };
 }
 
+/** Working days after `fromKey` up to and including `toKey`. Monday to Tuesday is 1, Friday to Monday is 1. */
+export function workingDaysBetween(fromKey, toKey, workingWeekdays = [1, 2, 3, 4, 5]) {
+  if (!fromKey || !toKey || toKey <= fromKey) return 0;
+  let count = 0;
+  let cursor = fromKey;
+  for (let i = 0; i < 400 && cursor < toKey; i += 1) {
+    cursor = shiftDateKey(cursor, 1);
+    if (isWorkingDayKey(cursor, workingWeekdays)) count += 1;
+  }
+  return count;
+}
+
+/** The working day `n` working days after `key`. Friday plus 1 is Monday. */
+export function addWorkingDays(key, n, workingWeekdays = [1, 2, 3, 4, 5]) {
+  let cursor = key;
+  let left = Math.max(0, Math.floor(n));
+  for (let i = 0; i < 400 && left > 0; i += 1) {
+    cursor = shiftDateKey(cursor, 1);
+    if (isWorkingDayKey(cursor, workingWeekdays)) left -= 1;
+  }
+  return cursor;
+}
+
 export function daysBetween(fromIso, toIso) {
   if (!fromIso || !toIso) return null;
   const from = new Date(fromIso);

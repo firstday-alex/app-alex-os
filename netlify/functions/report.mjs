@@ -7,6 +7,9 @@ import { loadConfig, openItems } from "../../src/config.js";
 import { createLogger } from "../../src/lib/logger.js";
 import { Store } from "../../src/lib/storage.js";
 import { isAuthorized, unauthorized, json } from "../../src/lib/dashboard-auth.js";
+import { dateKey } from "../../src/lib/time.js";
+import { FlagLedger } from "../../src/store/flag-ledger.js";
+import { nudgeRoster, nudgeChannel } from "../../src/send/nudge.js";
 
 export default async (req) => {
   const auth = isAuthorized(req);
@@ -28,10 +31,25 @@ export default async (req) => {
     });
   }
 
+  // Triage is read live rather than taken from the report, so a flag handled after the
+  // report was built shows as handled straight away.
+  let flagEntries = null;
+  try {
+    flagEntries = (await new FlagLedger(store.backend, logger).read()).entries;
+  } catch (err) {
+    logger.warn("report.flag_ledger_unavailable", { err });
+  }
+
   return json({
     empty: false,
     report,
     openItems: openItems(config),
     advisorButtonText: config.system.slack?.advisorButtonText ?? "Ask for recommendation",
+    today: dateKey(new Date(), config.system.timezone),
+    flagEntries,
+    // Who a nudge can go to. Slack ids stay on the server; the page only needs to know
+    // whether one exists.
+    people: nudgeRoster(config).map((p) => ({ name: p.name, clickupUserId: p.clickupUserId, canNudge: Boolean(p.slackUserId) })),
+    nudgeChannelSet: Boolean(nudgeChannel(config, process.env)),
   });
 };

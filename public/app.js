@@ -51,6 +51,10 @@ async function load() {
   const body = await response.json();
   state.openItems = body.openItems ?? [];
   state.advisorButtonText = body.advisorButtonText ?? state.advisorButtonText;
+  state.today = body.today ?? null;
+  state.flagEntries = body.flagEntries ?? null;
+  state.people = body.people ?? [];
+  state.nudgeChannelSet = Boolean(body.nudgeChannelSet);
 
   if (body.empty) {
     $("banners").innerHTML = `<div class="note"><strong>Nothing yet.</strong> ${esc(body.message)}</div>`;
@@ -88,9 +92,7 @@ function render() {
   $("banners").innerHTML = banners.join("");
 
   $("tiles").innerHTML = [
-    tile(s.p1, "P1"),
-    tile(s.attention, "Attention"),
-    tile(s.prompt, "Owner prompts"),
+    `<div id="flag-tiles" class="tiles-inline">${flagTiles(report.flags ?? [])}</div>`,
     tile(report.sections.clickup?.counts?.inProgress ?? "—", "In progress"),
     tile(report.sections.clickup?.counts?.stalled ?? "—", "Stalled"),
     tile(report.sections.intelligems?.counts?.running ?? "—", "Tests running"),
@@ -98,10 +100,7 @@ function render() {
 
   const flags = report.flags ?? [];
   state.flagCtx = flagContextIndex(report);
-  renderAttentionTools(flags.filter((f) => f.severity === "p1" || f.severity === "attention"));
-  renderAttention();
-  renderFlags($("prompts"), flags.filter((f) => f.severity === "prompt"), "No quiet tests waiting on an owner.");
-  renderFlags($("hygiene"), flags.filter((f) => f.severity === "info"), "Nothing outstanding.");
+  renderAllFlags({ rebuildTools: true });
 
   renderStoreMetrics(report);
   renderFunnel(report);
@@ -258,8 +257,95 @@ function renderFlags(container, flags, emptyText) {
   container.innerHTML = flags.map(flagCard).join("");
 }
 
+/* ------------------------------- flag triage -------------------------------
+   Triage is read from the live ledger the report endpoint sends alongside the report,
+   so a flag handled after the 8 AM run shows as handled. A snooze or a wait runs out on
+   its date, the same rule the pipeline applies. */
+
+const TRIAGE_LABEL = { done: "Done", snoozed: "Snoozed", waiting: "Waiting on", dismissed: "Not a problem" };
+const keyOf = (flag) => flag.key ?? String(flag.id ?? "").replace(/^(\d{4}-\d{2}-\d{2}|nodate):/, "");
+const isAttn = (f) => f.severity === "p1" || f.severity === "attention";
+
+function triageOf(flag) {
+  const t = state.flagEntries ? state.flagEntries[keyOf(flag)]?.triage : flag.triage;
+  if (!t?.status) return null;
+  if (t.until && state.today && t.until <= state.today) return null;
+  return t;
+}
+const nudgesOf = (flag) => (state.flagEntries ? state.flagEntries[keyOf(flag)]?.nudges : flag.nudges) ?? [];
+const viewOf = (flag) => {
+  const t = triageOf(flag);
+  return !t ? "open" : t.status === "waiting" ? "waiting" : "parked";
+};
+
+function fmtDay(key) {
+  if (!key) return "";
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function flagTiles(flags) {
+  const open = flags.filter((f) => viewOf(f) === "open");
+  return [
+    tile(open.filter((f) => f.severity === "p1").length, "P1"),
+    tile(open.filter((f) => f.severity === "attention").length, "Attention"),
+    tile(open.filter((f) => f.severity === "prompt").length, "Owner prompts"),
+  ].join("");
+}
+
+/** Everything that shows flags, redrawn together so a triage moves a flag everywhere at once. */
+function renderAllFlags({ rebuildTools = false } = {}) {
+  const flags = state.report?.flags ?? [];
+  if ($("flag-tiles")) $("flag-tiles").innerHTML = flagTiles(flags);
+  if (rebuildTools) renderAttentionTools(flags);
+  renderAttention();
+  const open = flags.filter((f) => viewOf(f) === "open");
+  const handled = (sev) => flags.filter((f) => f.severity === sev && viewOf(f) !== "open").length;
+  const note = (n) => (n ? ` ${plural(n, "handled item is", "handled items are")} under Waiting and Parked above.` : "");
+  renderFlags($("prompts"), open.filter((f) => f.severity === "prompt"), `No quiet tests waiting on an owner.${note(handled("prompt"))}`);
+  renderFlags($("hygiene"), open.filter((f) => f.severity === "info"), `Nothing outstanding.${note(handled("info"))}`);
+}
+
+function ageBadges(flag) {
+  const out = [];
+  if (flag.isNew) out.push(`<span class="chip age-new">new today</span>`);
+  else if (flag.openDays) out.push(`<span class="chip">open ${esc(plural(flag.openDays, "working day", "working days"))}</span>`);
+  if (flag.escalated) out.push(`<span class="chip bad" title="Left at Attention past the escalation mark, so it is now a P1">escalated</span>`);
+  const last = nudgesOf(flag).at(-1);
+  if (last) out.push(`<span class="chip" title="Posted in Slack">nudged ${esc(last.to)} ${esc(new Date(last.at).toLocaleDateString())}</span>`);
+  return out.join("");
+}
+
+function triageBanner(flag, t) {
+  const what =
+    t.status === "waiting"
+      ? `Waiting on <strong>${esc(t.waitingOn)}</strong> until ${esc(fmtDay(t.until))}`
+      : t.status === "snoozed"
+        ? `Snoozed until ${esc(fmtDay(t.until))}`
+        : `<strong>${esc(TRIAGE_LABEL[t.status] ?? t.status)}</strong>`;
+  return `<p class="triage-state">${what}${t.note ? ` · ${esc(t.note)}` : ""}
+    <button type="button" class="link-btn" data-triage="clear">Undo</button></p>`;
+}
+
+function triageActions() {
+  return `<div class="triage-actions">
+      <button type="button" class="ghost sm" data-triage="done" title="Handled. Hidden until the condition clears and comes back.">Done</button>
+      <select class="sm" data-triage="snooze" aria-label="Snooze">
+        <option value="">Snooze…</option>
+        <option value="1">1 working day</option>
+        <option value="3">3 working days</option>
+        <option value="5">1 week</option>
+      </select>
+      <button type="button" class="ghost sm" data-triage="waiting-open">Waiting on…</button>
+      <button type="button" class="ghost sm" data-triage="dismiss-open">Not a problem…</button>
+      <button type="button" class="ghost sm" data-triage="nudge-open">Nudge owner</button>
+    </div>
+    <div class="triage-panel hidden"></div>`;
+}
+
 function flagCard(flag) {
   const ctx = flagContext(flag);
+  const t = triageOf(flag);
   const links = ctx.links
     .map((l) =>
       l.external
@@ -268,15 +354,17 @@ function flagCard(flag) {
     )
     .join("");
   return `
-      <div class="flag sev-${esc(flag.severity)}" data-flag="${esc(flag.id)}">
+      <div class="flag sev-${esc(flag.severity)}"${t ? " data-triaged" : ""} data-flag="${esc(flag.id)}" data-key="${esc(keyOf(flag))}" data-layer="${esc(flag.layer)}">
         <div class="row">
           <div>
             <p class="msg">${esc(flag.message)}</p>
             <p class="meta">${esc(layerLabel(flag.layer))} · ${esc(flag.rule)}${ctx.owners.length ? ` · ${esc(ctx.owners.join(", "))}` : ""}</p>
+            <p class="flag-badges">${ageBadges(flag)}</p>
             ${links ? `<p class="flag-links">${links}</p>` : ""}
           </div>
-          ${flag.advisable ? `<button class="ghost advise" data-flag="${esc(flag.id)}">${esc(state.advisorButtonText)}</button>` : ""}
+          ${flag.advisable && !t ? `<button class="ghost advise" data-flag="${esc(flag.id)}">${esc(state.advisorButtonText)}</button>` : ""}
         </div>
+        ${t ? triageBanner(flag, t) : triageActions()}
         <div class="advice hidden"></div>
       </div>`;
 }
@@ -290,7 +378,8 @@ function flagCard(flag) {
 const AREA_LABEL = { 1: "Leadership", cross: "Cross layer", 3: "Tests", 2: "Sprint", 0: "Store" };
 const AREA_ORDER = ["1", "cross", "3", "2", "0"]; // the same order sortFlags uses
 const NO_OWNER = "No owner";
-const ATTN_GROUPS = { area: "Area", owner: "Owner", rule: "Issue", item: "Item", none: "No grouping" };
+const ATTN_GROUPS = { age: "New vs still open", area: "Area", owner: "Owner", rule: "Issue", item: "Item", none: "No grouping" };
+const ATTN_VIEWS = { open: "Open", waiting: "Waiting", parked: "Parked" };
 
 const baseId = (id) => String(id ?? "").split(":")[0];
 const ruleLabel = (rule) => {
@@ -307,7 +396,7 @@ function flagContextIndex(report) {
   };
 }
 
-/** The flag's subject. clickup.stale_in_status is built without one, so it is rebuilt from the id. */
+/** The flag's subject. Reports from before clickup.stale_in_status carried one rebuild it from the id. */
 function subjectOf(flag) {
   if (flag.subject) return flag.subject;
   if (flag.rule === "clickup.stale_in_status") {
@@ -323,6 +412,7 @@ function flagContext(flag) {
   const links = [];
   let owners = [];
   let itemLabel = subject.label;
+  let url = null;
 
   switch (subject.type) {
     case "task": {
@@ -330,7 +420,7 @@ function flagContext(flag) {
       itemLabel ??= task?.name;
       const owned = task?.taskOwners?.length ? task.taskOwners : task?.assignees ?? [];
       owners = owned.map((u) => u.username).filter(Boolean);
-      const url = subject.url ?? flag.url ?? task?.url;
+      url = subject.url ?? flag.url ?? task?.url ?? null;
       if (url) links.push({ label: "ClickUp", href: url, external: true });
       links.push({ label: "Sprint", href: "#sprint" });
       break;
@@ -338,8 +428,9 @@ function flagContext(flag) {
     case "test": {
       const test = idx.tests.get(id);
       itemLabel ??= test?.name;
+      url = test?.consoleUrl ?? null;
       if (test) links.push({ label: "Test readout", href: `#tests/${encodeURIComponent(id)}` });
-      if (test?.consoleUrl) links.push({ label: "Intelligems", href: test.consoleUrl, external: true });
+      if (url) links.push({ label: "Intelligems", href: url, external: true });
       break;
     }
     case "priority": {
@@ -370,13 +461,13 @@ function flagContext(flag) {
       links.push({ label: "Store metrics", href: "#readout/store-head" });
       break;
   }
-  return { owners, links, itemKey: `${subject.type}:${id}`, itemLabel: itemLabel ?? ruleLabel(flag.rule) };
+  return { owners, links, url, itemKey: `${subject.type}:${id}`, itemLabel: itemLabel ?? ruleLabel(flag.rule) };
 }
 
 function loadAttnPrefs() {
-  const defaults = { sev: "", area: "", owner: "", q: "", group: "area" };
+  const defaults = { view: "open", sev: "", area: "", owner: "", q: "", group: "age" };
   try {
-    return { ...defaults, ...JSON.parse(localStorage.getItem("attn-prefs") ?? "{}"), q: "" };
+    return { ...defaults, ...JSON.parse(localStorage.getItem("attn-prefs") ?? "{}"), view: "open", q: "" };
   } catch {
     return defaults;
   }
@@ -390,26 +481,39 @@ function saveAttnPrefs() {
   }
 }
 
+/**
+ * The flags a view lists. Open is the attention list. Waiting and Parked hold every
+ * handled flag whatever its severity, because they are where a handled hygiene item or
+ * owner prompt is found again and undone.
+ */
+function flagsForView(view) {
+  const flags = state.report?.flags ?? [];
+  return view === "open" ? flags.filter((f) => isAttn(f) && viewOf(f) === "open") : flags.filter((f) => viewOf(f) === view);
+}
+
 /** The toolbar is built once per report, so typing in the search box keeps its focus. */
 function renderAttentionTools(flags) {
   state.attn ??= loadAttnPrefs();
-  state.attnFlags = flags;
   const a = state.attn;
+  const pool = flags.filter((f) => isAttn(f) || viewOf(f) !== "open");
 
-  const areas = AREA_ORDER.filter((k) => flags.some((f) => String(f.layer) === k));
-  const owners = [...new Set(flags.flatMap((f) => { const o = flagContext(f).owners; return o.length ? o : [NO_OWNER]; }))]
+  const areas = AREA_ORDER.filter((k) => pool.some((f) => String(f.layer) === k));
+  const owners = [...new Set(pool.flatMap((f) => { const o = flagContext(f).owners; return o.length ? o : [NO_OWNER]; }))]
     .sort((x, y) => (x === NO_OWNER) - (y === NO_OWNER) || x.localeCompare(y));
   // A remembered filter for an area or owner with nothing today would hide everything.
   if (a.area && !areas.includes(a.area)) a.area = "";
   if (a.owner && !owners.includes(a.owner)) a.owner = "";
+  if (!ATTN_GROUPS[a.group]) a.group = "age";
 
-  const count = (sev) => flags.filter((f) => !sev || f.severity === sev).length;
-  const sevButton = (sev, label) =>
-    `<button type="button" class="ghost dod-window${a.sev === sev ? " on" : ""}" data-sev="${sev}" aria-pressed="${a.sev === sev}">${esc(label)} ${count(sev)}</button>`;
   const option = (value, label, selected) => `<option value="${esc(value)}"${value === selected ? " selected" : ""}>${esc(label)}</option>`;
 
-  $("attention-tools").innerHTML = flags.length
-    ? `<div class="dod-windows" role="group" aria-label="Severity">${sevButton("", "All")}${sevButton("p1", "P1")}${sevButton("attention", "Attention")}</div>
+  $("attention-tools").innerHTML = pool.length
+    ? `<div class="dod-windows" role="group" aria-label="Show">${Object.entries(ATTN_VIEWS)
+        .map(([k, l]) => `<button type="button" class="ghost dod-window" data-view-attn="${k}">${esc(l)} <span data-count="${k}"></span></button>`)
+        .join("")}</div>
+       <div class="dod-windows" role="group" aria-label="Severity">${[["", "All"], ["p1", "P1"], ["attention", "Attention"]]
+         .map(([k, l]) => `<button type="button" class="ghost dod-window" data-sev="${k}">${esc(l)}</button>`)
+         .join("")}</div>
        <select id="attn-area" aria-label="Area">${option("", "All areas", a.area)}${areas.map((k) => option(k, AREA_LABEL[k] ?? k, a.area)).join("")}</select>
        <select id="attn-owner" aria-label="Owner">${option("", "All owners", a.owner)}${owners.map((o) => option(o, o, a.owner)).join("")}</select>
        <input id="attn-q" type="search" placeholder="Search" aria-label="Search flags" value="${esc(a.q)}">
@@ -419,8 +523,8 @@ function renderAttentionTools(flags) {
 }
 
 function renderAttention() {
-  const a = state.attn;
-  const all = state.attnFlags ?? [];
+  const a = state.attn ?? (state.attn = loadAttnPrefs());
+  const all = flagsForView(a.view);
   const q = a.q.trim().toLowerCase();
 
   const shown = all.filter((f) => {
@@ -428,19 +532,30 @@ function renderAttention() {
     if (a.area && String(f.layer) !== a.area) return false;
     const ctx = flagContext(f);
     if (a.owner && !(ctx.owners.length ? ctx.owners : [NO_OWNER]).includes(a.owner)) return false;
-    if (q && !`${f.message} ${f.rule} ${ctx.owners.join(" ")} ${ctx.itemLabel}`.toLowerCase().includes(q)) return false;
+    if (q && !`${f.message} ${f.rule} ${ctx.owners.join(" ")} ${ctx.itemLabel} ${triageOf(f)?.waitingOn ?? ""}`.toLowerCase().includes(q)) return false;
     return true;
   });
 
-  for (const button of document.querySelectorAll("#attention-tools [data-sev]")) {
-    const on = button.dataset.sev === a.sev;
-    button.classList.toggle("on", on);
-    button.setAttribute("aria-pressed", String(on));
+  const toggle = (selector, attr, current) => {
+    for (const button of document.querySelectorAll(`#attention-tools [${selector}]`)) {
+      const on = button.getAttribute(selector) === current;
+      button.classList.toggle("on", on);
+      button.setAttribute("aria-pressed", String(on));
+    }
+  };
+  toggle("data-view-attn", "view", a.view);
+  toggle("data-sev", "sev", a.sev);
+  for (const k of Object.keys(ATTN_VIEWS)) {
+    const el = document.querySelector(`#attention-tools [data-count="${k}"]`);
+    if (el) el.textContent = flagsForView(k).length;
   }
-  if ($("attn-count")) $("attn-count").textContent = shown.length === all.length ? `${all.length} items` : `${shown.length} of ${all.length} shown`;
+  if ($("attn-count")) $("attn-count").textContent = shown.length === all.length ? plural(all.length, "item", "items") : `${shown.length} of ${all.length} shown`;
 
   const host = $("attention");
-  if (all.length === 0) return renderFlags(host, [], "Nothing flagged.");
+  if (all.length === 0) {
+    const empty = { open: "Nothing flagged.", waiting: "Nothing is waiting on anyone.", parked: "Nothing done, snoozed or set aside." }[a.view];
+    return renderFlags(host, [], empty);
+  }
   if (shown.length === 0) {
     host.innerHTML = `<p class="sub">Nothing matches these filters. <button type="button" class="ghost" id="attn-clear">Clear filters</button></p>`;
     return;
@@ -455,14 +570,16 @@ function renderAttention() {
   };
   for (const f of shown) {
     const ctx = flagContext(f);
-    if (a.group === "area") put(String(f.layer), AREA_LABEL[f.layer] ?? layerLabel(f.layer), f);
+    if (a.group === "age") f.isNew ? put("new", "New today", f) : put("still", "Still open", f);
+    else if (a.group === "area") put(String(f.layer), AREA_LABEL[f.layer] ?? layerLabel(f.layer), f);
     else if (a.group === "rule") put(f.rule, ruleLabel(f.rule), f);
     else if (a.group === "item") put(ctx.itemKey, ctx.itemLabel, f);
     else for (const o of ctx.owners.length ? ctx.owners : [NO_OWNER]) put(o, o, f);
   }
 
   let ordered = [...groups.entries()];
-  if (a.group === "area") ordered.sort(([x], [y]) => AREA_ORDER.indexOf(x) - AREA_ORDER.indexOf(y));
+  if (a.group === "age") ordered.sort(([x]) => (x === "new" ? -1 : 1));
+  else if (a.group === "area") ordered.sort(([x], [y]) => AREA_ORDER.indexOf(x) - AREA_ORDER.indexOf(y));
   else if (a.group === "owner") ordered.sort(([x], [y]) => (x === NO_OWNER) - (y === NO_OWNER) || x.localeCompare(y));
   // Issue and item groups keep flag order, so whatever holds the first P1 leads.
 
@@ -478,9 +595,11 @@ function renderAttention() {
 }
 
 $("attention-tools").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-sev]");
-  if (!button) return;
-  state.attn.sev = button.dataset.sev;
+  const view = event.target.closest("[data-view-attn]");
+  const sev = event.target.closest("[data-sev]");
+  if (view) state.attn.view = view.dataset.viewAttn;
+  else if (sev) state.attn.sev = sev.dataset.sev;
+  else return;
   saveAttnPrefs();
   renderAttention();
 });
@@ -500,8 +619,187 @@ $("attention").addEventListener("click", (event) => {
   if (event.target.id !== "attn-clear") return;
   Object.assign(state.attn, { sev: "", area: "", owner: "", q: "" });
   saveAttnPrefs();
-  renderAttentionTools(state.attnFlags ?? []);
+  renderAttentionTools(state.report?.flags ?? []);
   renderAttention();
+});
+
+/* ------------------------------ triage actions ------------------------------ */
+
+const findFlag = (card) => (state.report?.flags ?? []).find((f) => f.id === card.dataset.flag);
+
+async function saveTriage(card, payload) {
+  const errorBox = card.querySelector(".triage-error");
+  try {
+    const res = await fetch(`${FN}/flags`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: card.dataset.key, layer: card.dataset.layer, ...payload }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    applyEntry(body);
+  } catch (err) {
+    showPanelError(card, `Could not save: ${err.message}`, errorBox);
+  }
+}
+
+function applyEntry(body) {
+  state.flagEntries = { ...(state.flagEntries ?? {}), [body.key]: body.entry };
+  if (body.today) state.today = body.today;
+  renderAllFlags();
+}
+
+function showPanelError(card, message) {
+  const panel = card.querySelector(".triage-panel") ?? card;
+  panel.classList.remove("hidden");
+  let box = panel.querySelector(".triage-error");
+  if (!box) {
+    box = document.createElement("p");
+    box.className = "triage-error";
+    panel.prepend(box);
+  }
+  box.textContent = message;
+}
+
+/** Everyone a flag could be waiting on: its owners first, then the roster. */
+function peopleFor(flag) {
+  const owners = flagContext(flag).owners;
+  const roster = (state.people ?? []).map((p) => p.name);
+  return [...new Set([...owners.map((o) => matchPerson(o)?.name ?? o), ...roster])];
+}
+
+/** The roster entry for a name as ClickUp spells it: exact, else a unique first-name match. */
+function matchPerson(name) {
+  const want = String(name ?? "").trim().toLowerCase();
+  const people = state.people ?? [];
+  const exact = people.filter((p) => p.name.toLowerCase() === want);
+  if (exact.length === 1) return exact[0];
+  const first = people.filter((p) => p.name.toLowerCase().split(/\s+/)[0] === want.split(/\s+/)[0]);
+  return first.length === 1 ? first[0] : null;
+}
+
+/** The nudge text. Fixed wording, no model: Alex reads and edits it before it goes. */
+function nudgeText(flag) {
+  const { url } = flagContext(flag);
+  return `Alex asked me to check in on this from the daily readout: ${flag.message}${url ? ` ${url}` : ""}\nWhat's the next step, and when do you expect it to move? A reply in this thread is perfect.`;
+}
+
+function openPanel(card, kind) {
+  const flag = findFlag(card);
+  const panel = card.querySelector(".triage-panel");
+  if (!flag || !panel) return;
+  if (panel.dataset.kind === kind && !panel.classList.contains("hidden")) {
+    panel.classList.add("hidden");
+    return;
+  }
+  panel.dataset.kind = kind;
+  const people = peopleFor(flag);
+  const personSelect = (id) =>
+    `<select id="${id}" class="sm">${people.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join("")}<option value="__other">Someone else…</option></select>`;
+
+  if (kind === "waiting") {
+    panel.innerHTML = `
+      <label>Waiting on ${personSelect("tp-person")}</label>
+      <label>Check back in <select id="tp-days" class="sm"><option value="1">1 working day</option><option value="2" selected>2 working days</option><option value="3">3 working days</option><option value="5">1 week</option></select></label>
+      <button type="button" class="sm" data-triage="waiting-save">Save</button>`;
+  } else if (kind === "dismiss") {
+    panel.innerHTML = `
+      <label class="wide">Why is it not a problem? <span class="meta">Optional. Kept with the flag, and useful feedback for the rules.</span>
+        <textarea id="tp-note" rows="2"></textarea></label>
+      <button type="button" class="sm" data-triage="dismiss-save">Set aside</button>`;
+  } else if (kind === "nudge") {
+    panel.innerHTML = `
+      <label>To ${personSelect("tp-person")}</label>
+      <label class="wide">Message <span class="meta">Posted in Slack tagging them, signed as Claude. Replies come back in its thread.</span>
+        <textarea id="tp-text" rows="4">${esc(nudgeText(flag))}</textarea></label>
+      <p class="meta" id="tp-nudge-note"></p>
+      <button type="button" class="sm" data-triage="nudge-send">Send in Slack</button>
+      <button type="button" class="ghost sm" data-triage="nudge-copy">Copy, and mark waiting</button>`;
+    updateNudgeNote(card);
+  }
+  panel.classList.remove("hidden");
+}
+
+function updateNudgeNote(card) {
+  const name = card.querySelector("#tp-person")?.value;
+  const send = card.querySelector('[data-triage="nudge-send"]');
+  const note = card.querySelector("#tp-nudge-note");
+  if (!send || !note) return;
+  const person = matchPerson(name);
+  const reason = !state.nudgeChannelSet
+    ? "No nudge channel is set. Set SLACK_NUDGE_CHANNEL in Netlify, or copy the message."
+    : !person
+      ? `${name} is not on the roster in config/people.json. Copy the message instead.`
+      : !person.canNudge
+        ? `There is no Slack member ID for ${person.name} in config/people.json yet. Copy the message instead.`
+        : "";
+  send.disabled = Boolean(reason);
+  note.textContent = reason;
+}
+
+function chosenPerson(card) {
+  const value = card.querySelector("#tp-person")?.value;
+  if (value !== "__other") return value;
+  return (window.prompt("Who is it waiting on?") ?? "").trim();
+}
+
+document.addEventListener("change", (event) => {
+  const card = event.target.closest(".flag[data-key]");
+  if (!card) return;
+  if (event.target.dataset.triage === "snooze" && event.target.value) {
+    saveTriage(card, { status: "snoozed", workingDays: Number(event.target.value) });
+  }
+  if (event.target.id === "tp-person") updateNudgeNote(card);
+});
+
+document.addEventListener("click", async (event) => {
+  const el = event.target.closest("[data-triage]");
+  if (!el || el.tagName === "SELECT") return;
+  const card = el.closest(".flag[data-key]");
+  if (!card) return;
+  const action = el.dataset.triage;
+
+  if (action === "done") return saveTriage(card, { status: "done" });
+  if (action === "clear") return saveTriage(card, { status: null });
+  if (action === "waiting-open") return openPanel(card, "waiting");
+  if (action === "dismiss-open") return openPanel(card, "dismiss");
+  if (action === "nudge-open") return openPanel(card, "nudge");
+  if (action === "dismiss-save") return saveTriage(card, { status: "dismissed", note: card.querySelector("#tp-note")?.value ?? "" });
+  if (action === "waiting-save") {
+    const who = chosenPerson(card);
+    if (!who) return;
+    return saveTriage(card, { status: "waiting", waitingOn: who, workingDays: Number(card.querySelector("#tp-days")?.value ?? 2) });
+  }
+  if (action === "nudge-copy") {
+    const who = chosenPerson(card);
+    if (!who) return;
+    try {
+      await navigator.clipboard.writeText(card.querySelector("#tp-text")?.value ?? "");
+    } catch {
+      return showPanelError(card, "The browser would not copy. Select the message and copy it by hand.");
+    }
+    return saveTriage(card, { status: "waiting", waitingOn: who });
+  }
+  if (action === "nudge-send") {
+    const who = chosenPerson(card);
+    if (!who) return;
+    el.disabled = true;
+    el.textContent = "Sending…";
+    try {
+      const res = await fetch(`${FN}/nudge`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: card.dataset.key, layer: card.dataset.layer, to: who, text: card.querySelector("#tp-text")?.value ?? "" }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      applyEntry(body);
+    } catch (err) {
+      el.disabled = false;
+      el.textContent = "Send in Slack";
+      showPanelError(card, `Not sent: ${err.message}`);
+    }
+  }
 });
 
 function renderLayer1(report) {

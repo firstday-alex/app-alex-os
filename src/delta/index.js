@@ -335,7 +335,9 @@ export function computeFlags({ snapshots, baselines, config, settings = null, st
       const qualifier = task.statusAge.exact ? "" : "at least ";
       flags.push({
         id: `clickup.stale_in_status:${task.id}`,
+        key: `clickup.stale_in_status:${task.id}`,
         layer: 2,
+        subject: { type: "task", id: task.id, label: task.name, url: task.url ?? null },
         severity: "attention",
         rule: "clickup.stale_in_status",
         message: `"${task.name}" has been in ${task.status} for ${qualifier}${task.statusAge.days} days, past the ${task.stale.threshold} day mark for that status.${
