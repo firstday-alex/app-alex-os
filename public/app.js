@@ -97,7 +97,9 @@ function render() {
   ].join("");
 
   const flags = report.flags ?? [];
-  renderFlags($("attention"), flags.filter((f) => f.severity === "p1" || f.severity === "attention"), "Nothing flagged.");
+  state.flagCtx = flagContextIndex(report);
+  renderAttentionTools(flags.filter((f) => f.severity === "p1" || f.severity === "attention"));
+  renderAttention();
   renderFlags($("prompts"), flags.filter((f) => f.severity === "prompt"), "No quiet tests waiting on an owner.");
   renderFlags($("hygiene"), flags.filter((f) => f.severity === "info"), "Nothing outstanding.");
 
@@ -253,22 +255,254 @@ function renderFlags(container, flags, emptyText) {
     container.innerHTML = `<p class="sub">${esc(emptyText)}</p>`;
     return;
   }
-  container.innerHTML = flags
-    .map(
-      (flag) => `
+  container.innerHTML = flags.map(flagCard).join("");
+}
+
+function flagCard(flag) {
+  const ctx = flagContext(flag);
+  const links = ctx.links
+    .map((l) =>
+      l.external
+        ? `<a href="${esc(l.href)}" target="_blank" rel="noreferrer">${esc(l.label)} ↗</a>`
+        : `<a href="${esc(l.href)}">${esc(l.label)}</a>`,
+    )
+    .join("");
+  return `
       <div class="flag sev-${esc(flag.severity)}" data-flag="${esc(flag.id)}">
         <div class="row">
           <div>
             <p class="msg">${esc(flag.message)}</p>
-            <p class="meta">${esc(layerLabel(flag.layer))} · ${esc(flag.rule)}</p>
+            <p class="meta">${esc(layerLabel(flag.layer))} · ${esc(flag.rule)}${ctx.owners.length ? ` · ${esc(ctx.owners.join(", "))}` : ""}</p>
+            ${links ? `<p class="flag-links">${links}</p>` : ""}
           </div>
           ${flag.advisable ? `<button class="ghost advise" data-flag="${esc(flag.id)}">${esc(state.advisorButtonText)}</button>` : ""}
         </div>
         <div class="advice hidden"></div>
-      </div>`,
-    )
+      </div>`;
+}
+
+/* --------------------------- needs your attention ---------------------------
+   A flag names its subject by type and id. These lookups turn that into who owns it and
+   where to go to fix it: the ClickUp ticket, the rock editor, the test's readout and its
+   Intelligems page. Subject ids carry a suffix per rule (`<rockId>:status`,
+   `<testId>:gate`), so they are matched on the part before the first colon. */
+
+const AREA_LABEL = { 1: "Leadership", cross: "Cross layer", 3: "Tests", 2: "Sprint", 0: "Store" };
+const AREA_ORDER = ["1", "cross", "3", "2", "0"]; // the same order sortFlags uses
+const NO_OWNER = "No owner";
+const ATTN_GROUPS = { area: "Area", owner: "Owner", rule: "Issue", item: "Item", none: "No grouping" };
+
+const baseId = (id) => String(id ?? "").split(":")[0];
+const ruleLabel = (rule) => {
+  const s = String(rule ?? "").split(".").pop().replace(/_/g, " ");
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+
+function flagContextIndex(report) {
+  const d = report.detail ?? {};
+  return {
+    tasks: new Map((d.clickup?.tasks ?? []).map((t) => [String(t.id), t])),
+    tests: new Map((d.intelligems?.tests ?? []).map((t) => [String(t.id), t])),
+    rocks: new Map([...(d.leadership?.queue ?? []), ...(d.leadership?.backlog ?? [])].map((r) => [String(r.id), r])),
+  };
+}
+
+/** The flag's subject. clickup.stale_in_status is built without one, so it is rebuilt from the id. */
+function subjectOf(flag) {
+  if (flag.subject) return flag.subject;
+  if (flag.rule === "clickup.stale_in_status") {
+    return { type: "task", id: flag.id.slice(flag.id.indexOf(":") + 1), label: null, url: flag.url ?? null };
+  }
+  return { type: "none", id: flag.id, label: null };
+}
+
+function flagContext(flag) {
+  const idx = state.flagCtx ?? { tasks: new Map(), tests: new Map(), rocks: new Map() };
+  const subject = subjectOf(flag);
+  const id = baseId(subject.id);
+  const links = [];
+  let owners = [];
+  let itemLabel = subject.label;
+
+  switch (subject.type) {
+    case "task": {
+      const task = idx.tasks.get(id);
+      itemLabel ??= task?.name;
+      const owned = task?.taskOwners?.length ? task.taskOwners : task?.assignees ?? [];
+      owners = owned.map((u) => u.username).filter(Boolean);
+      const url = subject.url ?? flag.url ?? task?.url;
+      if (url) links.push({ label: "ClickUp", href: url, external: true });
+      links.push({ label: "Sprint", href: "#sprint" });
+      break;
+    }
+    case "test": {
+      const test = idx.tests.get(id);
+      itemLabel ??= test?.name;
+      if (test) links.push({ label: "Test readout", href: `#tests/${encodeURIComponent(id)}` });
+      if (test?.consoleUrl) links.push({ label: "Intelligems", href: test.consoleUrl, external: true });
+      break;
+    }
+    case "priority": {
+      const rock = idx.rocks.get(id);
+      if (rock?.owner?.name) owners = [rock.owner.name];
+      links.push({ label: "Edit rock", href: `#rocks/${encodeURIComponent(id)}` });
+      if (rock?.intelligemsExperienceId) {
+        links.push({ label: "Test readout", href: `#tests/${encodeURIComponent(rock.intelligemsExperienceId)}` });
+      }
+      break;
+    }
+    case "person":
+      owners = subject.label ? [subject.label] : [];
+      links.push({ label: "Their rocks", href: `#rocks/${encodeURIComponent(subject.label ?? "")}` });
+      links.push({ label: "Cross layer", href: "#readout/cross" });
+      links.push({ label: "Sprint", href: "#sprint" });
+      break;
+    case "field":
+      links.push({ label: "Setup", href: "#setup" });
+      break;
+    case "list":
+      links.push({ label: "Sprint", href: "#sprint" });
+      break;
+    case "queue":
+      links.push({ label: "Rocks", href: "#rocks" });
+      break;
+    case "metric":
+      links.push({ label: "Store metrics", href: "#readout/store-head" });
+      break;
+  }
+  return { owners, links, itemKey: `${subject.type}:${id}`, itemLabel: itemLabel ?? ruleLabel(flag.rule) };
+}
+
+function loadAttnPrefs() {
+  const defaults = { sev: "", area: "", owner: "", q: "", group: "area" };
+  try {
+    return { ...defaults, ...JSON.parse(localStorage.getItem("attn-prefs") ?? "{}"), q: "" };
+  } catch {
+    return defaults;
+  }
+}
+function saveAttnPrefs() {
+  try {
+    const { sev, area, owner, group } = state.attn;
+    localStorage.setItem("attn-prefs", JSON.stringify({ sev, area, owner, group }));
+  } catch {
+    /* a per-viewer convenience; nothing is lost without it */
+  }
+}
+
+/** The toolbar is built once per report, so typing in the search box keeps its focus. */
+function renderAttentionTools(flags) {
+  state.attn ??= loadAttnPrefs();
+  state.attnFlags = flags;
+  const a = state.attn;
+
+  const areas = AREA_ORDER.filter((k) => flags.some((f) => String(f.layer) === k));
+  const owners = [...new Set(flags.flatMap((f) => { const o = flagContext(f).owners; return o.length ? o : [NO_OWNER]; }))]
+    .sort((x, y) => (x === NO_OWNER) - (y === NO_OWNER) || x.localeCompare(y));
+  // A remembered filter for an area or owner with nothing today would hide everything.
+  if (a.area && !areas.includes(a.area)) a.area = "";
+  if (a.owner && !owners.includes(a.owner)) a.owner = "";
+
+  const count = (sev) => flags.filter((f) => !sev || f.severity === sev).length;
+  const sevButton = (sev, label) =>
+    `<button type="button" class="ghost dod-window${a.sev === sev ? " on" : ""}" data-sev="${sev}" aria-pressed="${a.sev === sev}">${esc(label)} ${count(sev)}</button>`;
+  const option = (value, label, selected) => `<option value="${esc(value)}"${value === selected ? " selected" : ""}>${esc(label)}</option>`;
+
+  $("attention-tools").innerHTML = flags.length
+    ? `<div class="dod-windows" role="group" aria-label="Severity">${sevButton("", "All")}${sevButton("p1", "P1")}${sevButton("attention", "Attention")}</div>
+       <select id="attn-area" aria-label="Area">${option("", "All areas", a.area)}${areas.map((k) => option(k, AREA_LABEL[k] ?? k, a.area)).join("")}</select>
+       <select id="attn-owner" aria-label="Owner">${option("", "All owners", a.owner)}${owners.map((o) => option(o, o, a.owner)).join("")}</select>
+       <input id="attn-q" type="search" placeholder="Search" aria-label="Search flags" value="${esc(a.q)}">
+       <label class="attn-group">Group by <select id="attn-group">${Object.entries(ATTN_GROUPS).map(([k, l]) => option(k, l, a.group)).join("")}</select></label>
+       <span class="meta" id="attn-count"></span>`
+    : "";
+}
+
+function renderAttention() {
+  const a = state.attn;
+  const all = state.attnFlags ?? [];
+  const q = a.q.trim().toLowerCase();
+
+  const shown = all.filter((f) => {
+    if (a.sev && f.severity !== a.sev) return false;
+    if (a.area && String(f.layer) !== a.area) return false;
+    const ctx = flagContext(f);
+    if (a.owner && !(ctx.owners.length ? ctx.owners : [NO_OWNER]).includes(a.owner)) return false;
+    if (q && !`${f.message} ${f.rule} ${ctx.owners.join(" ")} ${ctx.itemLabel}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  for (const button of document.querySelectorAll("#attention-tools [data-sev]")) {
+    const on = button.dataset.sev === a.sev;
+    button.classList.toggle("on", on);
+    button.setAttribute("aria-pressed", String(on));
+  }
+  if ($("attn-count")) $("attn-count").textContent = shown.length === all.length ? `${all.length} items` : `${shown.length} of ${all.length} shown`;
+
+  const host = $("attention");
+  if (all.length === 0) return renderFlags(host, [], "Nothing flagged.");
+  if (shown.length === 0) {
+    host.innerHTML = `<p class="sub">Nothing matches these filters. <button type="button" class="ghost" id="attn-clear">Clear filters</button></p>`;
+    return;
+  }
+  if (a.group === "none") return renderFlags(host, shown, "");
+
+  // A flag with two owners shows under each, so filtering by either finds it.
+  const groups = new Map();
+  const put = (key, label, flag) => {
+    if (!groups.has(key)) groups.set(key, { label, flags: [] });
+    groups.get(key).flags.push(flag);
+  };
+  for (const f of shown) {
+    const ctx = flagContext(f);
+    if (a.group === "area") put(String(f.layer), AREA_LABEL[f.layer] ?? layerLabel(f.layer), f);
+    else if (a.group === "rule") put(f.rule, ruleLabel(f.rule), f);
+    else if (a.group === "item") put(ctx.itemKey, ctx.itemLabel, f);
+    else for (const o of ctx.owners.length ? ctx.owners : [NO_OWNER]) put(o, o, f);
+  }
+
+  let ordered = [...groups.entries()];
+  if (a.group === "area") ordered.sort(([x], [y]) => AREA_ORDER.indexOf(x) - AREA_ORDER.indexOf(y));
+  else if (a.group === "owner") ordered.sort(([x], [y]) => (x === NO_OWNER) - (y === NO_OWNER) || x.localeCompare(y));
+  // Issue and item groups keep flag order, so whatever holds the first P1 leads.
+
+  host.innerHTML = ordered
+    .map(([, g]) => {
+      const p1 = g.flags.filter((f) => f.severity === "p1").length;
+      return `<details class="flag-group" open>
+        <summary><span class="flag-group-name">${esc(g.label)}</span> <span class="meta">${g.flags.length}${p1 ? ` · ${p1} P1` : ""}</span></summary>
+        ${g.flags.map(flagCard).join("")}
+      </details>`;
+    })
     .join("");
 }
+
+$("attention-tools").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-sev]");
+  if (!button) return;
+  state.attn.sev = button.dataset.sev;
+  saveAttnPrefs();
+  renderAttention();
+});
+$("attention-tools").addEventListener("change", (event) => {
+  const key = { "attn-area": "area", "attn-owner": "owner", "attn-group": "group" }[event.target.id];
+  if (!key) return;
+  state.attn[key] = event.target.value;
+  saveAttnPrefs();
+  renderAttention();
+});
+$("attention-tools").addEventListener("input", (event) => {
+  if (event.target.id !== "attn-q") return;
+  state.attn.q = event.target.value;
+  renderAttention();
+});
+$("attention").addEventListener("click", (event) => {
+  if (event.target.id !== "attn-clear") return;
+  Object.assign(state.attn, { sev: "", area: "", owner: "", q: "" });
+  saveAttnPrefs();
+  renderAttentionTools(state.attnFlags ?? []);
+  renderAttention();
+});
 
 function renderLayer1(report) {
   const section = report.sections.leadership;
@@ -1344,6 +1578,9 @@ function openRock(id) {
 function closeRock() {
   $("rock-modal").hidden = true;
   editingId = null;
+  // Drop a deep-linked rock from the hash, or following the same link again would not
+  // fire a hashchange and the editor would not reopen.
+  if (parseHash(location.hash).name === "rocks" && parseHash(location.hash).target) history.replaceState(null, "", "#rocks");
 }
 
 function formPayload() {
@@ -1918,10 +2155,33 @@ $("scrim").addEventListener("click", closeDrawer);
 for (const button of document.querySelectorAll(".nav")) {
   button.addEventListener("click", () => showView(button.dataset.view));
 }
+/**
+ * `#rocks/<id>` opens that rock in the editor. Anything else after `#rocks/` is taken as
+ * filter text, which is how a person's flag links to their rocks. Waits for the rocks to load.
+ */
+function focusRock(target, { attempt = 0 } = {}) {
+  if (!state.rocks) {
+    if (attempt < 40) setTimeout(() => focusRock(target, { attempt: attempt + 1 }), 150);
+    return;
+  }
+  if ((state.rocks.rocks ?? []).some((r) => String(r.id) === target)) {
+    openRock(target);
+    return;
+  }
+  $("rock-filter").value = target;
+  renderRocks();
+}
+
 function routeFromHash() {
   const { name, target } = parseHash(location.hash);
   showView(name);
   if (name === "tests" && target) focusTest(target);
+  if (name === "rocks" && target) focusRock(target);
+  if (name === "readout" && target) {
+    $(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Same reason as closeRock: a second click on the same link has to fire again.
+    history.replaceState(null, "", "#readout");
+  }
 }
 
 addEventListener("hashchange", routeFromHash);

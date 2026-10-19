@@ -437,3 +437,19 @@ tr.underpowered td { opacity: .5; }
 .dod-windows .dod-window { border: 0; border-radius: 0; margin: 0; padding: 6px 12px; background: var(--panel); color: var(--ink); }
 .dod-windows .dod-window + .dod-window { border-left: 1px solid var(--line); }
 .dod-windows .dod-window.on { background: var(--green); color: #fff; }
+
+/* Needs your attention: filters, groups, and the links out of each flag */
+.attn-bar { gap: 8px; margin-bottom: 12px; }
+.attn-bar .dod-windows { margin: 0; }
+.attn-bar select, .attn-bar input { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.attn-bar input { min-width: 0; flex: 1 1 160px; }
+.attn-group { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+.flag-group { margin: 0 0 10px; }
+.flag-group > summary { cursor: pointer; padding: 4px 0 8px; list-style-position: inside; }
+.flag-group-name { font-weight: 600; color: var(--green); }
+.flag-links { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
+.flag-links a {
+  font-size: 12px; padding: 2px 9px; border-radius: 10px; text-decoration: none;
+  background: var(--code); color: var(--green); border: 1px solid var(--line);
+}
+.flag-links a:hover { background: #fff; border-color: var(--green); }
