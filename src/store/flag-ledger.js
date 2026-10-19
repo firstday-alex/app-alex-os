@@ -16,6 +16,7 @@
 // is only trusted for a layer whose collector actually ran: a failed ClickUp pull raises
 // no ClickUp flags, and that must not read as every ClickUp problem being fixed.
 
+import crypto from "node:crypto";
 import { addWorkingDays, workingDaysBetween, shiftDateKey, isWorkingDayKey } from "../lib/time.js";
 
 const DOC_KEY = "flags/ledger.json";
@@ -41,6 +42,20 @@ export class FlagLedgerError extends Error {
 export function flagKey(flag) {
   if (flag.key) return flag.key;
   return String(flag.id ?? "").replace(/^(\d{4}-\d{2}-\d{2}|nodate):/, "");
+}
+
+/**
+ * A short, stable reference to a flag key, for Slack button values. Slack caps an option
+ * value at 150 characters and a key built from test and group ids can run past that, so
+ * the button carries this and the handler finds the key it belongs to.
+ */
+export function flagRef(key) {
+  return crypto.createHash("sha256").update(String(key)).digest("hex").slice(0, 20);
+}
+
+/** The key, among `keys`, that `ref` points at. Null when it is no longer raised. */
+export function keyForRef(ref, keys) {
+  return keys.find((k) => flagRef(k) === ref) ?? null;
 }
 
 /** Triage that is still in force on `today`. A snooze or a wait runs out on its date. */

@@ -63,6 +63,8 @@ async function load() {
   }
   state.report = body.report;
   render();
+  // Test owners live in the notes. Fetched alongside so the attention list can use them.
+  if (!state.testNotes) loadTestNotes().then(() => state.report && renderAllFlags({ rebuildTools: true }));
 }
 
 /* --------------------------------- render --------------------------------- */
@@ -428,6 +430,12 @@ function flagContext(flag) {
     case "test": {
       const test = idx.tests.get(id);
       itemLabel ??= test?.name;
+      // The Tests view's notes, when loaded, are newer than the report: an owner chosen
+      // there this afternoon counts now rather than at tomorrow's run.
+      const assignee = state.testNotes?.notes?.[id]?.assignee;
+      const named = assignee ? (state.testNotes.assignees ?? []).find((p) => String(p.id) === String(assignee))?.name : null;
+      const owner = named ?? test?.owner?.name;
+      if (owner) owners = [owner];
       url = test?.consoleUrl ?? null;
       if (test) links.push({ label: "Test readout", href: `#tests/${encodeURIComponent(id)}` });
       if (url) links.push({ label: "Intelligems", href: url, external: true });

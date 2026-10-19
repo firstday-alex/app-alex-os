@@ -13,6 +13,7 @@ import { RocksStore } from "./store/rocks.js";
 import { SettingsStore } from "./store/settings.js";
 import { StatusLedger } from "./store/status-ledger.js";
 import { FlagLedger, annotateFlags } from "./store/flag-ledger.js";
+import { TestNotesStore, ASSIGNEE_FIELD } from "./store/test-notes.js";
 import { dateKey as toDateKey, zonedParts, baselineCandidateKeys } from "./lib/time.js";
 import { collectClickUp } from "./collectors/clickup.js";
 import { collectIntelligems } from "./collectors/intelligems.js";
@@ -212,6 +213,24 @@ export async function runPipeline(opts = {}) {
     logger,
   });
   const { sections, detail } = computed;
+
+  // Who owns each test. Chosen on the Tests view and kept in the test notes, which the
+  // flags themselves know nothing about. Put on the test so a test's flags have an owner
+  // to filter by and nudge, the way a ticket's and a rock's already do.
+  if (detail.intelligems?.tests?.length) {
+    try {
+      const notes = (await new TestNotesStore(store.backend, logger).readAll()).notes ?? {};
+      const roster = [...(config.people?.team ?? []), ...(config.people?.alex ? [config.people.alex] : [])];
+      for (const test of detail.intelligems.tests) {
+        const id = notes[String(test.id)]?.[ASSIGNEE_FIELD];
+        if (!id) continue;
+        const person = roster.find((p) => String(p.clickupUserId) === String(id));
+        test.owner = { clickupUserId: String(id), name: person?.name ?? null };
+      }
+    } catch (err) {
+      logger.warn("test_notes.unavailable", { err, note: "test flags render without an owner" });
+    }
+  }
 
   /* ------------------------------ flag ledger ------------------------------
      How long each flag has been open, and whether Alex has already dealt with it. A flag

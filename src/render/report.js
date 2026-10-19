@@ -4,6 +4,8 @@
 // fact the same way every morning, which is the whole reason the readout can be trusted
 // and costs nothing. Order follows the spec: Layer 1 is checked first, every day.
 
+import { flagRef } from "../store/flag-ledger.js";
+
 const SIGNAL_MARK = { stalled: "STALLED", waiting: "waiting", moving: "moving", idle: "idle" };
 
 /** "L1", "L2", "L3", "CROSS". A layer label a person can read out loud. */
@@ -244,6 +246,20 @@ function parkedSummary(flags) {
   return parts.length ? parts.map(([n, label]) => `${n} ${label}`).join(", ") : null;
 }
 
+/**
+ * Triage from the readout itself. Snooze lengths are working days, the same as the
+ * dashboard's. The value is a short ref, not the key, because of Slack's length caps.
+ */
+export const SLACK_TRIAGE = {
+  flag_done: { label: "Done", status: "done" },
+  flag_snooze_1: { label: "Snooze 1 day", status: "snoozed", workingDays: 1 },
+  flag_snooze_5: { label: "Snooze 1 week", status: "snoozed", workingDays: 5 },
+  flag_dismiss: { label: "Not a problem", status: "dismissed" },
+};
+
+// Slack allows 50 blocks a message, and each flag takes two: the message and its buttons.
+const SLACK_FLAG_LIMIT = 18;
+
 export function renderText(report) {
   const lines = [];
   const { detail, sections, config, flags } = report._render;
@@ -374,7 +390,7 @@ export function renderSlackBlocks(report, config) {
   });
 
   const actionable = flags.filter((f) => f.severity !== "info" && !f.triage);
-  const shown = actionable.slice(0, 40);
+  const shown = actionable.slice(0, SLACK_FLAG_LIMIT);
   if (shown.length === 0) {
     blocks.push({ type: "section", text: { type: "mrkdwn", text: "Nothing flagged this morning." } });
   }
@@ -396,6 +412,15 @@ export function renderSlackBlocks(report, config) {
       };
     }
     blocks.push(block);
+    blocks.push({
+      type: "actions",
+      elements: Object.entries(SLACK_TRIAGE).map(([actionId, t]) => ({
+        type: "button",
+        text: { type: "plain_text", text: t.label },
+        action_id: actionId,
+        value: flagRef(flag.key ?? flag.id),
+      })),
+    });
   }
 
   if (actionable.length > shown.length) {

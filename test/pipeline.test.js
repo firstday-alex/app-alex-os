@@ -357,3 +357,11 @@ test("a flag handled on the dashboard stays handled at the next 8 AM, and the re
   assert.ok(!second.report.text.includes(handled.message), "a done flag is not listed anywhere in the readout");
   assert.match(second.report.text, /PARKED\. 1 done\./);
 });
+
+test("a test's owner, chosen in its notes, is carried onto the test for its flags", async () => {
+  const ctx = await setup();
+  await ctx.store.backend.set("test-notes/index.json", { version: 1, notes: { e1: { assignee: "u1" } } });
+  const result = await runPipeline({ ...ctx, mode: "refresh", now: new Date("2026-09-10T19:00:00Z"), env: baseEnv });
+  const test = result.report.detail.intelligems.tests.find((t) => t.id === "e1");
+  assert.deepEqual(test.owner, { clickupUserId: "u1", name: "dana" });
+});

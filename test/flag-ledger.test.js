@@ -7,7 +7,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FlagLedger, annotateFlags, flagKey, activeTriage } from "../src/store/flag-ledger.js";
+import { FlagLedger, annotateFlags, flagKey, activeTriage, flagRef } from "../src/store/flag-ledger.js";
+import { handleTriage } from "../netlify/functions/slack-interactive.mjs";
 import { workingDaysBetween, addWorkingDays } from "../src/lib/time.js";
 import { buildReport } from "../src/render/report.js";
 import { resolveRecipient, nudgeRoster, sendNudge, nudgeThreadKey, NudgeError } from "../src/send/nudge.js";
@@ -251,4 +252,76 @@ test("a nudge with no Slack id or no channel is refused before anything is sent"
   await assert.rejects(sendNudge({ ...args, env: { SLACK_NUDGE_CHANNEL: "CN" }, to: "Blake Tucker" }), (err) => err instanceof NudgeError && /no Slack member ID/.test(err.message));
   await assert.rejects(sendNudge({ ...args, env: {}, to: "Robson" }), /SLACK_NUDGE_CHANNEL/);
   await assert.rejects(sendNudge({ ...args, env: { SLACK_NUDGE_CHANNEL: "CN" }, to: "Nobody" }), /not on the roster/);
+});
+
+/* ---------------------------- triage from Slack ---------------------------- */
+
+test("each flag in the Slack readout carries triage buttons, inside Slack's limits", () => {
+  const many = Array.from({ length: 30 }, (_, i) =>
+    flag({ id: `2026-10-19:intelligems.probability_crossed:${"e".repeat(36)}:group-${i}:conversion_rate_per_session:prob`, key: `intelligems.probability_crossed:${"e".repeat(36)}:group-${i}:conversion_rate_per_session:prob`, isNew: true, openDays: 0 }),
+  );
+  const r = report(many);
+  assert.ok(r.slackBlocks.length <= 50, `Slack allows 50 blocks, got ${r.slackBlocks.length}`);
+  const actions = r.slackBlocks.filter((b) => b.type === "actions");
+  assert.equal(actions.length, 18);
+  for (const block of actions) {
+    assert.deepEqual(block.elements.map((e) => e.action_id), ["flag_done", "flag_snooze_1", "flag_snooze_5", "flag_dismiss"]);
+    for (const el of block.elements) assert.ok(el.value.length <= 150, "a long key is sent as a short ref");
+  }
+  assert.equal(actions[0].elements[0].value, flagRef(many[0].key));
+  assert.match(JSON.stringify(r.slackBlocks), /12 more item\(s\) in the full readout/);
+});
+
+const quiet = { info() {}, warn() {}, error() {} };
+const triageConfig = { system: { timezone: "America/Chicago", schedule: { workingWeekdays: [1, 2, 3, 4, 5] } }, people: { alex: { slackUserId: "UALEX" } } };
+
+async function slackClick({ user = "UALEX", actionId = "flag_done", key = "clickup.stalled:t1", raised = true } = {}) {
+  const b = backend();
+  if (raised) await b.set("flags/ledger.json", { version: 1, entries: { [key]: { firstSeen: "2026-10-15", layer: 2 } } });
+  const responses = [];
+  const payload = {
+    user: { id: user },
+    response_url: "https://hooks.slack.test/r",
+    message: { text: "readout", blocks: [{ type: "section", block_id: "s1" }, { type: "actions", block_id: "a1" }] },
+  };
+  const result = await handleTriage({
+    payload,
+    action: { action_id: actionId, value: flagRef(key), block_id: "a1" },
+    config: triageConfig,
+    store: { backend: b },
+    logger: quiet,
+    respondImpl: async (_p, body) => responses.push(body),
+  });
+  return { result, responses, ledger: await new FlagLedger(b).read() };
+}
+
+test("Alex's Done in Slack is saved, and the button row becomes what was done", async () => {
+  const { result, responses, ledger } = await slackClick();
+  assert.equal(result.ok, true);
+  assert.equal(ledger.entries["clickup.stalled:t1"].triage.status, "done");
+  assert.equal(ledger.entries["clickup.stalled:t1"].triage.by, "slack:UALEX");
+  assert.equal(responses[0].replace_original, true);
+  assert.equal(responses[0].blocks[0].type, "section", "the flag's message is left alone");
+  assert.match(responses[0].blocks[1].elements[0].text, /Done by <@UALEX>/);
+});
+
+test("a snooze from Slack is dated in working days", async () => {
+  const { ledger, responses } = await slackClick({ actionId: "flag_snooze_5" });
+  const t = ledger.entries["clickup.stalled:t1"].triage;
+  assert.equal(t.status, "snoozed");
+  assert.match(responses[0].blocks[1].elements[0].text, new RegExp(`Snoozed until ${t.until}`));
+});
+
+test("only Alex can triage from Slack", async () => {
+  const { result, responses, ledger } = await slackClick({ user: "UOTHER" });
+  assert.equal(result.reason, "not_alex");
+  assert.equal(ledger.entries["clickup.stalled:t1"].triage, undefined);
+  assert.equal(responses[0].response_type, "ephemeral");
+  assert.match(responses[0].text, /^Posted by Claude/, "the refusal identifies itself as Claude");
+});
+
+test("a button on a flag that has since cleared says so and writes nothing", async () => {
+  const { result, ledger } = await slackClick({ raised: false });
+  assert.equal(result.reason, "not_raised");
+  assert.deepEqual(ledger.entries, {});
 });
