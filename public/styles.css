@@ -472,3 +472,12 @@ select.sm { font: inherit; font-size: 13px; border: 1px solid var(--line); borde
 .triage-state { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
 .link-btn { background: none; border: 0; padding: 0 0 0 8px; color: var(--green); text-decoration: underline; cursor: pointer; font: inherit; }
 .flag[data-triaged] { opacity: .85; }
+
+/* Quick fixes on a rock's flag */
+.quick-fix { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; padding: 8px 10px; background: #fff; border: 1px dashed var(--line); border-radius: 4px; }
+.quick-fix label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.quick-fix label.grow { flex: 1 1 260px; }
+.quick-fix label.grow input { flex: 1; }
+.quick-fix input.sm { font: inherit; font-size: 13px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px; }
+.quick-fix .meta { font-family: inherit; }
+.quick-fix-list .qf-rock { display: inline-flex; gap: 6px; align-items: center; padding: 2px 4px 2px 10px; border: 1px solid var(--line); border-radius: 14px; font-size: 13px; }

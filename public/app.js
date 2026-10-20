@@ -386,7 +386,7 @@ function flagCard(flag) {
           </div>
           ${flag.advisable && !t ? `<button class="ghost advise" data-flag="${esc(flag.id)}">${esc(state.advisorButtonText)}</button>` : ""}
         </div>
-        ${t ? triageBanner(flag, t) : triageActions()}
+        ${t ? triageBanner(flag, t) : `${quickFix(flag)}${triageActions()}`}
         <div class="advice hidden"></div>
       </div>`;
 }
@@ -649,6 +649,164 @@ $("attention").addEventListener("click", (event) => {
   saveAttnPrefs();
   renderAttentionTools(state.report?.flags ?? []);
   renderAttention();
+});
+
+/* -------------------------------- quick fixes --------------------------------
+   A Layer 1 flag is about a rock, and rocks are this system's own data, so the fix can
+   sit on the flag: the one field the rule is about, saved through the same rocks API
+   the editor uses, versioned and audited the same way. A flag fixed here is marked Done,
+   and the next run clears it for good once the rule no longer fires.
+
+   ClickUp and Intelligems flags get no quick fix. The system does not write to those
+   platforms; their links go there instead. */
+
+const todayKey = () => state.today ?? new Date().toISOString().slice(0, 10);
+const rockById = (id) => (state.rocks?.rocks ?? []).find((r) => String(r.id) === String(id)) ?? null;
+
+/** Rules whose fix is one field on one rock: what to show and what it writes. */
+const ROCK_FIXES = {
+  "leadership.mini_readout_overdue": "checkin",
+  "leadership.mini_readout_unknown": "checkin",
+  "leadership.check_in_overdue": "checkin",
+  "leadership.rock_at_risk": "status",
+  "leadership.shipped_without_date": "shipped",
+  "leadership.rock_without_kpi": "kpi",
+  "leadership.unassigned": "owner",
+  "leadership.rock_not_linked": "link",
+};
+
+function quickFix(flag) {
+  if (!String(flag.rule).startsWith("leadership.")) return "";
+  if (!state.rocks) return `<div class="quick-fix"><span class="meta">Loading the rock to edit…</span></div>`;
+  const subject = subjectOf(flag);
+  const kind = ROCK_FIXES[flag.rule];
+
+  if (kind) {
+    const rock = rockById(baseId(subject.id));
+    if (!rock) return "";
+    const id = esc(rock.id);
+    const field = (inner) => `<div class="quick-fix" data-rock="${id}">${inner}</div>`;
+    switch (kind) {
+      case "checkin":
+        return field(`
+          <button type="button" class="sm" data-qf="checkin-today">Checked in today</button>
+          <label>or on <input type="date" class="sm" data-qf-input="checkInDate" max="${esc(todayKey())}" value="${esc(rock.checkInDate ?? "")}"></label>
+          <button type="button" class="ghost sm" data-qf="save" data-field="checkInDate">Save date</button>`);
+      case "status":
+        return field(`
+          <span class="meta">Status</span>
+          <button type="button" class="sm" data-qf="set" data-field="status" data-value="on_track">Back on track</button>
+          <button type="button" class="ghost sm" data-qf="set" data-field="status" data-value="done">Done</button>
+          <button type="button" class="ghost sm" data-qf="set" data-field="state" data-value="backlog">Move to backlog</button>`);
+      case "shipped":
+        return field(`
+          <label>Shipped on <input type="date" class="sm" data-qf-input="shippedAt" max="${esc(todayKey())}" value="${esc(todayKey())}"></label>
+          <button type="button" class="sm" data-qf="save" data-field="shippedAt">Save</button>`);
+      case "kpi":
+        return field(`
+          <label class="grow">KPI <input type="text" class="sm" data-qf-input="kpi" placeholder="The number that says whether it worked"></label>
+          <button type="button" class="sm" data-qf="save" data-field="kpi">Save</button>`);
+      case "owner": {
+        const people = state.rocks.people ?? [];
+        return field(`
+          <label>Owner <select class="sm" data-qf-input="owner"><option value="">Choose…</option>${people.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")}</select></label>
+          <button type="button" class="sm" data-qf="save" data-field="owner">Assign</button>
+          <button type="button" class="ghost sm" data-qf="set" data-field="state" data-value="backlog">Move to backlog</button>`);
+      }
+      case "link": {
+        const cu = state.rocks.clickupOptions ?? { available: false, options: [] };
+        if (!cu.available || !cu.options?.length) return field(`<span class="meta">The ClickUp options could not be loaded${cu.reason ? `: ${esc(cu.reason)}` : ""}. Use Edit rock.</span>`);
+        return field(`
+          <label>ClickUp option <select class="sm" data-qf-input="clickupOptionId"><option value="">Choose…</option>${cu.options.map((o) => `<option value="${esc(o.id)}"${o.label.toLowerCase() === String(rock.title).toLowerCase() ? " selected" : ""}>${esc(o.label)}</option>`).join("")}</select></label>
+          <button type="button" class="sm" data-qf="save" data-field="clickupOptionId">Link</button>`);
+      }
+    }
+  }
+
+  // Too many rocks on one person, or unassigned rocks with nobody free: the fix is a
+  // choice of which rocks go to the backlog, so list them.
+  const backloggable =
+    flag.rule === "leadership.over_capacity"
+      ? (state.rocks.rocks ?? []).filter((r) => r.state === "active" && String(r.owner) === String(subject.id))
+      : flag.rule === "leadership.should_be_backlogged"
+        ? (state.rocks.rocks ?? []).filter((r) => r.state === "active" && !r.owner)
+        : [];
+  if (!backloggable.length) return "";
+  return `<div class="quick-fix quick-fix-list" data-multi="${esc(flag.rule)}">
+    <span class="meta">Move to the backlog:</span>
+    ${backloggable
+      .map((r) => `<span class="qf-rock" data-rock="${esc(r.id)}">${esc(r.title)}
+          <button type="button" class="ghost sm" data-qf="set" data-field="state" data-value="backlog">Backlog</button></span>`)
+      .join("")}
+  </div>`;
+}
+
+/** What a fix did, in words, kept as the Done note so the Parked view says how it was fixed. */
+function fixNote(field, value) {
+  const people = new Map((state.rocks?.people ?? []).map((p) => [p.id, p.name]));
+  if (field === "checkInDate") return `Checked in ${value}`;
+  if (field === "shippedAt") return `Shipped date set to ${value}`;
+  if (field === "kpi") return `KPI set: ${value}`;
+  if (field === "owner") return `Assigned to ${people.get(value) ?? value}`;
+  if (field === "clickupOptionId") return "Linked to ClickUp";
+  if (field === "status") return `Status set to ${(state.rocks?.statusLabels ?? {})[value] ?? value}`;
+  if (field === "state") return `Moved to ${value}`;
+  return "Fixed";
+}
+
+async function saveRockField(card, rockId, field, value) {
+  const errorAt = card.querySelector(".quick-fix");
+  try {
+    const res = await fetch(`${FN}/rocks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rock: { id: rockId, [field]: value }, version: state.rocks?.version }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // Someone changed the rocks since this page loaded: take theirs, and say so.
+      if (res.status === 409) await loadRocks();
+      throw new Error(body.error ?? `HTTP ${res.status}`);
+    }
+    state.rocks = { ...state.rocks, version: body.version, rocks: body.rocks };
+    renderRocks();
+
+    // A list fix is only done when nothing is left on the list.
+    const multi = card.querySelector("[data-multi]");
+    const flag = findFlag(card);
+    const remaining = multi && flag ? quickFix(flag) : "";
+    if (!multi || !remaining) await saveTriage(card, { status: "done", note: fixNote(field, value) });
+    else renderAllFlags();
+  } catch (err) {
+    showQuickFixError(errorAt ?? card, `Not saved: ${err.message}`);
+  }
+}
+
+function showQuickFixError(host, message) {
+  let box = host.querySelector(".triage-error");
+  if (!box) {
+    box = document.createElement("p");
+    box.className = "triage-error";
+    host.append(box);
+  }
+  box.textContent = message;
+}
+
+document.addEventListener("click", (event) => {
+  const el = event.target.closest("[data-qf]");
+  if (!el) return;
+  const card = el.closest(".flag[data-key]");
+  const rockId = el.closest("[data-rock]")?.dataset.rock;
+  if (!card || !rockId) return;
+
+  if (el.dataset.qf === "checkin-today") return saveRockField(card, rockId, "checkInDate", todayKey());
+  if (el.dataset.qf === "set") return saveRockField(card, rockId, el.dataset.field, el.dataset.value);
+  if (el.dataset.qf === "save") {
+    const input = card.querySelector(`[data-qf-input="${el.dataset.field}"]`);
+    const value = (input?.value ?? "").trim();
+    if (!value) return showQuickFixError(el.closest(".quick-fix"), "Fill it in first.");
+    return saveRockField(card, rockId, el.dataset.field, value);
+  }
 });
 
 /* ------------------------------ triage actions ------------------------------ */
@@ -1697,6 +1855,8 @@ async function loadRocks() {
     state.rocks = await res.json();
     rocksError(null);
     renderRocks();
+    // The flags' quick fixes are drawn from the rocks, so they wait for them.
+    if (state.report) renderAllFlags();
   } catch (err) {
     rocksError(`Could not load the rocks: ${err.message}`);
   }
