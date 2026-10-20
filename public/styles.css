@@ -502,3 +502,10 @@ details.section[open] > summary::before { transform: rotate(90deg); }
 details.section > summary h2 { margin: 0; border: 0; padding: 0; }
 .sec-count { font-size: 13px; color: var(--muted); }
 .sec-count.urgent { color: var(--red); font-weight: 600; }
+
+/* Site-wide moves: context above the store tiles, not flags */
+.store-context { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--amber); border-radius: 4px; padding: 10px 14px; margin: 0 0 12px; }
+.store-context-head { margin: 0 0 6px; font-weight: 600; }
+.store-context-head .meta { font-weight: 400; margin-left: 6px; }
+.store-context-line { margin: 4px 0; font-size: 14px; }
+.store-context-line.bad { color: var(--red); }

@@ -18,6 +18,7 @@
 
 import crypto from "node:crypto";
 import { addWorkingDays, workingDaysBetween, shiftDateKey, isWorkingDayKey } from "../lib/time.js";
+import { isContext } from "../delta/flags.js";
 
 const DOC_KEY = "flags/ledger.json";
 
@@ -101,7 +102,8 @@ export function annotateFlags(flags, entries, { dateKey, sections = {}, escalate
 
     // Something left at Attention for a week has stopped being something to keep an eye
     // on. It goes to P1, and says so, so the change in severity is never a mystery.
-    if (flag.severity === "attention" && escalateAfterWorkingDays > 0 && openDays >= escalateAfterWorkingDays) {
+    // Context (a store move) is not something left undone, so it never escalates.
+    if (flag.severity === "attention" && !isContext(flag) && escalateAfterWorkingDays > 0 && openDays >= escalateAfterWorkingDays) {
       out.severity = "p1";
       out.escalated = true;
       out.originalSeverity = "attention";

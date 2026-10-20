@@ -271,7 +271,7 @@ function renderStoreMetrics(report) {
   renderStoreWindowToggle(data);
   const windowKey = storeWindowKey(data);
   const shownWindow = (data?.windows ?? []).find((w) => w.key === windowKey) ?? data?.primaryWindow;
-  sectionCount("store", STORE_WINDOW_NAMES[shownWindow?.key] ?? shownWindow?.label ?? "");
+  renderStoreHeaderCount();
 
   host.innerHTML = (data?.tiles ?? [])
     .map((stored) => {
@@ -439,6 +439,10 @@ function renderFlags(container, flags, emptyText) {
 const TRIAGE_LABEL = { done: "Done", snoozed: "Snoozed", waiting: "Waiting on", dismissed: "Not a problem" };
 const keyOf = (flag) => flag.key ?? String(flag.id ?? "").replace(/^(\d{4}-\d{2}-\d{2}|nodate):/, "");
 const isAttn = (f) => f.severity === "p1" || f.severity === "attention";
+// Store moves and control-group moves are context for reading results, not things to
+// act on: shown with the store numbers, never in a flag list. Mirrors CONTEXT_RULES.
+const CONTEXT_RULES = new Set(["shopify.metric_moved", "intelligems.control_moved"]);
+const isContextFlag = (f) => CONTEXT_RULES.has(f?.rule);
 
 function triageOf(flag) {
   const t = state.flagEntries ? state.flagEntries[keyOf(flag)]?.triage : flag.triage;
@@ -447,6 +451,7 @@ function triageOf(flag) {
   return t;
 }
 const viewOf = (flag) => {
+  if (isContextFlag(flag)) return "context";
   const t = triageOf(flag);
   return !t ? "open" : t.status === "waiting" ? "waiting" : "parked";
 };
@@ -470,10 +475,11 @@ function flagTiles(flags) {
 function renderAllFlags({ rebuildTools = false } = {}) {
   const flags = state.report?.flags ?? [];
   if ($("flag-tiles")) $("flag-tiles").innerHTML = flagTiles(flags);
+  renderStoreContext(flags);
   if (rebuildTools) renderAttentionTools(flags);
   renderAttention();
   const open = flags.filter((f) => viewOf(f) === "open");
-  const handled = (sev) => flags.filter((f) => f.severity === sev && viewOf(f) !== "open").length;
+  const handled = (sev) => flags.filter((f) => f.severity === sev && !["open", "context"].includes(viewOf(f))).length;
   const note = (n) => (n ? ` ${plural(n, "handled item is", "handled items are")} under Waiting and Parked above.` : "");
   renderFlags($("prompts"), open.filter((f) => f.severity === "prompt"), `No test is waiting on a decision.${note(handled("prompt"))}`);
   renderFlags($("hygiene"), open.filter((f) => f.severity === "info"), `Nothing outstanding.${note(handled("info"))}`);
@@ -484,6 +490,32 @@ function renderAllFlags({ rebuildTools = false } = {}) {
   sectionCount("attention", attn.length ? `${attn.length} open${p1 ? ` · ${p1} P1` : ""}` : "nothing open", p1 > 0);
   sectionCount("prompts", plural(open.filter((f) => f.severity === "prompt").length, "item", "items"));
   sectionCount("hygiene", plural(open.filter((f) => f.severity === "info").length, "item", "items"));
+}
+
+/**
+ * Site-wide moves, above the store tiles: store metrics that moved, and control groups
+ * that moved with them. Read before any test result, and nothing to triage.
+ */
+function renderStoreContext(flags) {
+  const host = $("store-context");
+  if (!host) return;
+  const context = flags.filter(isContextFlag);
+  state.storeContextCount = context.length;
+  host.innerHTML = context.length
+    ? `<div class="store-context"><p class="store-context-head">Site-wide moves <span class="meta">read every test result against these</span></p>
+        ${context
+          .map((f) => `<p class="store-context-line ${f.severity === "attention" || f.severity === "p1" ? "bad" : "neutral"}">${esc(f.message)}</p>`)
+          .join("")}</div>`
+    : "";
+  if (state.report) renderStoreHeaderCount();
+}
+
+function renderStoreHeaderCount() {
+  const data = state.report?.detail?.shopify;
+  const key = storeWindowKey(data);
+  const win = (data?.windows ?? []).find((w) => w.key === key) ?? data?.primaryWindow;
+  const n = state.storeContextCount ?? 0;
+  sectionCount("store", `${STORE_WINDOW_NAMES[win?.key] ?? win?.label ?? ""}${n ? ` · ${plural(n, "site-wide move", "site-wide moves")}` : ""}`);
 }
 
 function sectionCount(name, text, urgent = false) {
@@ -688,7 +720,7 @@ function flagsForView(view) {
 function renderAttentionTools(flags) {
   state.attn ??= loadAttnPrefs();
   const a = state.attn;
-  const pool = flags.filter((f) => isAttn(f) || viewOf(f) !== "open");
+  const pool = flags.filter((f) => !isContextFlag(f) && (isAttn(f) || viewOf(f) !== "open"));
 
   const areas = AREA_ORDER.filter((k) => pool.some((f) => String(f.layer) === k));
   const owners = [...new Set(pool.flatMap((f) => { const o = flagContext(f).owners; return o.length ? o : [NO_OWNER]; }))]

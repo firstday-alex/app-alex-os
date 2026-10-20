@@ -5,6 +5,7 @@
 // and costs nothing. Order follows the spec: Layer 1 is checked first, every day.
 
 import { flagRef } from "../store/flag-ledger.js";
+import { isContext } from "../delta/flags.js";
 
 const SIGNAL_MARK = { stalled: "STALLED", waiting: "waiting", moving: "moving", idle: "idle" };
 
@@ -44,9 +45,13 @@ function storeValue(tile, value, perDay = false) {
   return `${Math.round(value).toLocaleString("en-US")}${perDay ? "/d" : ""}`;
 }
 
-function renderStore(detail, section, lines) {
+function renderStore(detail, section, lines, context = []) {
   const win = detail?.primaryWindow;
   lines.push(`STORE. ${win?.label ?? "Store"} against ${(detail?.windows ?? []).filter((w) => w.key !== win?.key).map((w) => w.label).join(" and ")}. Totals compared per day.`);
+  if (context.length) {
+    lines.push("  SITE-WIDE MOVES. Read every test result below against these.");
+    for (const flag of context) lines.push(`    ${flag.message}`);
+  }
   if (!section?.present) {
     lines.push(`  MISSING. ${section?.reason ?? "not collected"}`);
     lines.push("");
@@ -291,7 +296,8 @@ export function renderText(report) {
   }
   lines.push("");
 
-  const open = flags.filter((f) => !f.triage);
+  const context = flags.filter(isContext);
+  const open = flags.filter((f) => !f.triage && !isContext(f));
   const needsAttention = open.filter(isAttention);
   const prompts = open.filter((f) => f.severity === "prompt");
   const line = (flag) => `[${flag.severity.toUpperCase()}] [${layerLabel(flag.layer)}] ${flag.message}${ageNote(flag)}`;
@@ -334,7 +340,7 @@ export function renderText(report) {
     lines.push("");
   }
 
-  renderStore(detail.shopify, sections.shopify, lines);
+  renderStore(detail.shopify, sections.shopify, lines, context);
   renderLeadership(detail.leadership, sections.leadership, lines);
   renderCrossLayer(detail.crossLayer, sections.crossLayer, lines);
   renderClickUp(detail.clickup, sections.clickup, lines);
@@ -404,7 +410,14 @@ export function renderSlackBlocks(report, config) {
     },
   });
 
-  const actionable = flags.filter((f) => f.severity !== "info" && !f.triage);
+  const actionable = flags.filter((f) => f.severity !== "info" && !f.triage && !isContext(f));
+  const context = flags.filter(isContext);
+  if (context.length) {
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: [`*Site-wide moves* · read test results against these`, ...context.slice(0, 8).map((f) => `• ${f.message}`)].join("\n").slice(0, 2900) },
+    });
+  }
   const shown = actionable.slice(0, SLACK_FLAG_LIMIT);
   if (shown.length === 0) {
     blocks.push({ type: "section", text: { type: "mrkdwn", text: "Nothing flagged this morning." } });
@@ -472,7 +485,7 @@ export function renderSlackBlocks(report, config) {
 export function buildReport({ runId, mode, dateKey, nowIso, flags, sections, detail, baseline, config }) {
   // The counts are of what is still open. A flag Alex has already dealt with is in the
   // report, marked, but it is not something that needs attention this morning.
-  const open = flags.filter((f) => !f.triage);
+  const open = flags.filter((f) => !f.triage && !isContext(f));
   const byLayer = {};
   for (const flag of open) byLayer[String(flag.layer)] = (byLayer[String(flag.layer)] ?? 0) + 1;
   const triageCount = (status) => flags.filter((f) => f.triage?.status === status).length;
@@ -501,6 +514,7 @@ export function buildReport({ runId, mode, dateKey, nowIso, flags, sections, det
       escalated: open.filter((f) => f.escalated).length,
       triaged: { done: triageCount("done"), snoozed: triageCount("snoozed"), waiting: triageCount("waiting"), dismissed: triageCount("dismissed") },
       parked: triageCount("done") + triageCount("snoozed") + triageCount("dismissed"),
+      context: flags.filter(isContext).length,
     },
     flags,
     sections,

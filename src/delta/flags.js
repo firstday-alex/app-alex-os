@@ -3,6 +3,15 @@
 // Every flag records the rule that raised it and the values that tripped it, so that
 // "why did this get flagged" is answered from the log, not reconstructed.
 
+/**
+ * Context, not action: a store metric that moved, or control groups moving with the
+ * site. They are the backdrop for reading every test result, so they sit with the store
+ * numbers, not in the lists of things to act on, and they are never triaged, counted
+ * or escalated. By rule, so a report written before the marker existed reads the same.
+ */
+export const CONTEXT_RULES = new Set(["shopify.metric_moved", "intelligems.control_moved"]);
+export const isContext = (flag) => CONTEXT_RULES.has(flag?.rule);
+
 /** Severity drives ordering in the readout. Layer 1 is always checked first. */
 export const SEVERITY = { p1: 0, attention: 1, prompt: 2, info: 3 };
 

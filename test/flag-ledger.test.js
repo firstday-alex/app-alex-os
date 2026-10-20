@@ -279,3 +279,29 @@ test("a button on a flag that has since cleared says so and writes nothing", asy
   assert.equal(result.reason, "not_raised");
   assert.deepEqual(ledger.entries, {});
 });
+
+/* ------------------------------ site-wide context ------------------------------ */
+
+test("store and control moves are context: with the store, not counted or listed as things to act on", () => {
+  const move = flag({ id: "m", key: "shopify.metric_moved:shopify:gross_sales", layer: 0, rule: "shopify.metric_moved", severity: "attention", message: "Store-wide Gross sales is down 18.5% per day against 30D.", isNew: true, openDays: 0 });
+  const control = flag({ id: "c", key: "intelligems.control_moved:control:add_to_cart_rate", layer: 3, rule: "intelligems.control_moved", severity: "info", message: "Add-to-cart rate moved outside its normal range in the control group of 2 tests.", isNew: true, openDays: 0 });
+  const real = flag({ id: "a", key: "a", message: "A real one.", isNew: true, openDays: 0 });
+  const r = report([move, control, real]);
+  assert.equal(r.summary.attention, 1, "only the real flag counts");
+  assert.equal(r.summary.context, 2);
+  const attention = r.text.split("NEEDS YOUR ATTENTION")[1].split("STORE.")[0];
+  assert.ok(!attention.includes("Gross sales") && !attention.includes("Add-to-cart"), "not in the attention list");
+  assert.match(r.text, /SITE-WIDE MOVES\. Read every test result below against these\.\n    Store-wide Gross sales is down 18\.5%/);
+  assert.ok(!/HYGIENE[\s\S]*Add-to-cart rate moved/.test(r.text), "not in hygiene");
+  const slack = JSON.stringify(r.slackBlocks);
+  assert.match(slack, /Site-wide moves/);
+  assert.equal(r.slackBlocks.filter((b) => b.type === "actions").length, 1, "triage buttons only on the real flag");
+});
+
+test("a store move left open a week is not escalated, because it is not a task left undone", () => {
+  const entries = { "shopify.metric_moved:shopify:gross_sales": { firstSeen: "2026-10-05", layer: 0 } };
+  const move = flag({ key: "shopify.metric_moved:shopify:gross_sales", layer: 0, rule: "shopify.metric_moved", severity: "attention" });
+  const { flags } = annotateFlags([move], entries, { dateKey: "2026-10-19", sections: { shopify: { present: true } } });
+  assert.equal(flags[0].severity, "attention");
+  assert.equal(flags[0].escalated, undefined);
+});

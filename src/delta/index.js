@@ -340,7 +340,7 @@ function intelligemsFlags(delta, { config, dateKey, testNotes = null }) {
       severity: "info",
       advisable: false,
       subject: { type: "metric", id: `control:${metric}`, label: metricLabel(metric) },
-      message: `${metricLabel(metric)[0].toUpperCase()}${metricLabel(metric).slice(1)} moved outside its normal range in the control group of ${swings.length === 1 ? "1 test" : `${swings.length} tests`} since the last readout (${list}). A control is the unchanged site, so this is a site-wide move, not a test result; check the store numbers above.`,
+      message: `${metricLabel(metric)[0].toUpperCase()}${metricLabel(metric).slice(1)} moved outside its normal range in the control group of ${swings.length === 1 ? "1 test" : `${swings.length} tests`} since the last readout (${list}). A control is the unchanged site, so this is a site-wide move, not a test result.`,
       values: { metric, swings },
     });
   }
