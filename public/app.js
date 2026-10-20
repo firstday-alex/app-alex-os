@@ -887,11 +887,11 @@ function quickFix(flag) {
     // Older reports carry names only; those can still be added, just not linked by id.
     const refs = (flag.values?.swingRefs ?? (flag.values?.swings ?? []).map((label) => ({ label, optionId: null, parkedRockId: null }))).filter((ref) => !claimed(ref));
     if (!refs.length) return "";
-    const rockChoices = (state.rocks.rocks ?? [])
-      .slice()
-      .sort((a, b) => String(a.title).localeCompare(String(b.title)))
-      .map((r) => `<option value="${esc(r.id)}">${esc(r.title)}${r.state === "active" ? "" : ` (${esc(r.state)})`}</option>`)
-      .join("");
+    const sorted = (state.rocks.rocks ?? []).slice().sort((a, b) => String(a.title).localeCompare(String(b.title)));
+    const rockChoices = (selected) =>
+      sorted
+        .map((r) => `<option value="${esc(r.id)}"${r.id === selected?.id ? " selected" : ""}>${esc(r.title)}${r.state === "active" ? "" : ` (${esc(r.state)})`}</option>`)
+        .join("");
     return `<div class="quick-fix quick-fix-rows" data-multi="${esc(flag.rule)}">
       ${refs
         .map((ref) => {
@@ -902,8 +902,14 @@ function quickFix(flag) {
               ? `<button type="button" class="sm" data-qf="swing-activate" data-rock-id="${esc(parked.id)}">Make "${esc(parked.title)}" active</button>`
               : `<button type="button" class="sm" data-qf="swing-add">Add as rock</button>`}
             ${ref.optionId
-              ? `<select class="sm" data-qf-input="swing-rock" aria-label="Existing rock"><option value="">or link a rock…</option>${rockChoices}</select>
-                 <button type="button" class="ghost sm" data-qf="swing-link">Link</button>`
+              ? (() => {
+                  // A rock named nearly the same ("Ready to Pour" for "New Products: Ready
+                  // to Pour") is almost always the one meant, so it is offered first.
+                  const likely = likelyRock(ref.label, sorted);
+                  return `<select class="sm" data-qf-input="swing-rock" aria-label="Existing rock"><option value="">or link a rock…</option>${rockChoices(likely)}</select>
+                 <button type="button" class="${likely ? "" : "ghost "}sm" data-qf="swing-link">Link</button>
+                 ${likely ? `<span class="meta">Looks like "${esc(likely.title)}"</span>` : ""}`;
+                })()
               : ""}
           </div>`;
         })
@@ -952,6 +958,28 @@ function quickFix(flag) {
           <button type="button" class="ghost sm" data-qf="set" data-field="state" data-value="backlog">Backlog</button></span>`)
       .join("")}
   </div>`;
+}
+
+/**
+ * The rock most likely meant by a Big Swing name that matches no rock exactly: the one
+ * sharing the most words with it, as long as it shares at least half of the shorter
+ * name's words. Null when nothing is close, rather than a guess.
+ */
+function likelyRock(label, rocks) {
+  const words = (s) => new Set(String(s).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1));
+  const want = words(label);
+  let best = null;
+  let bestScore = 0;
+  for (const r of rocks) {
+    const have = words(r.title);
+    const shared = [...want].filter((w) => have.has(w)).length;
+    const score = shared / Math.max(1, Math.min(want.size, have.size));
+    if (shared > 0 && score > bestScore) {
+      best = r;
+      bestScore = score;
+    }
+  }
+  return bestScore >= 0.5 ? best : null;
 }
 
 /** What a fix did, in words, kept as the Done note so the Parked view says how it was fixed. */
