@@ -490,3 +490,15 @@ select.sm { font: inherit; font-size: 13px; border: 1px solid var(--line); borde
 .quick-fix-rows .qf-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .quick-fix-rows .qf-title { flex: 1 1 200px; font-size: 13px; }
 .store-windows { margin: 0 0 12px; }
+
+/* Readout sections: collapsed to start, the header and its count are the summary */
+details.section > summary {
+  display: flex; align-items: baseline; gap: 10px; cursor: pointer; list-style: none;
+  margin: 34px 0 8px; border-bottom: 2px solid var(--green); padding-bottom: 6px;
+}
+details.section > summary::-webkit-details-marker { display: none; }
+details.section > summary::before { content: "▸"; color: var(--green); font-size: 14px; transition: transform .15s; }
+details.section[open] > summary::before { transform: rotate(90deg); }
+details.section > summary h2 { margin: 0; border: 0; padding: 0; }
+.sec-count { font-size: 13px; color: var(--muted); }
+.sec-count.urgent { color: var(--red); font-weight: 600; }

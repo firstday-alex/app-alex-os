@@ -58,31 +58,45 @@
     <section class="view" id="view-readout">
       <div id="banners"></div>
 
-      <h2 id="store-head">Store</h2>
-      <p class="sub" id="store-sub">Store-wide metrics against the previous period. Context for everything below: a sitewide move is not a test result.</p>
-      <div class="dod-windows store-windows" id="store-windows" role="group" aria-label="Store period"></div>
-      <div class="metrics" id="store-metrics"></div>
-      <div id="funnel"></div>
+      <!-- Every section starts collapsed: the headers, with their counts, are the
+           summary, and a section is opened when it is needed. -->
+      <details class="section" id="sec-store">
+        <summary><h2 id="store-head">Store</h2><span class="sec-count" id="sec-store-count"></span></summary>
+        <p class="sub" id="store-sub">Store-wide metrics against the previous period. Context for everything below: a sitewide move is not a test result.</p>
+        <div class="dod-windows store-windows" id="store-windows" role="group" aria-label="Store period"></div>
+        <div class="metrics" id="store-metrics"></div>
+        <div id="funnel"></div>
+      </details>
 
       <h2>Readout</h2>
       <div class="tiles" id="tiles"></div>
 
-      <h2>Needs your attention</h2>
-      <div class="bar attn-bar" id="attention-tools"></div>
-      <div id="attention"></div>
+      <details class="section" id="sec-attention">
+        <summary><h2>Needs your attention</h2><span class="sec-count" id="sec-attention-count"></span></summary>
+        <div class="bar attn-bar" id="attention-tools"></div>
+        <div id="attention"></div>
+      </details>
 
-      <h2>Owner prompts</h2>
-      <p class="sub">Did not move, and need a next step or a decision from their owner.</p>
-      <div id="prompts"></div>
+      <details class="section" id="sec-prompts">
+        <summary><h2>Owner prompts</h2><span class="sec-count" id="sec-prompts-count"></span></summary>
+        <p class="sub">Did not move, and need a next step or a decision from their owner.</p>
+        <div id="prompts"></div>
+      </details>
 
-      <h2>Layer 1. Leadership priorities</h2>
-      <div id="layer1"></div>
+      <details class="section" id="sec-layer1">
+        <summary><h2>Layer 1. Leadership priorities</h2><span class="sec-count" id="sec-layer1-count"></span></summary>
+        <div id="layer1"></div>
+      </details>
 
-      <h2>Cross layer</h2>
-      <div id="cross"></div>
+      <details class="section" id="sec-cross">
+        <summary><h2>Cross layer</h2><span class="sec-count" id="sec-cross-count"></span></summary>
+        <div id="cross"></div>
+      </details>
 
-      <h2>Hygiene</h2>
-      <div id="hygiene"></div>
+      <details class="section" id="sec-hygiene">
+        <summary><h2>Hygiene</h2><span class="sec-count" id="sec-hygiene-count"></span></summary>
+        <div id="hygiene"></div>
+      </details>
 
       <details id="text-wrap">
         <summary>Plain text readout, byte for byte what goes to Slack</summary>

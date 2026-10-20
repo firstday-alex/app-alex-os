@@ -271,6 +271,7 @@ function renderStoreMetrics(report) {
   renderStoreWindowToggle(data);
   const windowKey = storeWindowKey(data);
   const shownWindow = (data?.windows ?? []).find((w) => w.key === windowKey) ?? data?.primaryWindow;
+  sectionCount("store", STORE_WINDOW_NAMES[shownWindow?.key] ?? shownWindow?.label ?? "");
 
   host.innerHTML = (data?.tiles ?? [])
     .map((stored) => {
@@ -476,6 +477,20 @@ function renderAllFlags({ rebuildTools = false } = {}) {
   const note = (n) => (n ? ` ${plural(n, "handled item is", "handled items are")} under Waiting and Parked above.` : "");
   renderFlags($("prompts"), open.filter((f) => f.severity === "prompt"), `No quiet tests waiting on an owner.${note(handled("prompt"))}`);
   renderFlags($("hygiene"), open.filter((f) => f.severity === "info"), `Nothing outstanding.${note(handled("info"))}`);
+
+  // The collapsed headers are the summary, so each says how much is inside.
+  const attn = open.filter(isAttn);
+  const p1 = attn.filter((f) => f.severity === "p1").length;
+  sectionCount("attention", attn.length ? `${attn.length} open${p1 ? ` · ${p1} P1` : ""}` : "nothing open", p1 > 0);
+  sectionCount("prompts", plural(open.filter((f) => f.severity === "prompt").length, "item", "items"));
+  sectionCount("hygiene", plural(open.filter((f) => f.severity === "info").length, "item", "items"));
+}
+
+function sectionCount(name, text, urgent = false) {
+  const el = $(`sec-${name}-count`);
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle("urgent", urgent);
 }
 
 function ageBadges(flag) {
@@ -760,10 +775,13 @@ function renderAttention() {
   else if (a.group === "owner") ordered.sort(([x], [y]) => (x === NO_OWNER) - (y === NO_OWNER) || x.localeCompare(y));
   // Issue and item groups keep flag order, so whatever holds the first P1 leads.
 
+  state.openGroups ??= new Set();
   host.innerHTML = ordered
-    .map(([, g]) => {
+    .map(([key, g]) => {
       const p1 = g.flags.filter((f) => f.severity === "p1").length;
-      return `<details class="flag-group" open>
+      // Collapsed to start. A group opened stays open when a triage redraws the list.
+      const groupKey = `${a.view}:${a.group}:${key}`;
+      return `<details class="flag-group" data-group="${esc(groupKey)}"${state.openGroups.has(groupKey) ? " open" : ""}>
         <summary><span class="flag-group-name">${esc(g.label)}</span> <span class="meta">${g.flags.length}${p1 ? ` · ${p1} P1` : ""}</span></summary>
         ${g.flags.map(flagCard).join("")}
       </details>`;
@@ -792,6 +810,19 @@ $("attention-tools").addEventListener("input", (event) => {
   state.attn.q = event.target.value;
   renderAttention();
 });
+// <details> does not bubble its toggle event, so it is caught on the way down.
+$("attention").addEventListener(
+  "toggle",
+  (event) => {
+    const key = event.target?.dataset?.group;
+    if (!key) return;
+    state.openGroups ??= new Set();
+    if (event.target.open) state.openGroups.add(key);
+    else state.openGroups.delete(key);
+  },
+  true,
+);
+
 $("attention").addEventListener("click", (event) => {
   if (event.target.id !== "attn-clear") return;
   Object.assign(state.attn, { sev: "", area: "", owner: "", q: "" });
@@ -1269,6 +1300,7 @@ function renderLayer1(report) {
     )
     .join("");
   const s = detail.summary;
+  sectionCount("layer1", `${s.activeCount} active · ${s.shippedCount} shipped · ${s.backlogCount} backlog`);
   $("layer1").innerHTML = `
     <p class="sub">${s.activeCount} active, ${s.shippedCount} shipped, ${s.backlogCount} in the backlog. ${s.peopleAtCapacity} of ${s.rosterSize} people at capacity. Every item here is a P1.</p>
     <div class="scroll"><table>
@@ -1283,8 +1315,11 @@ function renderCross(report) {
   const detail = report.detail?.crossLayer;
   if (!section?.present) {
     $("cross").innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
+    sectionCount("cross", "missing", true);
     return;
   }
+  const without = (detail.people ?? []).filter((p) => p.totalTickets > 0 && p.distinctBigSwings === 0).length;
+  sectionCount("cross", without ? `${plural(without, "person", "people")} with no big swing` : `${plural((detail.people ?? []).length, "person", "people")}, all with a big swing`, without > 0);
   const rows = (detail.people ?? [])
     .map(
       (person) => `<tr>
@@ -2926,7 +2961,10 @@ function routeFromHash() {
   if (name === "tests" && target) focusTest(target);
   if (name === "rocks" && target) focusRock(target);
   if (name === "readout" && target) {
-    $(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Sections start collapsed, so open the one holding the target before scrolling to it.
+    const el = $(target);
+    for (let node = el; node; node = node.parentElement) if (node.tagName === "DETAILS") node.open = true;
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
     // Same reason as closeRock: a second click on the same link has to fire again.
     history.replaceState(null, "", "#readout");
   }
