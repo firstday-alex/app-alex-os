@@ -263,3 +263,16 @@ test("a rock linked only by title is reported, because a rename would break it s
   assert.match(flag.message, /ncAOV/);
   assert.match(flag.message, /renamed/);
 });
+
+test("someone who does not count toward capacity can carry several big swings", () => {
+  const exemptConfig = testConfig({
+    people: { team: [{ clickupUserId: "u9", name: "alex", countsTowardCapacity: false }], alex: { slackUserId: "UALEX" } },
+  });
+  const tasks = [
+    { ...task({ id: "a", leadershipPriority: SUB }), ...owner("u9", "alex") },
+    { ...task({ id: "b", leadershipPriority: SHIP }), ...owner("u9", "alex") },
+  ];
+  const delta = clickupDelta(null, snapshot(tasks), { config: exemptConfig, now: NOW });
+  const result = crossLayerCheck({ clickupDelta: delta, leadership: LEADERSHIP, config: exemptConfig, dateKey: "2026-09-10" });
+  assert.ok(!rulesFor(result, "alex").includes("crosslayer.multiple_big_swings"));
+});

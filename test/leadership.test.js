@@ -211,3 +211,23 @@ test("a rock not linked to ClickUp is flagged, since no ticket can ladder up to 
   const result = run(leadership({ queue: [rock({ clickupOptionId: null })] }));
   assert.ok(rules(result).includes("leadership.rock_not_linked"));
 });
+
+test("someone who does not count toward capacity can hold as many priorities as needed", () => {
+  const exemptConfig = testConfig({
+    people: { team: [{ clickupUserId: "u9", name: "alex", countsTowardCapacity: false }], alex: { slackUserId: "UALEX" } },
+  });
+  const result = leadershipChecks({
+    leadership: leadership({
+      queue: [
+        { id: "p1", title: "A", state: "active", owner: { clickupUserId: "u9", name: "alex" } },
+        { id: "p2", title: "B", state: "active", owner: { clickupUserId: "u9", name: "alex" } },
+        { id: "p3", title: "C", state: "active", owner: { clickupUserId: "u9", name: "alex" } },
+      ],
+    }),
+    clickup: { fieldMap: FIELD_MAP },
+    config: exemptConfig,
+    dateKey: "2026-09-10",
+    nowIso: NOW_ISO,
+  });
+  assert.ok(!result.flags.some((f) => f.rule === "leadership.over_capacity"));
+});

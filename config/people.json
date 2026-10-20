@@ -30,7 +30,7 @@
       "clickupUserId": "87365453",
       "name": "Alex Turney",
       "countsTowardCapacity": false,
-      "_comment": "Alex reads the readout rather than holding a queue in it, but currently holds 2 open tickets. countsTowardCapacity is false so Alex is not counted in the 'everyone is full' denominator. Flip it if Alex should carry a big swing like everyone else."
+      "_comment": "Alex reads the readout rather than holding a queue in it. countsTowardCapacity is false, which does two things: Alex is not counted in the 'everyone is full' denominator, and Alex is exempt from the one-at-a-time rule, so can hold as many leadership priorities and big swings as needed."
     }
   ],
   "alex": {

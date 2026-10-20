@@ -16,6 +16,7 @@
 // dropdown field on the ticket. We read that field and nothing else.
 
 import { makeFlag } from "./flags.js";
+import { capacityExempt } from "./leadership-checks.js";
 
 /** The person accountable for a ticket: the Task Owner field, falling back to assignees. */
 export function accountableFor(task) {
@@ -191,7 +192,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
         });
       }
 
-      if (distinctSwings.size > 1) {
+      if (distinctSwings.size > 1 && !capacityExempt(config, row.id)) {
         add({
           layer: "cross",
           rule: "crosslayer.multiple_big_swings",

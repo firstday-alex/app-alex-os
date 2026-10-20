@@ -12,6 +12,19 @@
 import { makeFlag } from "./flags.js";
 import { daysBetween } from "../lib/time.js";
 
+/**
+ * People exempt from the one-at-a-time rule: anyone on the roster with
+ * countsTowardCapacity false. Alex is, and can hold as many leadership priorities, and as
+ * many big swings, as needed. The same flag keeps them out of the "everyone is full"
+ * denominator, which is the same idea seen from the other side.
+ */
+export function capacityExempt(config, clickupUserId) {
+  if (clickupUserId == null) return false;
+  return (config.people?.team ?? []).some(
+    (p) => String(p.clickupUserId) === String(clickupUserId) && p.countsTowardCapacity === false,
+  );
+}
+
 function toleranceFor(item, leadershipConfig) {
   const perType = leadershipConfig.miniReadout?.perProjectType ?? {};
   if (item.type && perType[item.type] != null) return perType[item.type];
@@ -152,7 +165,7 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
 
   const cap = lc.capacity?.bigSwingsPerPerson ?? 1;
   for (const { owner, items } of perPerson.values()) {
-    if (items.length > cap) {
+    if (items.length > cap && !capacityExempt(config, owner.clickupUserId)) {
       add({
         layer: 1,
         rule: "leadership.over_capacity",
