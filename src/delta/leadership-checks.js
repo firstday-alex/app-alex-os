@@ -200,20 +200,25 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
     const bauMarkers = (config.clickup.bauMarkers ?? []).map((s) => s.toLowerCase());
     const swingOptions = leadership.bigSwingOptions ?? [];
     const optionsById = new Map(swingOptions.map((o) => [String(o.id), o]));
-    const optionLabels = new Set(swingOptions.map((o) => String(o.label).toLowerCase()));
 
-    const missing = queue
-      .filter((i) => i.state === "active")
-      .filter((i) => (i.clickupBigSwingOptionId ? !optionsById.has(String(i.clickupBigSwingOptionId)) : !optionLabels.has(String(i.title).toLowerCase())));
+    // A rock pointing at a Big Swing option that is no longer in the dropdown: deleted in
+    // ClickUp, or the rock was linked to an option on another list. A rock with no Big
+    // Swing set at all is leadership.rock_not_linked's to report, not this one's, so the
+    // same rock is never flagged twice. With no options read at all there is nothing to
+    // compare against, and every rock would look broken, so the check stands down.
+    const missing = swingOptions.length
+      ? queue.filter((i) => i.state === "active" && i.clickupBigSwingOptionId && !optionsById.has(String(i.clickupBigSwingOptionId)))
+      : [];
 
     if (missing.length) {
+      const named = missing.map((i) => `"${i.title}"`).join(", ");
       add({
         layer: 1,
         rule: "leadership.dropdown_missing_option",
         severity: "attention",
         subject: { type: "field", id: "big-swing-field", label: "Big Swing dropdown" },
-        message: `${missing.length} active leadership priority(ies) have no matching option in the ClickUp Big Swing dropdown, so no ticket can ladder up to them.`,
-        values: { missing: missing.map((i) => i.title) },
+        message: `${named} ${missing.length === 1 ? "is" : "are"} linked to a Big Swing option that is no longer in the ClickUp dropdown, so no ticket can ladder up to ${missing.length === 1 ? "it" : "them"}. Relink ${missing.length === 1 ? "it" : "each"} to a current Big Swing.`,
+        values: { missing: missing.map((i) => ({ id: i.id, title: i.title, optionId: String(i.clickupBigSwingOptionId) })) },
       });
     }
 

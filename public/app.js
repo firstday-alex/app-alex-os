@@ -514,7 +514,8 @@ function flagContext(flag) {
       links.push({ label: "Sprint", href: "#sprint" });
       break;
     case "field":
-      links.push({ label: "Setup", href: "#setup" });
+      // The dropdown flags are fixed by relinking rocks; the missing-field ones in Setup.
+      links.push(String(flag.rule).startsWith("leadership.dropdown_") ? { label: "Rocks", href: "#rocks" } : { label: "Setup", href: "#setup" });
       break;
     case "list":
       links.push({ label: "Sprint", href: "#sprint" });
@@ -761,6 +762,30 @@ function quickFix(flag) {
     }
   }
 
+  // Rocks linked to a Big Swing option that is no longer in the dropdown: relink each.
+  // Reports from before the flag carried rock ids name rocks by title only.
+  if (flag.rule === "leadership.dropdown_missing_option") {
+    const swings = state.rocks.bigSwingOptions ?? { available: false, options: [] };
+    const current = new Set((swings.options ?? []).map((o) => String(o.id)));
+    const rocks = (flag.values?.missing ?? [])
+      .map((m) => (typeof m === "string" ? (state.rocks.rocks ?? []).find((r) => r.title === m) : rockById(m.id)))
+      .filter((r) => r && r.state === "active" && !current.has(String(r.clickupBigSwingOptionId ?? "")));
+    if (!rocks.length) return "";
+    if (!swings.available || !swings.options?.length) return `<div class="quick-fix"><span class="meta">The Big Swing options could not be loaded${swings.reason ? `: ${esc(swings.reason)}` : ""}. Use Edit rock.</span></div>`;
+    const choices = (rock) =>
+      swings.options.map((o) => `<option value="${esc(o.id)}"${o.label.toLowerCase() === String(rock.title).toLowerCase() ? " selected" : ""}>${esc(o.label)}</option>`).join("");
+    return `<div class="quick-fix quick-fix-rows" data-multi="${esc(flag.rule)}">
+      ${rocks
+        .map((r) => `<div class="qf-row" data-rock="${esc(r.id)}">
+          <span class="qf-title">${esc(r.title)}</span>
+          <select class="sm" data-qf-input="clickupBigSwingOptionId"><option value="">Choose a Big Swing…</option>${choices(r)}</select>
+          <button type="button" class="sm" data-qf="save" data-field="clickupBigSwingOptionId">Link</button>
+        </div>`)
+        .join("")}
+      <span class="meta">No option for it? Add one to the Big Swing field in ClickUp, then refresh.</span>
+    </div>`;
+  }
+
   // Too many rocks on one person, or unassigned rocks with nobody free: the fix is a
   // choice of which rocks go to the backlog, so list them.
   const backloggable =
@@ -858,7 +883,8 @@ document.addEventListener("click", (event) => {
   if (el.dataset.qf === "checkin-today") return saveRockField(card, rockId, "checkInDate", todayKey());
   if (el.dataset.qf === "set") return saveRockField(card, rockId, el.dataset.field, el.dataset.value);
   if (el.dataset.qf === "save") {
-    const input = card.querySelector(`[data-qf-input="${el.dataset.field}"]`);
+    // A card fixing several rocks has one input per rock, so read the one in this row.
+    const input = (el.closest("[data-rock]") ?? card).querySelector(`[data-qf-input="${el.dataset.field}"]`);
     const value = (input?.value ?? "").trim();
     if (!value) return showQuickFixError(el.closest(".quick-fix"), "Fill it in first.");
     return saveRockField(card, rockId, el.dataset.field, value);

@@ -248,3 +248,26 @@ test("with a cap of two, two priorities are fine and a third is flagged", () => 
   assert.ok(flag);
   assert.match(flag.message, /up to 2 at a time/);
 });
+
+test("a rock whose Big Swing option was deleted is named, with its id, for relinking", () => {
+  const result = run(
+    leadership({
+      queue: [rock({ id: "r9", title: "Quiz", clickupBigSwingOptionId: "opt_gone" })],
+      swingOptions: [{ id: "opt_sub", label: "Sub opt-in for NC" }],
+    }),
+  );
+  const flag = result.flags.find((f) => f.rule === "leadership.dropdown_missing_option");
+  assert.match(flag.message, /"Quiz" is linked to a Big Swing option that is no longer in the ClickUp dropdown/);
+  assert.deepEqual(flag.values.missing, [{ id: "r9", title: "Quiz", optionId: "opt_gone" }]);
+});
+
+test("a rock with no Big Swing at all is flagged once, as not linked, not as a missing option too", () => {
+  const result = run(leadership({ queue: [rock({ clickupBigSwingOptionId: null })], swingOptions: [{ id: "opt_sub", label: "Other" }] }));
+  assert.ok(rules(result).includes("leadership.rock_not_linked"));
+  assert.ok(!rules(result).includes("leadership.dropdown_missing_option"));
+});
+
+test("with no Big Swing options read, the missing-option check stands down rather than flag every rock", () => {
+  const result = run(leadership({ queue: [rock()], swingOptions: [] }));
+  assert.ok(!rules(result).includes("leadership.dropdown_missing_option"));
+});
