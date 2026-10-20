@@ -437,6 +437,17 @@ export async function collectShopify({ config, token, env = process.env, store, 
       companions,
       formula: sc.derived?.[tile.metric]?.formula ?? null,
       filter: filterName ? sc.filters?.[filterName] ?? null : null,
+      // The value in every window, so the dashboard can lead with any of them. Companions
+      // too, so the info on a derived tile matches whichever window is showing.
+      byWindow: Object.fromEntries(
+        windowNames.map((w) => [
+          w,
+          {
+            value: results[w]?.[tile.from]?.metrics?.[tile.metric] ?? null,
+            companions: Object.fromEntries((sc.derived?.[tile.metric]?.companions ?? []).map((name) => [name, results[w]?.derived?.metrics?.[name] ?? null])),
+          },
+        ]),
+      ),
       // The query, or for a derived tile each query, behind the number in every window.
       shopifyLinks: sourceLinks(
         config,
@@ -472,6 +483,8 @@ export async function collectShopify({ config, token, env = process.env, store, 
           label: funnelSpec.label ?? "Conversion funnel",
           window: { key: primaryName, label: sc.windows[primaryName].label },
           shopifyLinks: sourceLinks(config, [funnelSpec.from], windowNames),
+          // Every window's steps, so the dashboard can show the funnel for any of them.
+          byWindow: Object.fromEntries(windowNames.map((w) => [w, w === primaryName ? primarySteps : others[w]])),
           steps: primarySteps.map((step, index) => ({
             ...step,
             comparisons: comparisonWindows.map((windowName) => {

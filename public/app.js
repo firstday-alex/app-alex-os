@@ -177,6 +177,86 @@ function shopifyLinksRow(links, windows) {
     .join("");
 }
 
+/* ------------------------------ store period ------------------------------
+   Which period the store tiles lead with: month to date, yesterday, the last 7 or the
+   last 30 days. Every period is pulled on every run, so switching is instant; the
+   others become the comparisons. Remembered per browser. */
+
+const STORE_WINDOW_NAMES = { mtd: "Month to date", yesterday: "Yesterday", d7: "Last 7 days", d30: "Last 30 days" };
+
+function storeWindowKey(data) {
+  let chosen = null;
+  try {
+    chosen = localStorage.getItem("store-window");
+  } catch {
+    /* a per-viewer convenience */
+  }
+  const keys = (data?.windows ?? []).map((w) => w.key);
+  return keys.includes(chosen) ? chosen : data?.primaryWindow?.key ?? keys[0];
+}
+
+/** Mirrors the collector's compareWindows: a rate directly, a total per day. */
+function compareStore(primary, other, { kind, primaryDays, otherDays }) {
+  if (primary == null || other == null) return { changePct: null, basis: kind === "total" ? "per day" : "direct" };
+  if (kind === "total") {
+    if (!primaryDays || !otherDays) return { changePct: null, basis: "per day" };
+    const a = primary / primaryDays;
+    const b = other / otherDays;
+    if (b === 0) return { changePct: null, basis: "per day", otherPerDay: b };
+    return { changePct: Number((((a - b) / Math.abs(b)) * 100).toFixed(1)), basis: "per day", otherPerDay: b };
+  }
+  if (other === 0) return { changePct: null, basis: "direct" };
+  return { changePct: Number((((primary - other) / Math.abs(other)) * 100).toFixed(1)), basis: "direct" };
+}
+
+/**
+ * A tile as seen from the chosen period. The stored tile leads with the collector's
+ * primary window; for any other, the value and comparisons are rebuilt from the values
+ * every window carries. A report from before those were stored can still be rebuilt
+ * from the comparisons, which hold each window's value.
+ */
+function storeTileView(t, data, key) {
+  const primaryKey = data?.primaryWindow?.key;
+  if (key === primaryKey) return { value: t.value, comparisons: t.comparisons ?? [], companions: t.companions ?? [] };
+
+  const values = t.byWindow
+    ? Object.fromEntries(Object.entries(t.byWindow).map(([w, v]) => [w, v.value]))
+    : { [primaryKey]: t.value, ...Object.fromEntries((t.comparisons ?? []).map((c) => [c.window, c.value])) };
+  const days = Object.fromEntries((data?.windows ?? []).map((w) => [w.key, w.days]));
+  const kind = t.kind ?? "total";
+  const value = values[key] ?? null;
+
+  const comparisons = (data?.windows ?? [])
+    .filter((w) => w.key !== key)
+    .map((w) => {
+      const cmp = compareStore(value, values[w.key] ?? null, { kind, primaryDays: days[key], otherDays: days[w.key] });
+      return { window: w.key, label: w.label, value: values[w.key] ?? null, perDay: cmp.otherPerDay ?? null, changePct: cmp.changePct, basis: cmp.basis };
+    });
+  const companions = (t.companions ?? []).map((c) => ({ ...c, value: t.byWindow?.[key]?.companions?.[c.name] ?? null }));
+  return { value, comparisons, companions };
+}
+
+function renderStoreWindowToggle(data) {
+  const host = $("store-windows");
+  if (!host) return;
+  const key = storeWindowKey(data);
+  host.innerHTML = (data?.windows ?? [])
+    .map((w) => `<button type="button" class="ghost dod-window${w.key === key ? " on" : ""}" data-store-window="${esc(w.key)}" aria-pressed="${w.key === key}">${esc(STORE_WINDOW_NAMES[w.key] ?? w.label)}</button>`)
+    .join("");
+}
+
+$("store-windows")?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-store-window]");
+  if (!button || !state.report) return;
+  try {
+    localStorage.setItem("store-window", button.dataset.storeWindow);
+  } catch {
+    /* a per-viewer convenience */
+  }
+  renderStoreMetrics(state.report);
+  renderFunnel(state.report);
+});
+
 function renderStoreMetrics(report) {
   const section = report.sections?.shopify;
   const data = report.detail?.shopify;
@@ -184,12 +264,19 @@ function renderStoreMetrics(report) {
 
   if (!section?.present) {
     host.innerHTML = `<div class="note"><strong>Store metrics unavailable.</strong> ${esc(section?.reason ?? "not collected")}</div>`;
+    if ($("store-windows")) $("store-windows").innerHTML = "";
     return;
   }
 
+  renderStoreWindowToggle(data);
+  const windowKey = storeWindowKey(data);
+  const shownWindow = (data?.windows ?? []).find((w) => w.key === windowKey) ?? data?.primaryWindow;
+
   host.innerHTML = (data?.tiles ?? [])
-    .map((t) => {
-      if (!t.available) {
+    .map((stored) => {
+      const view = storeTileView(stored, data, windowKey);
+      const t = { ...stored, value: view.value, comparisons: view.comparisons, companions: view.companions };
+      if (!stored.available || t.value == null) {
         return `<div class="metric"><div class="metric-label">${esc(t.label)}</div><div class="metric-value muted">—</div><div class="metric-delta">${esc(t.reason ?? "unavailable")}</div></div>`;
       }
 
@@ -200,7 +287,7 @@ function renderStoreMetrics(report) {
       // with it. A bare "Yest -0.7%" read as "yesterday fell", when it meant the month is
       // 0.7% below yesterday: the opposite. A total is compared per day, so the chip shows
       // the other window per day.
-      const primaryLabel = data?.primaryWindow?.label ?? "This period";
+      const primaryLabel = shownWindow?.label ?? "This period";
       const cmps = (t.comparisons ?? [])
         .map((c) => {
           const perDay = c.basis === "per day";
@@ -243,10 +330,10 @@ function renderStoreMetrics(report) {
     })
     .join("");
 
-  const win = data?.primaryWindow;
-  const others = (data?.windows ?? []).filter((w) => w.key !== win?.key).map((w) => w.label).join(" and ");
+  const win = shownWindow;
+  const others = (data?.windows ?? []).filter((w) => w.key !== win?.key).map((w) => w.label).join(", ");
   $("store-sub").innerHTML =
-    `${esc(data?.shopDomain ?? "")} · showing <strong>${esc(win?.label ?? "")}</strong>${win?.days ? ` (${esc(win.days)} days elapsed)` : ""} against ${esc(others)}. ` +
+    `${esc(data?.shopDomain ?? "")} · showing <strong>${esc(STORE_WINDOW_NAMES[win?.key] ?? win?.label ?? "")}</strong>${win?.key === "mtd" && win?.days ? ` (${esc(win.days)} days elapsed)` : ""} against ${esc(others)}. ` +
     `Totals are compared per day, marked <span class="basis">/d</span>, because a month-to-date total against a 7 day total measures the window, not the business. ` +
     `Context for everything below: a sitewide move is not a test result.`;
 }
@@ -269,14 +356,37 @@ function renderFunnel(report) {
 
   const pct = (v, digits = 1) => (v == null ? "—" : `${(v * 100).toFixed(digits)}%`);
 
-  const rows = (f.steps ?? [])
+  // The funnel follows the store tiles' period. Its steps for any window are stored
+  // alongside the primary's; a report from before that shows the primary with a note.
+  const data = report.detail?.shopify;
+  const key = storeWindowKey(data);
+  const windows = data?.windows ?? [];
+  const label = (k) => windows.find((w) => w.key === k)?.label ?? k;
+  const primaryKey = data?.primaryWindow?.key ?? f.window?.key;
+  const stepsFor = (k) => f.byWindow?.[k] ?? (k === primaryKey ? f.steps : null);
+  const shownKey = stepsFor(key) ? key : primaryKey;
+  const steps = (stepsFor(shownKey) ?? []).map((step, index) => ({
+    ...step,
+    comparisons: windows
+      .filter((w) => w.key !== shownKey && stepsFor(w.key))
+      .map((w) => {
+        const other = stepsFor(w.key)[index];
+        const cmp = compareStore(step.ofPrevious, other?.ofPrevious ?? null, { kind: "rate" });
+        return { window: w.key, label: w.label, ofPrevious: other?.ofPrevious ?? null, count: other?.count ?? null, changePct: cmp.changePct };
+      }),
+  }));
+  const fw = { key: shownKey, label: label(shownKey) };
+  const stale = shownKey !== key ? `<p class="meta">The funnel for ${esc(label(key))} appears after the next refresh. Showing ${esc(fw.label)}.</p>` : "";
+
+  const rows = steps
     .map((step, index) => {
       const width = step.ofTop == null ? 0 : Math.max(step.ofTop * 100, 0.4);
-      const cmps = (step.comparisons ?? [])
+      // The top step has no step rate, so nothing to compare.
+      const cmps = (index === 0 ? [] : step.comparisons ?? [])
         .map((c) => {
           if (c.changePct == null) return `<span class="cmp">${esc(c.label)} —</span>`;
           const good = c.changePct > 0; // a higher step rate is always better
-          return `<span class="cmp ${good ? "good" : "bad"}" title="${esc(`${f.window.label} step rate ${pct(step.ofPrevious)} is ${Math.abs(c.changePct)}% ${good ? "higher" : "lower"} than ${c.label} ${pct(c.ofPrevious)}`)}">vs ${esc(c.label)} ${esc(pct(c.ofPrevious))} · ${good ? "+" : "−"}${esc(Math.abs(c.changePct))}%</span>`;
+          return `<span class="cmp ${good ? "good" : "bad"}" title="${esc(`${fw.label} step rate ${pct(step.ofPrevious)} is ${Math.abs(c.changePct)}% ${good ? "higher" : "lower"} than ${c.label} ${pct(c.ofPrevious)}`)}">vs ${esc(c.label)} ${esc(pct(c.ofPrevious))} · ${good ? "+" : "−"}${esc(Math.abs(c.changePct))}%</span>`;
         })
         .join("");
 
@@ -292,7 +402,7 @@ function renderFunnel(report) {
         <div class="funnel-meta">
           ${index === 0
             ? `<span class="funnel-step">top of funnel</span>`
-            : `<span class="funnel-step">${esc(pct(step.ofPrevious))} of ${esc(f.steps[index - 1].label.toLowerCase())}</span>
+            : `<span class="funnel-step">${esc(pct(step.ofPrevious))} of ${esc(steps[index - 1].label.toLowerCase())}</span>
                <span class="funnel-lost">${esc(pct(lost))} lost</span>`}
           <span class="funnel-oftop">${esc(pct(step.ofTop, 2))} of sessions</span>
           ${cmps}
@@ -302,7 +412,8 @@ function renderFunnel(report) {
     .join("");
 
   host.innerHTML = `
-    <h3 class="funnel-title">${esc(f.label)} <span class="meta">${esc(f.window.label)} · comparisons are on the step rate, not the count</span></h3>
+    <h3 class="funnel-title">${esc(f.label)} <span class="meta">${esc(STORE_WINDOW_NAMES[fw.key] ?? fw.label)} · comparisons are on the step rate, not the count</span></h3>
+    ${stale}
     ${shopifyLinksRow(f.shopifyLinks, report.detail?.shopify?.windows)}
     <div class="funnel">${rows}</div>`;
 }

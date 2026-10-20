@@ -489,3 +489,4 @@ select.sm { font: inherit; font-size: 13px; border: 1px solid var(--line); borde
 .quick-fix-rows { flex-direction: column; align-items: stretch; gap: 4px; }
 .quick-fix-rows .qf-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .quick-fix-rows .qf-title { flex: 1 1 200px; font-size: 13px; }
+.store-windows { margin: 0 0 12px; }
