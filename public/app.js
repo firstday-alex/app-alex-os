@@ -11,6 +11,29 @@ const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 const FN = "/.netlify/functions";
+
+/* A sign-in lasts system.dashboard.sessionTtlHours. A tab left open past that keeps
+   showing what it last loaded while every call behind it fails, which read as
+   "Could not load the rocks: unauthorized" over a list that looked fine. So any call to
+   our own functions that comes back 401 sends Alex to the sign-in screen, and signing
+   in again reloads everything. */
+const nativeFetch = window.fetch.bind(window);
+window.fetch = async (input, init) => {
+  const response = await nativeFetch(input, init);
+  const url = String(input?.url ?? input);
+  if (response.status === 401 && url.startsWith(FN) && !url.endsWith("/login")) sessionExpired();
+  return response;
+};
+
+function sessionExpired() {
+  if (!$("login").classList.contains("hidden")) return;
+  $("shell").classList.add("hidden");
+  $("login").classList.remove("hidden");
+  $("login-note").textContent = "Your session ran out. Sign in again and the page will reload where you were.";
+  $("login-note").classList.remove("hidden");
+  $("password").value = "";
+  $("password").focus();
+}
 let state = { report: null, openItems: [], advisorButtonText: "Ask for recommendation", rocks: null, settings: null, testNotes: null, openTests: new Set(), showQuiet: false };
 
 /* ---------------------------------- auth ---------------------------------- */
@@ -25,6 +48,7 @@ $("login-form").addEventListener("submit", async (event) => {
     body: JSON.stringify({ password: $("password").value }),
   });
   if (response.ok) {
+    $("login-note").classList.add("hidden");
     $("login").classList.add("hidden");
     $("shell").classList.remove("hidden");
     load();
@@ -1671,6 +1695,7 @@ async function loadRocks() {
     const res = await fetch(`${FN}/rocks`);
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
     state.rocks = await res.json();
+    rocksError(null);
     renderRocks();
   } catch (err) {
     rocksError(`Could not load the rocks: ${err.message}`);
