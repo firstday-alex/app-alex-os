@@ -690,7 +690,7 @@ function quickFix(flag) {
       case "checkin":
         return field(`
           <button type="button" class="sm" data-qf="checkin-today">Checked in today</button>
-          <label>or on <input type="date" class="sm" data-qf-input="checkInDate" max="${esc(todayKey())}" value="${esc(rock.checkInDate ?? "")}"></label>
+          <label>or on <input type="date" class="sm" data-qf-input="checkInDate" value="${esc(rock.checkInDate ?? "")}"></label>
           <button type="button" class="ghost sm" data-qf="save" data-field="checkInDate">Save date</button>`);
       case "status":
         return field(`
@@ -754,6 +754,18 @@ function fixNote(field, value) {
   return "Fixed";
 }
 
+/**
+ * Whether the change actually ends the condition. A check-in dated before the window
+ * still leaves the rock overdue, and marking that flag Done would hide it while the rule
+ * keeps firing, so it stays open instead.
+ */
+function stillOverdue(flag, field, value) {
+  const tolerance = flag?.values?.toleranceWindowDays;
+  if (field !== "checkInDate" || tolerance == null) return null;
+  const days = Math.round((Date.parse(todayKey()) - Date.parse(value)) / 86_400_000);
+  return days > tolerance ? { days, tolerance } : null;
+}
+
 async function saveRockField(card, rockId, field, value) {
   const errorAt = card.querySelector(".quick-fix");
   try {
@@ -775,8 +787,14 @@ async function saveRockField(card, rockId, field, value) {
     const multi = card.querySelector("[data-multi]");
     const flag = findFlag(card);
     const remaining = multi && flag ? quickFix(flag) : "";
-    if (!multi || !remaining) await saveTriage(card, { status: "done", note: fixNote(field, value) });
-    else renderAllFlags();
+    const overdue = stillOverdue(flag, field, value);
+    if (overdue) {
+      showQuickFixError(errorAt ?? card, `Saved, but ${value} is ${overdue.days} days ago, past the ${overdue.tolerance} day window, so this stays open.`);
+    } else if (!multi || !remaining) {
+      await saveTriage(card, { status: "done", note: fixNote(field, value) });
+    } else {
+      renderAllFlags();
+    }
   } catch (err) {
     showQuickFixError(errorAt ?? card, `Not saved: ${err.message}`);
   }
