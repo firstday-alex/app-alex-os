@@ -36,6 +36,12 @@ function fakeUpstreams({ fail = [], slackCalls = [] } = {}) {
               type: "drop_down",
               type_config: { options: [{ id: "opt_sub", name: "Subscription upsell" }] },
             },
+            {
+              id: "f_swing",
+              name: "Big Swing",
+              type: "drop_down",
+              type_config: { options: [{ id: "sw_sub", name: "Subscription upsell" }] },
+            },
           ],
         });
       }
@@ -364,4 +370,11 @@ test("a test's owner, chosen in its notes, is carried onto the test for its flag
   const result = await runPipeline({ ...ctx, mode: "refresh", now: new Date("2026-09-10T19:00:00Z"), env: baseEnv });
   const test = result.report.detail.intelligems.tests.find((t) => t.id === "e1");
   assert.deepEqual(test.owner, { clickupUserId: "u1", name: "dana" });
+});
+
+test("the cross layer check runs when the sprint list has a Big Swing field", async () => {
+  const ctx = await setup();
+  const result = await runPipeline({ ...ctx, mode: "refresh", now: new Date("2026-09-10T19:00:00Z"), env: baseEnv });
+  assert.equal(result.report.sections.crossLayer.present, true);
+  assert.ok(!result.report.flags.some((f) => f.rule === "clickup.big_swing_field_missing"));
 });

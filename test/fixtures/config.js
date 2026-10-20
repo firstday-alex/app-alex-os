@@ -27,6 +27,7 @@ export function testConfig(overrides = {}) {
       customFields: {
         taskOwner: { id: "f_owner", matchName: ["Task Owner"], type: "users" },
         leadershipPriority: { id: "f_priority", matchName: ["Leadership Priority"], type: "drop_down" },
+        bigSwing: { id: "f_swing", matchName: ["Big Swing"], type: "drop_down" },
       },
       // The real status set on the Current Sprint list, read live 2026-09-10.
       statusMap: {

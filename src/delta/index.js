@@ -20,7 +20,11 @@ function clickupFlags(delta, { config, dateKey, fieldMap }) {
   // with every ticket. Flagging each ticket separately turns one fact into N lines and
   // buries the signal that actually matters underneath them.
   const ownerFieldExists = Boolean(fieldMap?.taskOwner?.id);
-  const priorityFieldExists = Boolean(fieldMap?.leadershipPriority?.id);
+  // Tickets reach rocks through Big Swing, so that is the field the ladder needs.
+  const swingFieldExists = Boolean(fieldMap?.bigSwing?.id);
+  const bauMarkers = (config.clickup.bauMarkers ?? []).map((m) => String(m).toLowerCase());
+  const isBau = (task) =>
+    [task.leadershipPriority?.label, task.bigSwing?.label].some((l) => l && bauMarkers.includes(String(l).trim().toLowerCase()));
   const openTasks = (delta.tasks ?? []).filter((t) => t.bucket !== "done");
 
   if (!ownerFieldExists) {
@@ -35,15 +39,15 @@ function clickupFlags(delta, { config, dateKey, fieldMap }) {
     });
   }
 
-  if (!priorityFieldExists) {
+  if (!swingFieldExists) {
     add({
       layer: 2,
-      rule: "clickup.priority_field_missing",
+      rule: "clickup.big_swing_field_missing",
       severity: "p1",
       advisable: false,
-      subject: { type: "field", id: "leadership-priority-field-missing", label: "Leadership Priority field" },
-      message: `There is no Leadership Priority field on the sprint list, so no ticket can ladder up to a leadership priority and the cross layer check has nothing to read.`,
-      values: { openTasks: openTasks.length, lookedFor: config.clickup.customFields?.leadershipPriority?.matchName ?? [] },
+      subject: { type: "field", id: "big-swing-field-missing", label: "Big Swing field" },
+      message: `There is no Big Swing field on the sprint list, so no ticket can ladder up to a rock and the cross layer check has nothing to read.`,
+      values: { openTasks: openTasks.length, lookedFor: config.clickup.customFields?.bigSwing?.matchName ?? [] },
     });
   }
 
@@ -93,14 +97,16 @@ function clickupFlags(delta, { config, dateKey, fieldMap }) {
       });
     }
 
-    if (priorityFieldExists && !task.leadershipPriority) {
+    // A ticket with no Big Swing ladders up to no rock. BAU work, marked in either field,
+    // is expected and needs none.
+    if (swingFieldExists && !task.bigSwing && !isBau(task)) {
       add({
         layer: 2,
-        rule: "clickup.no_leadership_priority",
+        rule: "clickup.no_big_swing_set",
         severity: "info",
         advisable: false,
-        subject: { type: "task", id: `${task.id}:priority`, label: task.name, url: task.url },
-        message: `"${task.name}" has no Leadership Priority set, so it ladders up to nothing.`,
+        subject: { type: "task", id: `${task.id}:swing`, label: task.name, url: task.url },
+        message: `"${task.name}" has no Big Swing set, so it ladders up to no rock.`,
         values: { status: task.status },
       });
     }
@@ -429,18 +435,18 @@ export function computeFlags({ snapshots, baselines, config, settings = null, st
 
   /* ---- Cross layer. Needs both Layer 1 and Layer 2. ---- */
   let cross = null;
-  const priorityFieldPresent = Boolean(snapshots.clickup?.fieldMap?.leadershipPriority?.id);
-  if (cuDelta && snapshots.leadership && priorityFieldPresent) {
+  const swingFieldPresent = Boolean(snapshots.clickup?.fieldMap?.bigSwing?.id);
+  if (cuDelta && snapshots.leadership && swingFieldPresent) {
     cross = crossLayerCheck({ clickupDelta: cuDelta, leadership: snapshots.leadership, config, dateKey });
     flags.push(...cross.flags);
     sections.crossLayer = { present: true, summary: cross.summary };
-  } else if (cuDelta && snapshots.leadership && !priorityFieldPresent) {
+  } else if (cuDelta && snapshots.leadership && !swingFieldPresent) {
     // The check would report every single person as having no big swing, which is true
     // and useless. One line naming the cause beats five lines naming the symptom.
     cross = crossLayerCheck({ clickupDelta: cuDelta, leadership: snapshots.leadership, config, dateKey });
     sections.crossLayer = {
       present: false,
-      reason: "the Leadership Priority field does not exist on the sprint list, so no ticket can ladder up to anything yet",
+      reason: "the Big Swing field does not exist on the sprint list, so no ticket can ladder up to a rock yet",
       wouldFlag: cross.flags.length,
       summary: cross.summary,
     };
