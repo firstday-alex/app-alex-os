@@ -199,13 +199,13 @@ export function intelligemsDelta(baseline, current, { config, logger, settings =
       }),
     );
 
-    const notable = verdictChanged || gateJustMet || p0.length > 0 || p1.length > 0 || crossings.length > 0;
+    const notable = verdictChanged || gateJustMet || p0.length > 0 || p1.variants.length > 0 || p1.controlSwings.length > 0 || crossings.length > 0;
 
     tests.push({
       ...test,
       before: before ? { verdict: before.verdict, daysRunning: before.daysRunning, minOrdersPerGroup: before.minOrdersPerGroup } : null,
       recommendation,
-      changes: { verdictChanged, gateJustMet, p0Moves: p0, p1OutOfBand: p1, probabilityCrossings: crossings },
+      changes: { verdictChanged, gateJustMet, p0Moves: p0, p1OutOfBand: p1.variants, p1ControlSwings: p1.controlSwings, probabilityCrossings: crossings },
       tradeOffs: trades,
       trees,
       futureValue,

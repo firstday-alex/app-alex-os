@@ -57,26 +57,72 @@ export function checkP1Band(metricName, current, baseline, p1Config) {
   };
 }
 
-/** Runs the band check across one test's P1 metrics, group by group. */
+/** "add_to_cart_rate" as a person says it: "add-to-cart rate". */
+export function metricLabel(name) {
+  return String(name).replace(/add_to_cart/g, "add-to-cart").replace(/^pct_/, "% ").replace(/^n_/, "").replace(/_/g, " ");
+}
+
+/** A metric value as the readout prints it: rates as percentages, money in dollars. */
+export function formatMetricValue(name, value) {
+  if (value == null || Number.isNaN(Number(value))) return "n/a";
+  const v = Number(value);
+  if (/_rate$|^pct_/.test(name)) return `${(Math.abs(v) <= 1 ? v * 100 : v).toFixed(2)}%`;
+  if (/revenue|profit/.test(name)) return `$${v.toFixed(2)}`;
+  return Number.isInteger(v) ? String(v) : v.toFixed(2);
+}
+
+/**
+ * Runs the band check across one test's P1 metrics, group by group, and sorts the
+ * swings by what they mean.
+ *
+ * The control is the unchanged site. When it swings, the site moved, and every variant
+ * moving with it says nothing about the test. So:
+ *   variants       a variant that swung while its control held steady (or could not be
+ *                  checked): this is the test. Each carries its control's numbers.
+ *   controlSwings  a control that swung. Reported once across all tests by the caller,
+ *                  as a site-wide move, and its variants' swings on that metric are not
+ *                  reported at all.
+ */
 export function checkTestP1Bands(test, baselineTest, config, logger) {
   const p1Names = config.intelligems.metrics?.p1 ?? [];
   const p1Config = config.intelligems.p1Band;
-  const results = [];
-
   const baselineGroups = new Map((baselineTest?.groups ?? []).map((g) => [g.id, g]));
 
-  for (const group of test.groups ?? []) {
+  const check = (group, name) => {
     const before = baselineGroups.get(group.id);
-    if (!before) continue;
-    for (const name of p1Names) {
-      const result = checkP1Band(name, group.metrics?.[name], before.metrics?.[name], p1Config);
-      if (result.skipped) {
-        logger?.info?.("p1band.skipped", { testId: test.id, group: group.name, metric: name, reason: result.reason });
-      }
-      if (result.checked && result.outOfBand) {
-        results.push({ ...result, groupId: group.id, groupName: group.name });
+    if (!before) return null;
+    const result = checkP1Band(name, group.metrics?.[name], before.metrics?.[name], p1Config);
+    if (result.skipped) {
+      logger?.info?.("p1band.skipped", { testId: test.id, group: group.name, metric: name, reason: result.reason });
+    }
+    return result;
+  };
+
+  const control = (test.groups ?? []).find((g) => g.isControl) ?? null;
+  const variants = [];
+  const controlSwings = [];
+
+  for (const name of p1Names) {
+    const controlResult = control ? check(control, name) : null;
+    const controlSwung = Boolean(controlResult?.checked && controlResult.outOfBand);
+    if (controlSwung) {
+      controlSwings.push({ ...controlResult, groupId: control.id, groupName: control.name });
+      continue; // the variants moved with the site; nothing here is the test
+    }
+    for (const group of test.groups ?? []) {
+      if (group.isControl) continue;
+      const result = check(group, name);
+      if (result?.checked && result.outOfBand) {
+        variants.push({
+          ...result,
+          groupId: group.id,
+          groupName: group.name,
+          control: controlResult?.checked
+            ? { name: control.name, today: controlResult.values?.today ?? null, baseline: controlResult.values?.baseline ?? null }
+            : null,
+        });
       }
     }
   }
-  return results;
+  return { variants, controlSwings };
 }

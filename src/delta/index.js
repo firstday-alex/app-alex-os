@@ -4,6 +4,7 @@
 // and Layer 3 flags and assembles everything into one sorted, logged list.
 
 import { makeFlag, sortFlags, logFlags } from "./flags.js";
+import { metricLabel, formatMetricValue } from "./p1band.js";
 import { clickupDelta } from "./clickup-delta.js";
 import { intelligemsDelta } from "./intelligems-delta.js";
 import { leadershipChecks } from "./leadership-checks.js";
@@ -166,14 +167,22 @@ function intelligemsFlags(delta, { config, dateKey }) {
       });
     }
 
+    // A variant that jumped while its control held steady: that is the test, not the
+    // site. The numbers are in the message, because "swung outside its band" alone left
+    // nothing to judge it by.
     for (const band of test.changes.p1OutOfBand) {
+      const fmt = (v) => formatMetricValue(band.metric, v);
+      const [low, high] = band.values?.interval ?? [];
+      const control = band.control
+        ? ` The control held steady (${fmt(band.control.baseline)} to ${fmt(band.control.today)}), so this is the variant, not the site.`
+        : " The control could not be checked, so a site-wide move is not ruled out.";
       add({
         layer: 3,
         rule: "intelligems.p1_out_of_band",
         severity: "attention",
         subject: { ...subject, id: `${test.id}:${band.groupId}:${band.metric}` },
-        message: `"${test.name}" P1 metric ${band.metric} on ${band.groupName} swung outside its band. Not normal trending.`,
-        values: band.values,
+        message: `"${test.name}", variant "${band.groupName}": ${metricLabel(band.metric)} moved from ${fmt(band.values?.baseline)} to ${fmt(band.values?.today)} since the last readout, outside its 95% range of ${fmt(low)} to ${fmt(high)}.${control}`,
+        values: { ...band.values, control: band.control },
       });
     }
 
@@ -305,6 +314,29 @@ function intelligemsFlags(delta, { config, dateKey }) {
       subject: { type: "test", id: `${failure.experienceId}:failed`, label: failure.name ?? failure.experienceId },
       message: `Results for test ${failure.name ?? failure.experienceId} could not be pulled this morning. Its section is missing, not empty.`,
       values: { error: failure.error },
+    });
+  }
+
+  // A control group that swung is the site moving, not any test. One line per metric
+  // across every test, instead of a flag per test that reads like a test result.
+  const byMetric = new Map();
+  for (const test of delta.tests ?? []) {
+    for (const swing of test.changes?.p1ControlSwings ?? []) {
+      if (!byMetric.has(swing.metric)) byMetric.set(swing.metric, []);
+      byMetric.get(swing.metric).push({ test: test.name, testId: test.id, ...swing.values });
+    }
+  }
+  for (const [metric, swings] of byMetric) {
+    const fmt = (v) => formatMetricValue(metric, v);
+    const list = swings.map((s) => `${s.test}: ${fmt(s.baseline)} to ${fmt(s.today)}`).join("; ");
+    add({
+      layer: 3,
+      rule: "intelligems.control_moved",
+      severity: "info",
+      advisable: false,
+      subject: { type: "metric", id: `control:${metric}`, label: metricLabel(metric) },
+      message: `${metricLabel(metric)[0].toUpperCase()}${metricLabel(metric).slice(1)} moved outside its normal range in the control group of ${swings.length === 1 ? "1 test" : `${swings.length} tests`} since the last readout (${list}). A control is the unchanged site, so this is a site-wide move, not a test result; check the store numbers above.`,
+      values: { metric, swings },
     });
   }
 
