@@ -2970,5 +2970,35 @@ function routeFromHash() {
   }
 }
 
+/* ------------------------------ newer version ------------------------------
+   A tab left open keeps running the dashboard it loaded, so a change deployed since is
+   invisible until a reload, and looks like the change did not work. When the tab comes
+   back into view, compare the script on the server with the one this page loaded; if it
+   changed, say so. Uses the ETag, or Last-Modified where there is none; with neither, it
+   stays quiet rather than guess. */
+
+const scriptVersion = async () => {
+  try {
+    const res = await nativeFetch("/app.js", { method: "HEAD", cache: "no-store" });
+    return res.headers.get("etag") ?? res.headers.get("last-modified") ?? null;
+  } catch {
+    return null;
+  }
+};
+let loadedVersion = null;
+scriptVersion().then((v) => (loadedVersion = v));
+
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible" || !loadedVersion || $("new-version")) return;
+  const current = await scriptVersion();
+  if (!current || current === loadedVersion) return;
+  const bar = document.createElement("div");
+  bar.id = "new-version";
+  bar.className = "note";
+  bar.innerHTML = `<strong>A newer version of the dashboard is live.</strong> <button type="button" class="sm">Reload</button>`;
+  bar.querySelector("button").addEventListener("click", () => location.reload());
+  document.querySelector("main")?.prepend(bar);
+});
+
 addEventListener("hashchange", routeFromHash);
 routeFromHash();
