@@ -825,7 +825,7 @@ const ROCK_FIXES = {
 };
 
 function quickFix(flag) {
-  if (!String(flag.rule).startsWith("leadership.")) return "";
+  if (!String(flag.rule).startsWith("leadership.") && flag.rule !== "crosslayer.big_swing_without_rock") return "";
   if (!state.rocks) return `<div class="quick-fix"><span class="meta">Loading the rock to edit…</span></div>`;
   const subject = subjectOf(flag);
   const kind = ROCK_FIXES[flag.rule];
@@ -871,6 +871,45 @@ function quickFix(flag) {
           <button type="button" class="sm" data-qf="save" data-field="clickupBigSwingOptionId">Link</button>`);
       }
     }
+  }
+
+  // Work on a Big Swing no live rock claims. Per Big Swing: add it as a rock, owned by
+  // the person doing the work and linked to it; or link an existing rock to it; or, when
+  // its rock is in the backlog, make that rock active.
+  if (flag.rule === "crosslayer.big_swing_without_rock") {
+    const live = (state.rocks.rocks ?? []).filter((r) => r.state === "active" || r.state === "shipped");
+    const claimed = (ref) =>
+      live.some(
+        (r) =>
+          (ref.optionId && String(r.clickupBigSwingOptionId ?? "") === String(ref.optionId)) ||
+          String(r.title).trim().toLowerCase() === String(ref.label).trim().toLowerCase(),
+      );
+    // Older reports carry names only; those can still be added, just not linked by id.
+    const refs = (flag.values?.swingRefs ?? (flag.values?.swings ?? []).map((label) => ({ label, optionId: null, parkedRockId: null }))).filter((ref) => !claimed(ref));
+    if (!refs.length) return "";
+    const rockChoices = (state.rocks.rocks ?? [])
+      .slice()
+      .sort((a, b) => String(a.title).localeCompare(String(b.title)))
+      .map((r) => `<option value="${esc(r.id)}">${esc(r.title)}${r.state === "active" ? "" : ` (${esc(r.state)})`}</option>`)
+      .join("");
+    return `<div class="quick-fix quick-fix-rows" data-multi="${esc(flag.rule)}">
+      ${refs
+        .map((ref) => {
+          const parked = ref.parkedRockId ? rockById(ref.parkedRockId) : null;
+          return `<div class="qf-row" data-swing="${esc(ref.label)}" data-swing-id="${esc(ref.optionId ?? "")}" data-owner="${esc(flag.values?.ownerId ?? "")}">
+            <span class="qf-title">${esc(ref.label)}</span>
+            ${parked && parked.state === "backlog"
+              ? `<button type="button" class="sm" data-qf="swing-activate" data-rock-id="${esc(parked.id)}">Make "${esc(parked.title)}" active</button>`
+              : `<button type="button" class="sm" data-qf="swing-add">Add as rock</button>`}
+            ${ref.optionId
+              ? `<select class="sm" data-qf-input="swing-rock" aria-label="Existing rock"><option value="">or link a rock…</option>${rockChoices}</select>
+                 <button type="button" class="ghost sm" data-qf="swing-link">Link</button>`
+              : ""}
+          </div>`;
+        })
+        .join("")}
+      <span class="meta">A new rock is active, on track, owned by ${esc(subjectOf(flag).label ?? "them")} and linked to the Big Swing. Edit it afterwards for the KPI and dates.</span>
+    </div>`;
   }
 
   // Rocks linked to a Big Swing option that is no longer in the dropdown: relink each.
@@ -940,13 +979,22 @@ function stillOverdue(flag, field, value) {
   return days > tolerance ? { days, tolerance } : null;
 }
 
-async function saveRockField(card, rockId, field, value) {
+function saveRockField(card, rockId, field, value) {
+  return saveRockPatch(card, { id: rockId, [field]: value }, { field, value, note: fixNote(field, value) });
+}
+
+/**
+ * Writes one change to the rocks: a patch to an existing rock (with its id), or a new
+ * rock (without). `field` and `value` are only for the check-in rule, which needs to
+ * know whether the date actually ends the overdue condition.
+ */
+async function saveRockPatch(card, rock, { field = null, value = null, note = "Fixed" } = {}) {
   const errorAt = card.querySelector(".quick-fix");
   try {
     const res = await fetch(`${FN}/rocks`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ rock: { id: rockId, [field]: value }, version: state.rocks?.version }),
+      body: JSON.stringify({ rock, version: state.rocks?.version }),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -965,7 +1013,7 @@ async function saveRockField(card, rockId, field, value) {
     if (overdue) {
       showQuickFixError(errorAt ?? card, `Saved, but ${value} is ${overdue.days} days ago, past the ${overdue.tolerance} day window, so this stays open.`);
     } else if (!multi || !remaining) {
-      await saveTriage(card, { status: "done", note: fixNote(field, value) });
+      await saveTriage(card, { status: "done", note });
     } else {
       renderAllFlags();
     }
@@ -988,6 +1036,36 @@ document.addEventListener("click", (event) => {
   const el = event.target.closest("[data-qf]");
   if (!el) return;
   const card = el.closest(".flag[data-key]");
+
+  // Unclaimed Big Swings: rows keyed on the swing, not on a rock.
+  const swingRow = el.closest("[data-swing]");
+  if (card && swingRow) {
+    const label = swingRow.dataset.swing;
+    const optionId = swingRow.dataset.swingId || null;
+    if (el.dataset.qf === "swing-add") {
+      return saveRockPatch(
+        card,
+        { title: label, state: "active", status: "on_track", owner: swingRow.dataset.owner || null, ...(optionId ? { clickupBigSwingOptionId: optionId } : {}) },
+        { note: `Added "${label}" as a rock` },
+      );
+    }
+    if (el.dataset.qf === "swing-activate") {
+      const id = el.dataset.rockId;
+      return saveRockPatch(card, { id, state: "active", ...(optionId ? { clickupBigSwingOptionId: optionId } : {}) }, { note: `Made "${rockById(id)?.title ?? label}" active` });
+    }
+    if (el.dataset.qf === "swing-link") {
+      const id = swingRow.querySelector('[data-qf-input="swing-rock"]')?.value;
+      if (!id) return showQuickFixError(el.closest(".quick-fix"), "Pick a rock first.");
+      const rock = rockById(id);
+      // A rock already on another Big Swing would lose that link, so say so first.
+      if (rock?.clickupBigSwingOptionId && String(rock.clickupBigSwingOptionId) !== String(optionId)) {
+        if (!window.confirm(`"${rock.title}" is linked to another Big Swing. Move its link to "${label}"?`)) return;
+      }
+      return saveRockPatch(card, { id, clickupBigSwingOptionId: optionId }, { note: `Linked "${rock?.title ?? id}" to ${label}` });
+    }
+    return;
+  }
+
   const rockId = el.closest("[data-rock]")?.dataset.rock;
   if (!card || !rockId) return;
 

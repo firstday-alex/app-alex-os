@@ -283,3 +283,20 @@ test("no one is flagged for carrying several big swings at once", () => {
   assert.ok(!result.flags.some((f) => f.rule === "crosslayer.multiple_big_swings"));
   assert.ok(!rulesFor(result, "dana").includes("crosslayer.no_big_swing"));
 });
+
+test("an unclaimed Big Swing carries what is needed to add it as a rock in one click", () => {
+  const leadership = { ...LEADERSHIP, backlog: [{ id: "p_back", title: "Carpe Bundle Builder Inspired Funnel", state: "backlog" }] };
+  const result = check(
+    [
+      { ...task({ id: "a", bigSwing: { optionId: "sw_ab", label: "AB Testing" } }), ...owner("u1", "dana") },
+      { ...task({ id: "b", bigSwing: SWING_CARPE }), ...owner("u1", "dana") },
+    ],
+    leadership,
+  );
+  const flag = result.flags.find((f) => f.rule === "crosslayer.big_swing_without_rock");
+  assert.equal(flag.values.ownerId, "u1", "the new rock's owner is the person doing the work");
+  assert.deepEqual(flag.values.swingRefs, [
+    { label: "AB Testing", optionId: "sw_ab", parkedRockId: null },
+    { label: "Carpe Bundle Builder Inspired Funnel", optionId: "23eba93e", parkedRockId: "p_back" },
+  ]);
+});

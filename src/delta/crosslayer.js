@@ -214,7 +214,18 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
         severity: "attention",
         subject: { type: "person", id: `${row.id}:untethered`, label: row.name },
         message: `${row.name} is working on ${why.join(", ")}, which no active or shipped rock claims. Link the rock's Big Swing to it, or bring the rock out of the backlog, so the work is tracked.`,
-        values: { swings, tickets: row.untetheredSwings.length },
+        values: {
+          swings,
+          tickets: row.untetheredSwings.length,
+          // What the dashboard needs to fix it in place: each Big Swing's option id, so a
+          // new rock can be linked to it, and the backlog rock it matches, if any.
+          swingRefs: swings.map((swing) => {
+            const ref = row.untetheredSwings.find((t) => t.swing === swing);
+            const rock = parkedRockFor(ref);
+            return { label: swing, optionId: ref?.swingId == null ? null : String(ref.swingId), parkedRockId: rock?.id ?? null };
+          }),
+          ownerId: row.id,
+        },
       });
     }
   }
