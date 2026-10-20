@@ -38,9 +38,13 @@ export function classifyTicketLink(task, { activeTitles, activeBigSwingIds, bauM
   const swing = task.bigSwing;
   const priorityLabel = String(priority?.label ?? "").toLowerCase();
 
-  // BAU is expected work and is never a big swing, however it is tagged.
+  // BAU is expected work and is never a big swing, however it is tagged, and it can be
+  // tagged in either field: the Big Swing dropdown carries a BAU option too.
   if (priority && bauMarkers.includes(priorityLabel)) {
     return { link: "bau", label: priority.label };
+  }
+  if (swing && bauMarkers.includes(String(swing.label ?? "").trim().toLowerCase())) {
+    return { link: "bau", label: swing.label };
   }
 
   if (!swing?.optionId) return { link: "none", label: priority?.label ?? null };
@@ -68,10 +72,23 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   const bauMarkers = (config.clickup.bauMarkers ?? []).map((s) => s.toLowerCase());
 
   const activeItems = (leadership.queue ?? []).filter((i) => i.state === "active");
+  // Which rocks claim tickets: active ones, and shipped ones, whose follow-up work is
+  // still tracked through the mini readout. Only a backlog rock claims nothing.
+  const claimingItems = (leadership.queue ?? []).filter((i) => i.state === "active" || i.state === "shipped");
   // The Big Swing option id is the real link. Matching on title is a fallback for a rock
   // that has not been linked yet, and it breaks the moment somebody renames the option.
-  const activeTitles = new Set(activeItems.map((i) => String(i.title).toLowerCase()));
-  const activeBigSwingIds = new Set(activeItems.map((i) => i.clickupBigSwingOptionId).filter(Boolean).map(String));
+  const activeTitles = new Set(claimingItems.map((i) => String(i.title).trim().toLowerCase()));
+  const activeBigSwingIds = new Set(claimingItems.map((i) => i.clickupBigSwingOptionId).filter(Boolean).map(String));
+
+  // For an unclaimed big swing, the rock it would have matched if that rock were live, so
+  // the readout can say "its rock is in the backlog" rather than "nothing tracks this".
+  const parked = [...(leadership.backlog ?? []), ...(leadership.queue ?? []).filter((i) => i.state === "backlog")];
+  const parkedRockFor = (ref) =>
+    parked.find(
+      (i) =>
+        (ref.swingId && i.clickupBigSwingOptionId && String(i.clickupBigSwingOptionId) === String(ref.swingId)) ||
+        String(i.title).trim().toLowerCase() === String(ref.swing ?? "").trim().toLowerCase(),
+    ) ?? null;
 
   const openTasks = (clickupDelta.tasks ?? []).filter((t) => t.bucket !== "done");
 
@@ -185,12 +202,18 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
 
     if (row.untetheredSwings.length > 0) {
       const swings = [...new Set(row.untetheredSwings.map((t) => t.swing))];
+      // Say why each is unclaimed: a rock that exists but is in the backlog is a different
+      // fix from a big swing no rock names at all.
+      const why = swings.map((swing) => {
+        const rock = parkedRockFor(row.untetheredSwings.find((t) => t.swing === swing));
+        return rock ? `"${swing}" (its rock "${rock.title}" is in the backlog)` : `"${swing}"`;
+      });
       add({
         layer: "cross",
         rule: "crosslayer.big_swing_without_rock",
         severity: "attention",
         subject: { type: "person", id: `${row.id}:untethered`, label: row.name },
-        message: `${row.name} is working on ${swings.map((s) => `"${s}"`).join(", ")}, which no active rock claims. Real work on a real project that nothing at leadership level is tracking.`,
+        message: `${row.name} is working on ${why.join(", ")}, which no active or shipped rock claims. Link the rock's Big Swing to it, or bring the rock out of the backlog, so the work is tracked.`,
         values: { swings, tickets: row.untetheredSwings.length },
       });
     }

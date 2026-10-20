@@ -108,12 +108,27 @@ test("the Task Owner drives accountability, falling back to assignee", () => {
   assert.equal(result.people.find((p) => p.name === "dana").distinctBigSwings, 0, "the assignee executes a piece of it");
 });
 
-test("a ticket on the Big Swing of a rock that is no longer active is untethered", () => {
-  const leadership = { ...LEADERSHIP, queue: [{ ...LEADERSHIP.queue[0], state: "shipped" }] };
+test("a shipped rock still claims the follow-up work on its Big Swing", () => {
+  const leadership = { ...LEADERSHIP, queue: [{ ...LEADERSHIP.queue[0], state: "shipped" }, LEADERSHIP.queue[1]] };
   const result = check([{ ...task({ id: "a", bigSwing: SUB }), ...owner("u1", "dana") }], leadership);
-  const rules = rulesFor(result, "dana");
-  assert.ok(rules.includes("crosslayer.big_swing_without_rock"), "real work that no active rock claims");
-  assert.equal(result.people.find((p) => p.name === "dana").distinctBigSwings, 1, "still a big swing: busy, not idle");
+  assert.ok(!rulesFor(result, "dana").includes("crosslayer.big_swing_without_rock"));
+  assert.equal(result.people.find((p) => p.name === "dana").distinctBigSwings, 1);
+});
+
+test("a ticket on a backlog rock's Big Swing is untethered, and the message says the rock is in the backlog", () => {
+  const leadership = { ...LEADERSHIP, queue: [LEADERSHIP.queue[1]], backlog: [{ ...LEADERSHIP.queue[0], state: "backlog" }] };
+  const result = check([{ ...task({ id: "a", bigSwing: SUB }), ...owner("u1", "dana") }], leadership);
+  const flag = result.flags.find((f) => f.rule === "crosslayer.big_swing_without_rock");
+  assert.ok(flag);
+  assert.match(flag.message, /"Subscription upsell" \(its rock "Subscription upsell" is in the backlog\)/);
+});
+
+test("a Big Swing set to BAU is business as usual, not an untracked project", () => {
+  const result = check([{ ...task({ id: "a", bigSwing: { optionId: "sw_bau", label: "BAU" } }), ...owner("u1", "dana") }]);
+  const dana = result.people.find((p) => p.name === "dana");
+  assert.equal(dana.bauTickets.length, 1);
+  assert.equal(dana.distinctBigSwings, 0);
+  assert.ok(!result.flags.some((f) => f.rule === "crosslayer.big_swing_without_rock"));
 });
 
 test("a Leadership Priority with no Big Swing does not tie a ticket to a rock", () => {
