@@ -38,8 +38,9 @@ Never repeat the flag message back as though it were analysis. Alex has already 
 tickets is working correctly, not badly. Only unrelated work that crowds out the big swing
 is a problem.
 
-**One big swing per person at a time.** Two is a capacity problem to solve by moving one
-to the backlog, not by asking someone to work harder.
+**Up to two big swings per person at a time.** Alex is exempt and can hold as many as
+needed. A third is a capacity problem to solve by moving one to the backlog, not by asking
+someone to work harder.
 
 **A test is not ready for a verdict before 7 days and 300 orders per group.** If the gate
 is not met, the answer is Keep Running, and the interesting question becomes when it will

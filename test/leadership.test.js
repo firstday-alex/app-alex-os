@@ -231,3 +231,16 @@ test("someone who does not count toward capacity can hold as many priorities as 
   });
   assert.ok(!result.flags.some((f) => f.rule === "leadership.over_capacity"));
 });
+
+test("with a cap of two, two priorities are fine and a third is flagged", () => {
+  const capTwo = testConfig();
+  capTwo.leadership.capacity.bigSwingsPerPerson = 2;
+  const held = (n) =>
+    Array.from({ length: n }, (_, i) => ({ id: `p${i}`, title: `R${i}`, state: "active", owner: { clickupUserId: "u1", name: "dana" } }));
+  const runCap = (n) =>
+    leadershipChecks({ leadership: leadership({ queue: held(n) }), clickup: { fieldMap: FIELD_MAP }, config: capTwo, dateKey: "2026-09-10", nowIso: NOW_ISO });
+  assert.ok(!runCap(2).flags.some((f) => f.rule === "leadership.over_capacity"));
+  const flag = runCap(3).flags.find((f) => f.rule === "leadership.over_capacity");
+  assert.ok(flag);
+  assert.match(flag.message, /up to 2 at a time/);
+});

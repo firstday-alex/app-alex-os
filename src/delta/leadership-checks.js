@@ -171,7 +171,7 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
         rule: "leadership.over_capacity",
         severity: "p1",
         subject: { type: "person", id: owner.clickupUserId, label: owner.name },
-        message: `${owner.name} holds ${items.length} active leadership priorities. The rule is ${cap} at a time. The extras belong in the leadership backlog.`,
+        message: `${owner.name} holds ${items.length} active leadership priorities. The rule is up to ${cap} at a time. The extras belong in the leadership backlog.`,
         values: { held: items.map((i) => i.title), cap },
       });
     }

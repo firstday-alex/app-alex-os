@@ -350,6 +350,9 @@ export async function collectShopify({ config, token, env = process.env, store, 
         window: windowName,
         label: sc.windows[windowName].label,
         value: other,
+        // For a total, what the comparison is actually made on: the other window's value
+        // per day. Shown on the chip so it states the number rather than only a change.
+        perDay: cmp.otherPerDay ?? null,
         changePct: cmp.changePct == null ? null : Number(cmp.changePct.toFixed(1)),
         basis: cmp.basis,
       };

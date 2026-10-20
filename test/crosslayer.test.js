@@ -276,3 +276,16 @@ test("someone who does not count toward capacity can carry several big swings", 
   const result = crossLayerCheck({ clickupDelta: delta, leadership: LEADERSHIP, config: exemptConfig, dateKey: "2026-09-10" });
   assert.ok(!rulesFor(result, "alex").includes("crosslayer.multiple_big_swings"));
 });
+
+test("with a cap of two, two big swings at once are fine", () => {
+  const capTwo = testConfig();
+  capTwo.leadership.capacity.bigSwingsPerPerson = 2;
+  const tasks = [
+    { ...task({ id: "a", leadershipPriority: SUB }), ...owner("u1", "dana") },
+    { ...task({ id: "b", leadershipPriority: SHIP }), ...owner("u1", "dana") },
+  ];
+  const delta = clickupDelta(null, snapshot(tasks), { config: capTwo, now: NOW });
+  const result = crossLayerCheck({ clickupDelta: delta, leadership: LEADERSHIP, config: capTwo, dateKey: "2026-09-10" });
+  assert.ok(!rulesFor(result, "dana").includes("crosslayer.multiple_big_swings"));
+  assert.equal(result.summary.overloaded, 0);
+});

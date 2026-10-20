@@ -6,8 +6,8 @@
   },
 
   "capacity": {
-    "bigSwingsPerPerson": 1,
-    "_comment": "Each team member holds only one big leadership project at a time. When every member already holds one, remaining leadership items route to the backlog rather than being assigned."
+    "bigSwingsPerPerson": 2,
+    "_comment": "Each team member holds up to two big leadership projects at a time (set 2026-10-19; it was one). Alex is exempt and can hold as many as needed: see countsTowardCapacity in people.json. When every member is at the cap, remaining leadership items route to the backlog rather than being assigned. The same cap applies to big swings in the sprint."
   },
 
   "crossLayer": {

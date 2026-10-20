@@ -1,6 +1,6 @@
 ---
 name: leadership-priority-manager
-description: Owns Layer 1. Holds the leadership queue and backlog, checks shipped tests against the mini readout window, flags unassigned priorities, and enforces one big swing per person.
+description: Owns Layer 1. Holds the leadership queue and backlog, checks shipped tests against the mini readout window, flags unassigned priorities, and enforces up to two big swings per person (Alex is exempt).
 runs_as: deterministic code
 implemented_by:
   - src/collectors/leadership.js
@@ -30,7 +30,7 @@ option id, `shippedAt`, and `lastMiniReadoutAt`.
 - If an item is a **test that has shipped**, it must have been checked within the tolerance
   window as a mini readout. If not, flag it.
 - If an item is **not yet assigned**, flag it as a project needing an active owner.
-- **Each team member holds only one big leadership project at a time.**
+- **Each team member holds up to two big leadership projects at a time** (`capacity.bigSwingsPerPerson`). Alex is exempt and can hold as many as needed.
 - If **every member already holds one**, remaining leadership items go into a **leadership
   backlog queue** rather than being assigned.
 

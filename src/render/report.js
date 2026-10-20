@@ -36,6 +36,14 @@ function names(users) {
 
 /* --------------------------------- sections --------------------------------- */
 
+/** A store metric as the readout prints it. Per-day values keep their cents. */
+function storeValue(tile, value, perDay = false) {
+  if (value == null) return null;
+  if (tile.format === "percent") return `${(value * 100).toFixed(2)}%`;
+  if (tile.format === "money") return `${tile.kind === "rate" || perDay ? Number(value).toFixed(2) : Math.round(value).toLocaleString("en-US")}${perDay ? "/d" : ""}`;
+  return `${Math.round(value).toLocaleString("en-US")}${perDay ? "/d" : ""}`;
+}
+
 function renderStore(detail, section, lines) {
   const win = detail?.primaryWindow;
   lines.push(`STORE. ${win?.label ?? "Store"} against ${(detail?.windows ?? []).filter((w) => w.key !== win?.key).map((w) => w.label).join(" and ")}. Totals compared per day.`);
@@ -56,7 +64,14 @@ function renderStore(detail, section, lines) {
           ? (tile.kind === "rate" ? tile.value.toFixed(2) : Math.round(tile.value).toLocaleString("en-US"))
           : Math.round(tile.value).toLocaleString("en-US");
     const cmps = (tile.comparisons ?? [])
-      .map((c) => (c.changePct == null ? `${c.label} n/a` : `${c.label} ${c.changePct > 0 ? "+" : ""}${c.changePct}%${c.basis === "per day" ? "/d" : ""}`))
+      // The other window's own number first, then how this one compares with it, so
+      // "Yest" can never be read as yesterday's change.
+      .map((c) => {
+        const perDay = c.basis === "per day";
+        const theirs = storeValue(tile, perDay ? c.perDay : c.value, perDay);
+        if (c.changePct == null) return `vs ${c.label} ${theirs ?? "n/a"}`;
+        return `vs ${c.label} ${theirs ?? "n/a"}: ${c.changePct > 0 ? "+" : ""}${c.changePct}%`;
+      })
       .join(", ");
     lines.push(`  ${tile.label}: ${value} (${cmps})`);
   }
@@ -207,7 +222,7 @@ function renderCrossLayer(detail, section, lines) {
   }
   const s = detail.summary;
   lines.push(
-    `  ${s.withBigSwing} of ${s.peopleChecked} people hold at least one big swing. ${plural(s.withoutBigSwing, "person has", "people have")} tickets but no big swing. ${plural(s.overloaded, "person holds", "people hold")} more than one.`,
+    `  ${s.withBigSwing} of ${s.peopleChecked} people hold at least one big swing. ${plural(s.withoutBigSwing, "person has", "people have")} tickets but no big swing. ${plural(s.overloaded, "person holds", "people hold")} more than ${s.cap ?? 1}.`,
   );
   for (const person of detail.people) {
     lines.push(

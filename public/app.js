@@ -171,14 +171,24 @@ function renderStoreMetrics(report) {
       // A rate is shown to the cent; a large total does not need the cents.
       const precise = t.kind === "rate" && t.format === "money";
 
+      // Each chip states the other window's own number, then how the big number compares
+      // with it. A bare "Yest -0.7%" read as "yesterday fell", when it meant the month is
+      // 0.7% below yesterday: the opposite. A total is compared per day, so the chip shows
+      // the other window per day.
+      const primaryLabel = data?.primaryWindow?.label ?? "This period";
       const cmps = (t.comparisons ?? [])
         .map((c) => {
-          if (c.changePct == null) return `<span class="cmp">${esc(c.label)} —</span>`;
+          const perDay = c.basis === "per day";
+          // Reports from before the per-day value was stored have none; the next refresh fills it.
+          const shown = perDay ? c.perDay ?? null : c.value;
+          const theirs = `${formatMetric(shown, t.format, { precise: precise || perDay })}${perDay ? "/d" : ""}`;
+          if (c.changePct == null) return `<span class="cmp">vs ${esc(c.label)} ${esc(shown == null ? "—" : theirs)}</span>`;
           const up = c.changePct > 0;
           // Direction is not the same as good. Discounts are stored negative, so a rise
           // means less discounting, which is why goodDirection lives on the tile.
           const good = t.goodDirection === "down" ? !up : up;
-          return `<span class="cmp ${good ? "good" : "bad"}" title="${esc(c.label)} value ${esc(formatMetric(c.value, t.format, { precise }))}${c.basis === "per day" ? ", compared per day" : ""}">${esc(c.label)} ${up ? "+" : ""}${esc(c.changePct)}%${c.basis === "per day" ? "<span class=\"basis\">/d</span>" : ""}</span>`;
+          const said = `${primaryLabel} ${formatMetric(t.value, t.format, { precise })}${perDay ? " (per day)" : ""} is ${Math.abs(c.changePct)}% ${up ? "higher" : "lower"} than ${c.label} ${theirs}`;
+          return `<span class="cmp ${good ? "good" : "bad"}" title="${esc(said)}">vs ${esc(c.label)} ${esc(theirs)} · ${up ? "+" : "−"}${esc(Math.abs(c.changePct))}%</span>`;
         })
         .join("");
 
@@ -240,7 +250,7 @@ function renderFunnel(report) {
         .map((c) => {
           if (c.changePct == null) return `<span class="cmp">${esc(c.label)} —</span>`;
           const good = c.changePct > 0; // a higher step rate is always better
-          return `<span class="cmp ${good ? "good" : "bad"}" title="${esc(c.label)} step rate ${esc(pct(c.ofPrevious))}">${esc(c.label)} ${c.changePct > 0 ? "+" : ""}${esc(c.changePct)}%</span>`;
+          return `<span class="cmp ${good ? "good" : "bad"}" title="${esc(`${f.window.label} step rate ${pct(step.ofPrevious)} is ${Math.abs(c.changePct)}% ${good ? "higher" : "lower"} than ${c.label} ${pct(c.ofPrevious)}`)}">vs ${esc(c.label)} ${esc(pct(c.ofPrevious))} · ${good ? "+" : "−"}${esc(Math.abs(c.changePct))}%</span>`;
         })
         .join("");
 
@@ -1008,7 +1018,7 @@ function renderCross(report) {
     .map(
       (person) => `<tr>
         <td>${esc(person.name)}</td>
-        <td>${person.distinctBigSwings === 1 ? "1" : `<strong>${esc(person.distinctBigSwings)}</strong>`}</td>
+        <td>${person.distinctBigSwings >= 1 && person.distinctBigSwings <= (detail.summary?.cap ?? 1) ? esc(person.distinctBigSwings) : `<strong>${esc(person.distinctBigSwings)}</strong>`}</td>
         <td>${esc(person.bauTickets.length)}</td>
         <td>${esc(person.unrelatedTickets.length)}</td>
         <td>${esc(person.totalTickets)}</td>
@@ -1016,7 +1026,7 @@ function renderCross(report) {
     )
     .join("");
   $("cross").innerHTML = `
-    <p class="sub">Every person's sprint should carry one big swing tied to a live leadership priority. Business as usual is expected; it just should not crowd the big swing out.</p>
+    <p class="sub">Every person's sprint should carry a big swing tied to a live leadership priority, up to ${esc(detail.summary?.cap ?? 1)} at a time (Alex is not capped). Business as usual is expected; it just should not crowd the big swing out.</p>
     <div class="scroll"><table>
       <thead><tr><th>Person</th><th>Big swings</th><th>BAU</th><th>Unrelated</th><th>Tickets</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="5">Nobody on the roster.</td></tr>'}</tbody>
