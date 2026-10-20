@@ -1,5 +1,8 @@
 // Cross layer check. Person with zero big swings is flagged. Person with two is flagged.
 // Person with one plus BAU passes. Person with one plus unrelated tickets is flagged.
+//
+// Tickets reach rocks through the Big Swing field only. SUB and SHIP below are Big Swing
+// options, claimed by the two rocks; the Leadership Priority field carries only BAU.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -12,8 +15,8 @@ const config = testConfig();
 
 const LEADERSHIP = {
   queue: [
-    { id: "p_sub", title: "Subscription upsell", state: "active", owner: { clickupUserId: "u1", name: "dana" }, clickupOptionId: "opt_sub" },
-    { id: "p_ship", title: "Shipping threshold test", state: "active", owner: { clickupUserId: "u2", name: "rey" }, clickupOptionId: "opt_ship" },
+    { id: "p_sub", title: "Subscription upsell", state: "active", owner: { clickupUserId: "u1", name: "dana" }, clickupBigSwingOptionId: "opt_sub" },
+    { id: "p_ship", title: "Shipping threshold test", state: "active", owner: { clickupUserId: "u2", name: "rey" }, clickupBigSwingOptionId: "opt_ship" },
   ],
   backlog: [],
   roster: [
@@ -49,8 +52,8 @@ test("person with tickets but zero big swings is flagged", () => {
 
 test("person with two big swings is flagged", () => {
   const result = check([
-    { ...task({ id: "a", leadershipPriority: SUB }), ...owner("u1", "dana") },
-    { ...task({ id: "b", leadershipPriority: SHIP }), ...owner("u1", "dana") },
+    { ...task({ id: "a", bigSwing: SUB }), ...owner("u1", "dana") },
+    { ...task({ id: "b", bigSwing: SHIP }), ...owner("u1", "dana") },
   ]);
   const rules = rulesFor(result, "dana");
   assert.ok(rules.includes("crosslayer.multiple_big_swings"));
@@ -59,9 +62,9 @@ test("person with two big swings is flagged", () => {
 
 test("several tickets under ONE priority is one big swing, not several", () => {
   const result = check([
-    { ...task({ id: "a", leadershipPriority: SUB }), ...owner("u1", "dana") },
-    { ...task({ id: "b", leadershipPriority: SUB }), ...owner("u1", "dana") },
-    { ...task({ id: "c", leadershipPriority: SUB }), ...owner("u1", "dana") },
+    { ...task({ id: "a", bigSwing: SUB }), ...owner("u1", "dana") },
+    { ...task({ id: "b", bigSwing: SUB }), ...owner("u1", "dana") },
+    { ...task({ id: "c", bigSwing: SUB }), ...owner("u1", "dana") },
   ]);
   assert.equal(result.people.find((p) => p.name === "dana").distinctBigSwings, 1);
   assert.ok(!rulesFor(result, "dana").includes("crosslayer.multiple_big_swings"));
@@ -69,7 +72,7 @@ test("several tickets under ONE priority is one big swing, not several", () => {
 
 test("person with one big swing plus BAU passes", () => {
   const result = check([
-    { ...task({ id: "a", leadershipPriority: SUB }), ...owner("u1", "dana") },
+    { ...task({ id: "a", bigSwing: SUB }), ...owner("u1", "dana") },
     { ...task({ id: "b", leadershipPriority: BAU }), ...owner("u1", "dana") },
     { ...task({ id: "c", leadershipPriority: BAU }), ...owner("u1", "dana") },
     { ...task({ id: "d", leadershipPriority: BAU }), ...owner("u1", "dana") },
@@ -86,7 +89,7 @@ test("person with one big swing plus a pile of unrelated tickets is flagged", ()
     ...task({ id, leadershipPriority: null }),
     ...owner("u1", "dana"),
   }));
-  const result = check([{ ...task({ id: "a", leadershipPriority: SUB }), ...owner("u1", "dana") }, ...unrelated]);
+  const result = check([{ ...task({ id: "a", bigSwing: SUB }), ...owner("u1", "dana") }, ...unrelated]);
   const rules = rulesFor(result, "dana");
   assert.ok(rules.includes("crosslayer.unrelated_pile"));
   assert.ok(!rules.includes("crosslayer.no_big_swing"), "they do have a big swing");
@@ -94,36 +97,44 @@ test("person with one big swing plus a pile of unrelated tickets is flagged", ()
 
 test("the unrelated pile threshold is a threshold, not any unrelated ticket at all", () => {
   const result = check([
-    { ...task({ id: "a", leadershipPriority: SUB }), ...owner("u1", "dana") },
+    { ...task({ id: "a", bigSwing: SUB }), ...owner("u1", "dana") },
     { ...task({ id: "b", leadershipPriority: null }), ...owner("u1", "dana") },
   ]);
   assert.ok(!rulesFor(result, "dana").includes("crosslayer.unrelated_pile"));
 });
 
 test("a person on the roster with no tickets at all is not flagged for having no big swing", () => {
-  const result = check([{ ...task({ id: "a", leadershipPriority: SUB }), ...owner("u1", "dana") }]);
+  const result = check([{ ...task({ id: "a", bigSwing: SUB }), ...owner("u1", "dana") }]);
   const reyFlags = rulesFor(result, "rey");
   assert.ok(!reyFlags.includes("crosslayer.no_big_swing"), "no tickets is a different problem from tickets with no big swing");
 });
 
 test("the Task Owner drives accountability, falling back to assignee", () => {
   const result = check([
-    { ...task({ id: "a", leadershipPriority: SUB }), taskOwners: [{ id: "u2", username: "rey" }], assignees: [{ id: "u1", username: "dana" }] },
+    { ...task({ id: "a", bigSwing: SUB }), taskOwners: [{ id: "u2", username: "rey" }], assignees: [{ id: "u1", username: "dana" }] },
   ]);
   assert.equal(result.people.find((p) => p.name === "rey").distinctBigSwings, 1, "the owner holds the big swing");
   assert.equal(result.people.find((p) => p.name === "dana").distinctBigSwings, 0, "the assignee executes a piece of it");
 });
 
-test("a ticket pointing at a priority that is no longer active is stale, not a big swing", () => {
+test("a ticket on the Big Swing of a rock that is no longer active is untethered", () => {
   const leadership = { ...LEADERSHIP, queue: [{ ...LEADERSHIP.queue[0], state: "shipped" }] };
-  const result = check([{ ...task({ id: "a", leadershipPriority: SUB }), ...owner("u1", "dana") }], leadership);
+  const result = check([{ ...task({ id: "a", bigSwing: SUB }), ...owner("u1", "dana") }], leadership);
   const rules = rulesFor(result, "dana");
-  assert.ok(rules.includes("crosslayer.no_big_swing"));
-  assert.equal(result.people.find((p) => p.name === "dana").staleTickets.length, 1);
+  assert.ok(rules.includes("crosslayer.big_swing_without_rock"), "real work that no active rock claims");
+  assert.equal(result.people.find((p) => p.name === "dana").distinctBigSwings, 1, "still a big swing: busy, not idle");
+});
+
+test("a Leadership Priority with no Big Swing does not tie a ticket to a rock", () => {
+  const result = check([{ ...task({ id: "a", leadershipPriority: SUB }), ...owner("u1", "dana") }]);
+  const dana = result.people.find((p) => p.name === "dana");
+  assert.equal(dana.distinctBigSwings, 0);
+  assert.equal(dana.unrelatedTickets.length, 1);
+  assert.ok(rulesFor(result, "dana").includes("crosslayer.no_big_swing"));
 });
 
 test("an active leadership priority with no open ticket pointing at it is flagged", () => {
-  const result = check([{ ...task({ id: "a", leadershipPriority: SUB }), ...owner("u1", "dana") }]);
+  const result = check([{ ...task({ id: "a", bigSwing: SUB }), ...owner("u1", "dana") }]);
   const orphan = result.flags.find((f) => f.rule === "crosslayer.priority_without_work");
   assert.ok(orphan);
   assert.equal(orphan.subject.label, "Shipping threshold test");
@@ -131,7 +142,7 @@ test("an active leadership priority with no open ticket pointing at it is flagge
 
 test("done tickets do not count toward anyone's sprint", () => {
   const result = check([
-    { ...task({ id: "a", leadershipPriority: SUB, status: "complete", bucket: "done" }), ...owner("u1", "dana") },
+    { ...task({ id: "a", bigSwing: SUB, status: "complete", bucket: "done" }), ...owner("u1", "dana") },
     { ...task({ id: "b", leadershipPriority: null }), ...owner("u1", "dana") },
   ]);
   assert.equal(result.people.find((p) => p.name === "dana").totalTickets, 1);
@@ -241,8 +252,8 @@ test("a rock linked only by title is reported, because a rename would break it s
   const config = { leadership: { crossLayer: {} }, clickup: { bauMarkers: [] } };
   const leadership = {
     roster: [{ clickupUserId: 1, name: "Dana" }],
-    // No clickupOptionId: the only thing joining this rock to ClickUp is its title.
-    queue: [{ state: "active", title: "ncAOV", clickupOptionId: null }],
+    // No Big Swing option: the only thing joining this rock to ClickUp is its title.
+    queue: [{ state: "active", title: "ncAOV", clickupBigSwingOptionId: null }],
   };
   const task = {
     id: "t1",
@@ -251,8 +262,8 @@ test("a rock linked only by title is reported, because a rename would break it s
     status: "in-progress",
     assignees: [{ id: 1, username: "dana" }],
     taskOwners: [],
-    bigSwing: null,
-    leadershipPriority: { optionId: "opt-1", label: "ncAOV" },
+    bigSwing: { optionId: "swing-9", label: "ncAOV" },
+    leadershipPriority: null,
   };
 
   const out = crossLayerCheck({ clickupDelta: { tasks: [task] }, leadership, config, dateKey: "2026-09-11" });
@@ -269,8 +280,8 @@ test("someone who does not count toward capacity can carry several big swings", 
     people: { team: [{ clickupUserId: "u9", name: "alex", countsTowardCapacity: false }], alex: { slackUserId: "UALEX" } },
   });
   const tasks = [
-    { ...task({ id: "a", leadershipPriority: SUB }), ...owner("u9", "alex") },
-    { ...task({ id: "b", leadershipPriority: SHIP }), ...owner("u9", "alex") },
+    { ...task({ id: "a", bigSwing: SUB }), ...owner("u9", "alex") },
+    { ...task({ id: "b", bigSwing: SHIP }), ...owner("u9", "alex") },
   ];
   const delta = clickupDelta(null, snapshot(tasks), { config: exemptConfig, now: NOW });
   const result = crossLayerCheck({ clickupDelta: delta, leadership: LEADERSHIP, config: exemptConfig, dateKey: "2026-09-10" });
@@ -281,8 +292,8 @@ test("with a cap of two, two big swings at once are fine", () => {
   const capTwo = testConfig();
   capTwo.leadership.capacity.bigSwingsPerPerson = 2;
   const tasks = [
-    { ...task({ id: "a", leadershipPriority: SUB }), ...owner("u1", "dana") },
-    { ...task({ id: "b", leadershipPriority: SHIP }), ...owner("u1", "dana") },
+    { ...task({ id: "a", bigSwing: SUB }), ...owner("u1", "dana") },
+    { ...task({ id: "b", bigSwing: SHIP }), ...owner("u1", "dana") },
   ];
   const delta = clickupDelta(null, snapshot(tasks), { config: capTwo, now: NOW });
   const result = crossLayerCheck({ clickupDelta: delta, leadership: LEADERSHIP, config: capTwo, dateKey: "2026-09-10" });

@@ -751,11 +751,12 @@ function quickFix(flag) {
           <button type="button" class="ghost sm" data-qf="set" data-field="state" data-value="backlog">Move to backlog</button>`);
       }
       case "link": {
-        const cu = state.rocks.clickupOptions ?? { available: false, options: [] };
-        if (!cu.available || !cu.options?.length) return field(`<span class="meta">The ClickUp options could not be loaded${cu.reason ? `: ${esc(cu.reason)}` : ""}. Use Edit rock.</span>`);
+        // Tickets reach a rock through the Big Swing field, so that is the link to set.
+        const swings = state.rocks.bigSwingOptions ?? { available: false, options: [] };
+        if (!swings.available || !swings.options?.length) return field(`<span class="meta">The Big Swing options could not be loaded${swings.reason ? `: ${esc(swings.reason)}` : ""}. Use Edit rock.</span>`);
         return field(`
-          <label>ClickUp option <select class="sm" data-qf-input="clickupOptionId"><option value="">Choose…</option>${cu.options.map((o) => `<option value="${esc(o.id)}"${o.label.toLowerCase() === String(rock.title).toLowerCase() ? " selected" : ""}>${esc(o.label)}</option>`).join("")}</select></label>
-          <button type="button" class="sm" data-qf="save" data-field="clickupOptionId">Link</button>`);
+          <label>Big Swing <select class="sm" data-qf-input="clickupBigSwingOptionId"><option value="">Choose…</option>${swings.options.map((o) => `<option value="${esc(o.id)}"${o.label.toLowerCase() === String(rock.title).toLowerCase() ? " selected" : ""}>${esc(o.label)}</option>`).join("")}</select></label>
+          <button type="button" class="sm" data-qf="save" data-field="clickupBigSwingOptionId">Link</button>`);
       }
     }
   }
@@ -785,7 +786,7 @@ function fixNote(field, value) {
   if (field === "shippedAt") return `Shipped date set to ${value}`;
   if (field === "kpi") return `KPI set: ${value}`;
   if (field === "owner") return `Assigned to ${people.get(value) ?? value}`;
-  if (field === "clickupOptionId") return "Linked to ClickUp";
+  if (field === "clickupBigSwingOptionId") return "Linked to a Big Swing";
   if (field === "status") return `Status set to ${(state.rocks?.statusLabels ?? {})[value] ?? value}`;
   if (field === "state") return `Moved to ${value}`;
   return "Fixed";
@@ -1947,7 +1948,7 @@ function renderRocks() {
     const out = [];
     if (!r.owner) out.push("no owner");
     if (!r.kpi) out.push("no KPI");
-    if (!r.clickupOptionId && !r.clickupBigSwingOptionId) out.push("not linked to ClickUp");
+    if (!r.clickupBigSwingOptionId) out.push("no Big Swing");
     return out;
   };
 
@@ -2042,7 +2043,7 @@ function openRock(id) {
       <label>Start date<input class="rk" type="date" data-f="startDate" value="${esc(r?.startDate ?? "")}"></label>
       <label>Check-in date<input class="rk" type="date" data-f="checkInDate" value="${esc(r?.checkInDate ?? "")}"></label>
       <label>Shipped<input class="rk" type="date" data-f="shippedAt" value="${esc(r?.shippedAt ?? "")}"></label>
-      <label>Big Swing${
+      <label>Big Swing <span class="meta">how tickets reach this rock</span>${
         swings.available
           ? `<select class="rk" data-f="clickupBigSwingOptionId">${opts(swings.options, r?.clickupBigSwingOptionId, "not linked")}</select>`
           : `<input class="rk" data-f="clickupBigSwingOptionId" value="${esc(r?.clickupBigSwingOptionId ?? "")}" placeholder="option id">`

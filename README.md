@@ -148,9 +148,10 @@ token alone still produces a readout.
 1. **Create the `Task Owner` field** in ClickUp (a user-type field on the sprint list).
    It does not exist. Until it does, the whole ownership model is inert and the readout
    says so in one line.
-2. **Decide the Leadership Priority field.** `Rock Reference` already exists and already
-   has a BAU option, so it may only need pointing at rather than creating. See
-   `docs/INTEGRATIONS.md`.
+2. **Link each rock to its Big Swing.** Tickets reach rocks through the ClickUp **Big
+   Swing** field (decided 2026-10-19), so every active rock needs its Big Swing option set.
+   A rock without one is flagged, with a quick fix on the flag. The Leadership Priority
+   (`Rock Reference`) field is now read only for its BAU marker.
 3. **Confirm the team roster** in `config/people.json`. It is pre-filled with the five
    people currently holding open sprint work, inferred rather than told.
 
@@ -245,7 +246,7 @@ Severities: **p1** (Layer 1 items and material test movement), **attention**,
   rename never breaks the link. The one thing a rename does affect is the *name shown*,
   which comes from a cached field map — cached for an hour, and always re-fetched for the
   8 AM official run, so the readout never announces a project by a title nobody uses. A
-  rock that has no Rock Reference set is joined to ClickUp by title match instead, which
+  rock that has no Big Swing set is joined to ClickUp by title match instead, which
   a rename *would* break silently; that is reported as hygiene before it breaks, not
   after.
 - **Tokens never reach a log line.** Redaction happens inside the logger, by header name

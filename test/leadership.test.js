@@ -11,7 +11,8 @@ import { FIELD_MAP } from "./fixtures/tasks.js";
 const NOW_ISO = "2026-09-10T13:00:00Z";
 const config = testConfig();
 
-function leadership({ queue = [], backlog = [], roster = null, dropdownOptions = [] } = {}) {
+// The dropdown the sync check reads is Big Swing: tickets reach rocks through it.
+function leadership({ queue = [], backlog = [], roster = null, swingOptions = [] } = {}) {
   return {
     queue,
     backlog,
@@ -19,7 +20,7 @@ function leadership({ queue = [], backlog = [], roster = null, dropdownOptions =
       { clickupUserId: "u1", name: "dana" },
       { clickupUserId: "u2", name: "rey" },
     ],
-    dropdownOptions,
+    bigSwingOptions: swingOptions,
   };
 }
 
@@ -128,8 +129,8 @@ test("with capacity to spare, an unassigned item is not told to go to the backlo
 test("an active priority with no matching ClickUp dropdown option is flagged", () => {
   const result = run(
     leadership({
-      queue: [{ id: "p1", title: "Brand new priority", state: "active", owner: { clickupUserId: "u1", name: "dana" }, clickupOptionId: "opt_missing" }],
-      dropdownOptions: [{ id: "opt_sub", label: "Subscription upsell" }],
+      queue: [{ id: "p1", title: "Brand new priority", state: "active", owner: { clickupUserId: "u1", name: "dana" }, clickupBigSwingOptionId: "opt_missing" }],
+      swingOptions: [{ id: "opt_sub", label: "Subscription upsell" }],
     }),
   );
   assert.ok(rules(result).includes("leadership.dropdown_missing_option"));
@@ -138,8 +139,8 @@ test("an active priority with no matching ClickUp dropdown option is flagged", (
 test("a BAU dropdown option is never reported as an orphan", () => {
   const result = run(
     leadership({
-      queue: [{ id: "p1", title: "Subscription upsell", state: "active", owner: { clickupUserId: "u1", name: "dana" }, clickupOptionId: "opt_sub" }],
-      dropdownOptions: [
+      queue: [{ id: "p1", title: "Subscription upsell", state: "active", owner: { clickupUserId: "u1", name: "dana" }, clickupBigSwingOptionId: "opt_sub" }],
+      swingOptions: [
         { id: "opt_sub", label: "Subscription upsell" },
         { id: "opt_bau", label: "Business as usual" },
       ],
@@ -173,7 +174,7 @@ test("the roster falls back to the ClickUp workspace members when people.json is
 const rock = (over = {}) => ({
   id: "r1", title: "Sub opt-in for NC", state: "active", status: "on_track",
   owner: { clickupUserId: "u1", name: "dana" }, kpi: "pct_subscription_orders",
-  startDate: "2026-09-08", checkInDate: "2026-09-09", clickupOptionId: "opt_sub", ...over,
+  startDate: "2026-09-08", checkInDate: "2026-09-09", clickupBigSwingOptionId: "opt_sub", ...over,
 });
 
 test("a rock its owner marked At Risk is a P1", () => {
@@ -188,7 +189,7 @@ test("a rock its owner marked At Risk is a P1", () => {
 
 test("an on-track rock checked in on recently is quiet", () => {
   // The dropdown option has to exist too, or the sync check speaks up — correctly.
-  const result = run(leadership({ queue: [rock()], dropdownOptions: [{ id: "opt_sub", label: "Sub opt-in for NC" }] }));
+  const result = run(leadership({ queue: [rock()], swingOptions: [{ id: "opt_sub", label: "Sub opt-in for NC" }] }));
   assert.deepEqual(rules(result), [], "nothing to say about a healthy, linked, recently checked rock");
 });
 
@@ -207,9 +208,12 @@ test("a rock with no KPI is noted, because nothing says whether it worked", () =
   assert.equal(flag.severity, "info");
 });
 
-test("a rock not linked to ClickUp is flagged, since no ticket can ladder up to it", () => {
-  const result = run(leadership({ queue: [rock({ clickupOptionId: null })] }));
+test("a rock with no Big Swing option is flagged, since no ticket can ladder up to it", () => {
+  const result = run(leadership({ queue: [rock({ clickupBigSwingOptionId: null })] }));
   assert.ok(rules(result).includes("leadership.rock_not_linked"));
+  // The Leadership Priority option is not the link, so having one does not help.
+  const priorityOnly = run(leadership({ queue: [rock({ clickupBigSwingOptionId: null, clickupOptionId: "opt_sub" })] }));
+  assert.ok(rules(priorityOnly).includes("leadership.rock_not_linked"));
 });
 
 test("someone who does not count toward capacity can hold as many priorities as needed", () => {

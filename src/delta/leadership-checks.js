@@ -126,16 +126,17 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
     }
   }
 
-  /* --- a rock not linked to the ClickUp dropdown cannot be laddered up to --- */
+  /* --- a rock not linked to a ClickUp Big Swing cannot be laddered up to ---
+     Tickets reach a rock through the Big Swing field, so that is the link that matters. */
   for (const item of queue.filter((i) => i.state === "active")) {
-    if (!item.clickupOptionId) {
+    if (!item.clickupBigSwingOptionId) {
       add({
         layer: 1,
         rule: "leadership.rock_not_linked",
         severity: "attention",
         advisable: false,
         subject: { type: "priority", id: `${item.id}:link`, label: item.title },
-        message: `"${item.title}" is not linked to a ClickUp option, so no ticket can be tied to it and the cross layer check will never see it.`,
+        message: `"${item.title}" is not linked to a ClickUp Big Swing option, so no ticket can be tied to it and the cross layer check will never see it.`,
         values: { owner: item.owner?.name ?? null },
       });
     }
@@ -192,30 +193,33 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
     });
   }
 
-  /* --- the dropdown must match the live queue --- */
+  /* --- the Big Swing dropdown must match the live queue ---
+     Tickets reach rocks through Big Swing, so that is the dropdown that has to carry an
+     option for every active rock. */
   if (lc.dropdownSync?.enforce && clickup) {
     const bauMarkers = (config.clickup.bauMarkers ?? []).map((s) => s.toLowerCase());
-    const optionsById = new Map((leadership.dropdownOptions ?? []).map((o) => [String(o.id), o]));
-    const optionLabels = new Set((leadership.dropdownOptions ?? []).map((o) => String(o.label).toLowerCase()));
+    const swingOptions = leadership.bigSwingOptions ?? [];
+    const optionsById = new Map(swingOptions.map((o) => [String(o.id), o]));
+    const optionLabels = new Set(swingOptions.map((o) => String(o.label).toLowerCase()));
 
     const missing = queue
       .filter((i) => i.state === "active")
-      .filter((i) => (i.clickupOptionId ? !optionsById.has(i.clickupOptionId) : !optionLabels.has(String(i.title).toLowerCase())));
+      .filter((i) => (i.clickupBigSwingOptionId ? !optionsById.has(String(i.clickupBigSwingOptionId)) : !optionLabels.has(String(i.title).toLowerCase())));
 
     if (missing.length) {
       add({
         layer: 1,
         rule: "leadership.dropdown_missing_option",
         severity: "attention",
-        subject: { type: "field", id: "leadership-priority-field", label: "Leadership Priority dropdown" },
-        message: `${missing.length} active leadership priority(ies) have no matching option in the ClickUp Leadership Priority dropdown, so no ticket can ladder up to them.`,
+        subject: { type: "field", id: "big-swing-field", label: "Big Swing dropdown" },
+        message: `${missing.length} active leadership priority(ies) have no matching option in the ClickUp Big Swing dropdown, so no ticket can ladder up to them.`,
         values: { missing: missing.map((i) => i.title) },
       });
     }
 
     const queueLabels = new Set(queue.filter((i) => i.state === "active").map((i) => String(i.title).toLowerCase()));
-    const queueOptionIds = new Set(queue.map((i) => i.clickupOptionId).filter(Boolean));
-    const orphaned = (leadership.dropdownOptions ?? []).filter(
+    const queueOptionIds = new Set(queue.map((i) => i.clickupBigSwingOptionId).filter(Boolean).map(String));
+    const orphaned = swingOptions.filter(
       (o) =>
         !queueOptionIds.has(String(o.id)) &&
         !queueLabels.has(String(o.label).toLowerCase()) &&
@@ -228,8 +232,8 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
         rule: "leadership.dropdown_orphan_option",
         severity: "info",
         advisable: false,
-        subject: { type: "field", id: "leadership-priority-field-orphans", label: "Leadership Priority dropdown" },
-        message: `${orphaned.length} dropdown option(s) in ClickUp match no active leadership priority. Tickets can still be filed against them.`,
+        subject: { type: "field", id: "big-swing-field-orphans", label: "Big Swing dropdown" },
+        message: `${orphaned.length} Big Swing option(s) in ClickUp match no active leadership priority. Tickets can still be filed against them.`,
         values: { orphaned: orphaned.map((o) => o.label) },
       });
     }

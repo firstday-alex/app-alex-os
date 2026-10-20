@@ -8,12 +8,13 @@
 //     priority
 //
 // Business as usual work is expected and allowed. It just should not crowd out or replace
-// the one big swing. That is why BAU and "unrelated" are counted separately: a ticket
-// marked BAU in the Leadership Priority dropdown is expected, and a ticket with no
-// priority at all is what piles up unnoticed.
+// the big swing. That is why BAU and "unrelated" are counted separately: a ticket marked
+// BAU in the Leadership Priority dropdown is expected, and a ticket tied to no rock is
+// what piles up unnoticed.
 //
-// How a ticket links to a leadership priority is DECIDED: the Leadership Priority
-// dropdown field on the ticket. We read that field and nothing else.
+// How a ticket links to a rock is DECIDED: the Big Swing dropdown field on the ticket,
+// matched to the Big Swing option on the rock. Alex set this on 2026-10-19. The
+// Leadership Priority field is read for one thing only, the BAU marker.
 
 import { makeFlag } from "./flags.js";
 import { capacityExempt } from "./leadership-checks.js";
@@ -26,17 +27,14 @@ export function accountableFor(task) {
 }
 
 /**
- * What a ticket is, for the purposes of the one-big-swing rule.
+ * What a ticket is, for the purposes of the big swing rule.
  *
- * Two ClickUp fields carry different halves of the answer:
- *   Big Swing       - which project this ticket belongs to. The spec's "big swing".
- *   Rock Reference  - which quarterly outcome it serves. The leadership priority.
- *
- * A ticket counts as big swing work if it names a Big Swing. Whether that big swing is
- * tied to a live leadership priority is a separate question, answered by whether any
- * active rock claims it.
+ * The Big Swing field says which project a ticket belongs to, and a rock claims a big
+ * swing through its own Big Swing option. That is the whole link. A ticket with no Big
+ * Swing is tied to no rock, whatever its Leadership Priority says, except that a BAU
+ * marker there makes it expected work.
  */
-export function classifyTicketLink(task, { activeOptionIds, activeTitles, activeBigSwingIds, bauMarkers }) {
+export function classifyTicketLink(task, { activeTitles, activeBigSwingIds, bauMarkers }) {
   const priority = task.leadershipPriority;
   const swing = task.bigSwing;
   const priorityLabel = String(priority?.label ?? "").toLowerCase();
@@ -46,48 +44,24 @@ export function classifyTicketLink(task, { activeOptionIds, activeTitles, active
     return { link: "bau", label: priority.label };
   }
 
-  if (swing?.optionId) {
-    const claimed =
-      activeBigSwingIds.has(String(swing.optionId)) ||
-      (priority?.optionId && activeOptionIds.has(String(priority.optionId))) ||
-      (priorityLabel && activeTitles.has(priorityLabel));
-    return {
-      link: "bigSwing",
-      swing: swing.label ?? swing.optionId,
-      swingId: swing.optionId,
-      label: priority?.label ?? null,
-      // Named a big swing, but no active rock claims it. It is real work on a real
-      // project that nothing at leadership level is currently tracking.
-      untethered: !claimed,
-      linkedBy: activeBigSwingIds.has(String(swing.optionId))
-        ? "id"
-        : priority?.optionId && activeOptionIds.has(String(priority.optionId))
-          ? "id"
-          : priorityLabel && activeTitles.has(priorityLabel)
-            ? "title"
-            : null,
-    };
-  }
+  if (!swing?.optionId) return { link: "none", label: priority?.label ?? null };
 
-  if (!priority) return { link: "none" };
-
-  const byId = priority.optionId && activeOptionIds.has(String(priority.optionId));
-  const byLabel = priorityLabel && activeTitles.has(priorityLabel);
-  // A rock is named but no Big Swing is. Counts as laddering up, just not as a project.
-  if (byId || byLabel) {
-    return {
-      link: "leadership",
-      label: priority.label,
-      optionId: priority.optionId,
-      // Which of the two did the work. A title match is a fallback for a rock nobody has
-      // linked yet, and it fails silently the next time someone renames the option — so
-      // the readout says when a link is resting on one, rather than waiting for it to
-      // vanish and be mistaken for work that stopped laddering up.
-      linkedBy: byId ? "id" : "title",
-    };
-  }
-
-  return { link: "stale", label: priority.label, optionId: priority.optionId };
+  const swingLabel = String(swing.label ?? "").toLowerCase();
+  const byId = activeBigSwingIds.has(String(swing.optionId));
+  // A title match is a fallback for a rock whose Big Swing option is not set yet. It fails
+  // silently the next time someone renames the option, so the readout says when a link
+  // is resting on one rather than waiting for it to vanish.
+  const byTitle = !byId && swingLabel && activeTitles.has(swingLabel);
+  return {
+    link: "bigSwing",
+    swing: swing.label ?? swing.optionId,
+    swingId: swing.optionId,
+    label: byId || byTitle ? swing.label ?? null : null,
+    // Named a big swing, but no active rock claims it. Real work on a real project that
+    // nothing at leadership level is currently tracking.
+    untethered: !byId && !byTitle,
+    linkedBy: byId ? "id" : byTitle ? "title" : null,
+  };
 }
 
 export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
@@ -95,9 +69,8 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   const bauMarkers = (config.clickup.bauMarkers ?? []).map((s) => s.toLowerCase());
 
   const activeItems = (leadership.queue ?? []).filter((i) => i.state === "active");
-  // The option id is the real link. Matching on title is a fallback for a rock that has
-  // not been linked yet, and it breaks the moment somebody renames the dropdown option.
-  const activeOptionIds = new Set(activeItems.map((i) => i.clickupOptionId).filter(Boolean).map(String));
+  // The Big Swing option id is the real link. Matching on title is a fallback for a rock
+  // that has not been linked yet, and it breaks the moment somebody renames the option.
   const activeTitles = new Set(activeItems.map((i) => String(i.title).toLowerCase()));
   const activeBigSwingIds = new Set(activeItems.map((i) => i.clickupBigSwingOptionId).filter(Boolean).map(String));
 
@@ -113,7 +86,6 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
         bigSwings: [],
         bauTickets: [],
         unrelatedTickets: [],
-        staleTickets: [],
         untetheredSwings: [],
         totalTickets: 0,
       });
@@ -128,7 +100,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   }
 
   for (const task of openTasks) {
-    const link = classifyTicketLink(task, { activeOptionIds, activeTitles, activeBigSwingIds, bauMarkers });
+    const link = classifyTicketLink(task, { activeTitles, activeBigSwingIds, bauMarkers });
     const accountable = accountableFor(task);
     if (accountable.length === 0) continue; // no owner and no assignee: Layer 2's problem, not this check's
 
@@ -144,9 +116,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
       if (link.link === "bigSwing") {
         row.bigSwings.push(ref);
         if (link.untethered) row.untetheredSwings.push(ref);
-      } else if (link.link === "leadership") row.bigSwings.push(ref);
-      else if (link.link === "bau") row.bauTickets.push(ref);
-      else if (link.link === "stale") row.staleTickets.push(ref);
+      } else if (link.link === "bau") row.bauTickets.push(ref);
       else row.unrelatedTickets.push(ref);
     }
   }
@@ -169,7 +139,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
       layer: "cross",
       severity: "info",
       rule: "crosslayer.linked_by_title",
-      message: `${onTitle.size === 1 ? "One rock is" : `${onTitle.size} rocks are`} linked to ClickUp by matching title rather than by option id: ${[...onTitle].join(", ")}. That match breaks the moment the dropdown option is renamed. Set the Rock Reference on ${onTitle.size === 1 ? "it" : "them"} to make the link survive a rename.`,
+      message: `${onTitle.size === 1 ? "One rock is" : `${onTitle.size} rocks are`} linked to ClickUp by matching title rather than by Big Swing option: ${[...onTitle].join(", ")}. That match breaks the moment the Big Swing option is renamed. Set the Big Swing on ${onTitle.size === 1 ? "the rock" : "those rocks"} to make the link survive a rename.`,
     });
   }
 
@@ -192,7 +162,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
           severity: "p1",
           subject: { type: "person", id: row.id, label: row.name },
           message: `${row.name} has ${row.totalTickets} open sprint ticket(s) but none tied to a live leadership priority. There is no big swing in their sprint.`,
-          values: { totalTickets: row.totalTickets, bau: row.bauTickets.length, unrelated: row.unrelatedTickets.length, stale: row.staleTickets.length },
+          values: { totalTickets: row.totalTickets, bau: row.bauTickets.length, unrelated: row.unrelatedTickets.length },
         });
       }
 
@@ -238,18 +208,6 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
         values: { swings, tickets: row.untetheredSwings.length },
       });
     }
-
-    if (row.staleTickets.length > 0) {
-      add({
-        layer: "cross",
-        rule: "crosslayer.stale_priority_link",
-        severity: "info",
-        advisable: false,
-        subject: { type: "person", id: `${row.id}:stale`, label: row.name },
-        message: `${row.name} has ${row.staleTickets.length} ticket(s) pointing at a leadership priority that is no longer active.`,
-        values: { tickets: row.staleTickets.slice(0, 10).map((t) => ({ name: t.name, priority: t.priorityLabel })) },
-      });
-    }
   }
 
   // A leadership priority nobody is actually working on. The queue says it is active and
@@ -259,9 +217,10 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
     for (const swing of row.bigSwings) if (swing.priorityLabel) laddered.add(String(swing.priorityLabel).toLowerCase());
   }
   for (const item of activeItems) {
+    // Worked on means an open ticket names the rock's Big Swing, or, for a rock with no
+    // Big Swing set yet, names a Big Swing with the rock's title.
     const hit =
       laddered.has(String(item.title).toLowerCase()) ||
-      openTasks.some((t) => t.leadershipPriority?.optionId && item.clickupOptionId && String(t.leadershipPriority.optionId) === String(item.clickupOptionId)) ||
       openTasks.some((t) => t.bigSwing?.optionId && item.clickupBigSwingOptionId && String(t.bigSwing.optionId) === String(item.clickupBigSwingOptionId));
     if (!hit) {
       add({

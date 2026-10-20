@@ -89,11 +89,12 @@ without reading the whole board.
 ## Cross layer consistency checks
 
 Every person's sprint should ladder up to a leadership priority. How a ticket links to one
-is **decided**: the **Leadership Priority** dropdown field on the ticket. Read that field
-and nothing else.
+is **decided**: the **Big Swing** dropdown field on the ticket, matched to the Big Swing
+option set on the rock. Alex decided this on 2026-10-19. A ticket with no Big Swing is tied
+to no rock, whatever its Leadership Priority says.
 
-- Each person's active sprint should include at least one, and really only one, big swing
-  tied to a leadership priority.
+- Each person's active sprint should include at least one big swing tied to a leadership
+  priority, and at most `capacity.bigSwingsPerPerson` (two). Alex is exempt.
 - Flag anyone who has sprint tickets but no big swing.
 - Flag anyone holding a big swing plus a pile of tickets unrelated to any leadership
   priority. The pile threshold is `crossLayer.unrelatedTicketPileThreshold`.
@@ -102,11 +103,12 @@ and nothing else.
 
 BAU and "unrelated" are counted **separately**, and this distinction is what makes the
 rule usable: a ticket whose Leadership Priority is one of `config/clickup.json`'s
-`bauMarkers` is expected work and never counts toward the pile. A ticket with no priority
-at all is what accumulates unnoticed, so only those count.
+`bauMarkers` is expected work and never counts toward the pile. That BAU marker is the only
+thing the Leadership Priority field is read for. A ticket with no Big Swing and no BAU
+marker is what accumulates unnoticed, so only those count.
 
-Distinct **priorities** are counted, not distinct tickets. Several tickets under one
-priority are one big swing, which is the point of the rule.
+Distinct **Big Swings** are counted, not distinct tickets. Several tickets under one Big
+Swing are one big swing, which is the point of the rule.
 
 The person accountable for a ticket is its **Task Owner**, falling back to its assignees
 when no owner is set.
