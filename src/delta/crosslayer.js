@@ -17,7 +17,6 @@
 // Leadership Priority field is read for one thing only, the BAU marker.
 
 import { makeFlag } from "./flags.js";
-import { capacityExempt } from "./leadership-checks.js";
 
 /** The person accountable for a ticket: the Task Owner field, falling back to assignees. */
 export function accountableFor(task) {
@@ -150,10 +149,6 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
     const distinctSwings = new Set(row.bigSwings.map((t) => t.swingId ?? t.swing ?? t.priorityLabel ?? t.id));
     row.distinctBigSwings = distinctSwings.size;
 
-    // The cap on big swings is the cap on leadership priorities: a big swing is a rock
-    // in sprint form, so one number governs both.
-    const cap = config.leadership?.capacity?.bigSwingsPerPerson ?? 1;
-
     if (lc.requireOneBigSwingPerPerson !== false) {
       if (row.totalTickets > 0 && distinctSwings.size === 0) {
         add({
@@ -165,17 +160,8 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
           values: { totalTickets: row.totalTickets, bau: row.bauTickets.length, unrelated: row.unrelatedTickets.length },
         });
       }
-
-      if (distinctSwings.size > cap && !capacityExempt(config, row.id)) {
-        add({
-          layer: "cross",
-          rule: "crosslayer.multiple_big_swings",
-          severity: "p1",
-          subject: { type: "person", id: row.id, label: row.name },
-          message: `${row.name} is carrying ${distinctSwings.size} big swings at once. The rule is up to ${cap} at a time.`,
-          values: { priorities: [...distinctSwings], ticketCount: row.bigSwings.length },
-        });
-      }
+      // No cap on how many big swings a person carries in the sprint. Alex removed that
+      // rule for everyone on 2026-10-19; the cap on rocks a person owns still applies.
     }
 
     // A big swing plus a pile of unrelated tickets. BAU does not count toward the pile:
@@ -241,8 +227,6 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
       peopleChecked: people.size,
       withBigSwing: [...people.values()].filter((p) => p.distinctBigSwings >= 1).length,
       withoutBigSwing: [...people.values()].filter((p) => p.totalTickets > 0 && p.distinctBigSwings === 0).length,
-      overloaded: [...people.values()].filter((p) => p.distinctBigSwings > (config.leadership?.capacity?.bigSwingsPerPerson ?? 1) && !capacityExempt(config, p.id)).length,
-      cap: config.leadership?.capacity?.bigSwingsPerPerson ?? 1,
     },
   };
 }

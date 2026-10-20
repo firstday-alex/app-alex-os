@@ -1,4 +1,5 @@
-// Cross layer check. Person with zero big swings is flagged. Person with two is flagged.
+// Cross layer check. Person with zero big swings is flagged. Any number of big swings is
+// fine: that cap was removed for everyone on 2026-10-19.
 // Person with one plus BAU passes. Person with one plus unrelated tickets is flagged.
 //
 // Tickets reach rocks through the Big Swing field only. SUB and SHIP below are Big Swing
@@ -40,7 +41,7 @@ function check(tasks, leadership = LEADERSHIP) {
   return crossLayerCheck({ clickupDelta: delta, leadership, config, dateKey: "2026-09-10" });
 }
 
-const rulesFor = (result, name) => result.flags.filter((f) => f.subject.label === name).map((f) => f.rule);
+const rulesFor = (result, name) => result.flags.filter((f) => f.subject?.label === name).map((f) => f.rule);
 
 test("person with tickets but zero big swings is flagged", () => {
   const result = check([
@@ -48,16 +49,6 @@ test("person with tickets but zero big swings is flagged", () => {
     { ...task({ id: "b", leadershipPriority: null }), ...owner("u1", "dana") },
   ]);
   assert.ok(rulesFor(result, "dana").includes("crosslayer.no_big_swing"));
-});
-
-test("person with two big swings is flagged", () => {
-  const result = check([
-    { ...task({ id: "a", bigSwing: SUB }), ...owner("u1", "dana") },
-    { ...task({ id: "b", bigSwing: SHIP }), ...owner("u1", "dana") },
-  ]);
-  const rules = rulesFor(result, "dana");
-  assert.ok(rules.includes("crosslayer.multiple_big_swings"));
-  assert.ok(!rules.includes("crosslayer.no_big_swing"));
 });
 
 test("several tickets under ONE priority is one big swing, not several", () => {
@@ -175,17 +166,6 @@ test("a person's big swings are counted from the Big Swing field, not the rock l
   assert.ok(!rulesFor(result, "dana").includes("crosslayer.multiple_big_swings"));
 });
 
-test("two different Big Swings on one person is still flagged", () => {
-  const result = check(
-    [
-      { ...task({ id: "a", bigSwing: SWING_QUIZ }), ...owner("u1", "dana") },
-      { ...task({ id: "b", bigSwing: SWING_CARPE }), ...owner("u1", "dana") },
-    ],
-    LEADERSHIP_WITH_SWINGS,
-  );
-  assert.ok(rulesFor(result, "dana").includes("crosslayer.multiple_big_swings"));
-});
-
 test("a big swing no active rock claims is flagged as untethered", () => {
   const result = check(
     [{ ...task({ id: "a", bigSwing: SWING_CARPE, leadershipPriority: null }), ...owner("u1", "dana") }],
@@ -275,28 +255,16 @@ test("a rock linked only by title is reported, because a rename would break it s
   assert.match(flag.message, /renamed/);
 });
 
-test("someone who does not count toward capacity can carry several big swings", () => {
-  const exemptConfig = testConfig({
-    people: { team: [{ clickupUserId: "u9", name: "alex", countsTowardCapacity: false }], alex: { slackUserId: "UALEX" } },
-  });
-  const tasks = [
-    { ...task({ id: "a", bigSwing: SUB }), ...owner("u9", "alex") },
-    { ...task({ id: "b", bigSwing: SHIP }), ...owner("u9", "alex") },
-  ];
-  const delta = clickupDelta(null, snapshot(tasks), { config: exemptConfig, now: NOW });
-  const result = crossLayerCheck({ clickupDelta: delta, leadership: LEADERSHIP, config: exemptConfig, dateKey: "2026-09-10" });
-  assert.ok(!rulesFor(result, "alex").includes("crosslayer.multiple_big_swings"));
-});
-
-test("with a cap of two, two big swings at once are fine", () => {
-  const capTwo = testConfig();
-  capTwo.leadership.capacity.bigSwingsPerPerson = 2;
-  const tasks = [
-    { ...task({ id: "a", bigSwing: SUB }), ...owner("u1", "dana") },
-    { ...task({ id: "b", bigSwing: SHIP }), ...owner("u1", "dana") },
-  ];
-  const delta = clickupDelta(null, snapshot(tasks), { config: capTwo, now: NOW });
-  const result = crossLayerCheck({ clickupDelta: delta, leadership: LEADERSHIP, config: capTwo, dateKey: "2026-09-10" });
-  assert.ok(!rulesFor(result, "dana").includes("crosslayer.multiple_big_swings"));
-  assert.equal(result.summary.overloaded, 0);
+test("no one is flagged for carrying several big swings at once", () => {
+  const result = check(
+    [
+      { ...task({ id: "a", bigSwing: SWING_QUIZ }), ...owner("u1", "dana") },
+      { ...task({ id: "b", bigSwing: SWING_CARPE }), ...owner("u1", "dana") },
+      { ...task({ id: "c", bigSwing: SUB }), ...owner("u1", "dana") },
+    ],
+    LEADERSHIP_WITH_SWINGS,
+  );
+  assert.equal(result.people.find((p) => p.name === "dana").distinctBigSwings, 3);
+  assert.ok(!result.flags.some((f) => f.rule === "crosslayer.multiple_big_swings"));
+  assert.ok(!rulesFor(result, "dana").includes("crosslayer.no_big_swing"));
 });

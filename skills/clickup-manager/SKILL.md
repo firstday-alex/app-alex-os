@@ -94,7 +94,7 @@ option set on the rock. Alex decided this on 2026-10-19. A ticket with no Big Sw
 to no rock, whatever its Leadership Priority says.
 
 - Each person's active sprint should include at least one big swing tied to a leadership
-  priority, and at most `capacity.bigSwingsPerPerson` (two). Alex is exempt.
+  priority. There is no cap on how many: that rule was removed on 2026-10-19.
 - Flag anyone who has sprint tickets but no big swing.
 - Flag anyone holding a big swing plus a pile of tickets unrelated to any leadership
   priority. The pile threshold is `crossLayer.unrelatedTicketPileThreshold`.

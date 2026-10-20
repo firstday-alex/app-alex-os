@@ -1183,7 +1183,7 @@ function renderCross(report) {
     .map(
       (person) => `<tr>
         <td>${esc(person.name)}</td>
-        <td>${person.distinctBigSwings >= 1 && person.distinctBigSwings <= (detail.summary?.cap ?? 1) ? esc(person.distinctBigSwings) : `<strong>${esc(person.distinctBigSwings)}</strong>`}</td>
+        <td>${person.distinctBigSwings === 0 ? "<strong>0</strong>" : esc(person.distinctBigSwings)}</td>
         <td>${esc(person.bauTickets.length)}</td>
         <td>${esc(person.unrelatedTickets.length)}</td>
         <td>${esc(person.totalTickets)}</td>
@@ -1191,7 +1191,7 @@ function renderCross(report) {
     )
     .join("");
   $("cross").innerHTML = `
-    <p class="sub">Every person's sprint should carry a big swing tied to a live leadership priority, up to ${esc(detail.summary?.cap ?? 1)} at a time (Alex is not capped). Business as usual is expected; it just should not crowd the big swing out.</p>
+    <p class="sub">Every person's sprint should carry at least one big swing tied to a live leadership priority. Business as usual is expected; it just should not crowd the big swing out.</p>
     <div class="scroll"><table>
       <thead><tr><th>Person</th><th>Big swings</th><th>BAU</th><th>Unrelated</th><th>Tickets</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="5">Nobody on the roster.</td></tr>'}</tbody>

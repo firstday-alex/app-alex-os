@@ -222,7 +222,7 @@ function renderCrossLayer(detail, section, lines) {
   }
   const s = detail.summary;
   lines.push(
-    `  ${s.withBigSwing} of ${s.peopleChecked} people hold at least one big swing. ${plural(s.withoutBigSwing, "person has", "people have")} tickets but no big swing. ${plural(s.overloaded, "person holds", "people hold")} more than ${s.cap ?? 1}.`,
+    `  ${s.withBigSwing} of ${s.peopleChecked} people hold at least one big swing. ${plural(s.withoutBigSwing, "person has", "people have")} tickets but no big swing.`,
   );
   for (const person of detail.people) {
     lines.push(
