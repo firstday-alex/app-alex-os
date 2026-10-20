@@ -271,3 +271,28 @@ test("with no Big Swing options read, the missing-option check stands down rathe
   const result = run(leadership({ queue: [rock()], swingOptions: [] }));
   assert.ok(!rules(result).includes("leadership.dropdown_missing_option"));
 });
+
+test("each Big Swing option no live rock claims gets its own named flag", () => {
+  const result = run(
+    leadership({
+      queue: [
+        rock({ id: "r1", title: "Quiz", clickupBigSwingOptionId: "sw_quiz" }),
+        rock({ id: "r2", title: "Family Bundle Builder", state: "shipped", shippedAt: "2026-09-01", clickupBigSwingOptionId: null }),
+      ],
+      backlog: [{ id: "r3", title: "New Products: Ready to Pour", state: "backlog", clickupBigSwingOptionId: "sw_rtp" }],
+      swingOptions: [
+        { id: "sw_quiz", label: "Quiz" },
+        { id: "sw_fbb", label: "Family Bundle Builder" },
+        { id: "sw_ab", label: "AB Testing" },
+        { id: "sw_rtp", label: "New Products: Ready to Pour" },
+        { id: "sw_bau", label: "BAU" },
+      ],
+    }),
+  );
+  const orphans = result.flags.filter((f) => f.rule === "leadership.dropdown_orphan_option");
+  assert.deepEqual(orphans.map((f) => f.subject.label).sort(), ["AB Testing", "New Products: Ready to Pour"], "a shipped rock claims by name; BAU is never a rock");
+  assert.match(orphans.find((f) => f.subject.label === "AB Testing").message, /The Big Swing "AB Testing" in ClickUp matches no active or shipped rock/);
+  const parked = orphans.find((f) => f.subject.label === "New Products: Ready to Pour");
+  assert.match(parked.message, /belongs to "New Products: Ready to Pour", which is in the backlog/);
+  assert.equal(parked.values.parkedRockId, "r3");
+});

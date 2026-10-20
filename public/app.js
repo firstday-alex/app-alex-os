@@ -647,6 +647,7 @@ function flagContext(flag) {
       links.push({ label: "Sprint", href: "#sprint" });
       break;
     case "queue":
+    case "swingOption":
       links.push({ label: "Rocks", href: "#rocks" });
       break;
     case "metric":
@@ -908,44 +909,25 @@ function quickFix(flag) {
   // the person doing the work and linked to it; or link an existing rock to it; or, when
   // its rock is in the backlog, make that rock active.
   if (flag.rule === "crosslayer.big_swing_without_rock") {
-    const live = (state.rocks.rocks ?? []).filter((r) => r.state === "active" || r.state === "shipped");
-    const claimed = (ref) =>
-      live.some(
-        (r) =>
-          (ref.optionId && String(r.clickupBigSwingOptionId ?? "") === String(ref.optionId)) ||
-          String(r.title).trim().toLowerCase() === String(ref.label).trim().toLowerCase(),
-      );
     // Older reports carry names only; those can still be added, just not linked by id.
-    const refs = (flag.values?.swingRefs ?? (flag.values?.swings ?? []).map((label) => ({ label, optionId: null, parkedRockId: null }))).filter((ref) => !claimed(ref));
+    const refs = (flag.values?.swingRefs ?? (flag.values?.swings ?? []).map((label) => ({ label, optionId: null, parkedRockId: null }))).filter((ref) => !swingClaimed(ref));
     if (!refs.length) return "";
-    const sorted = (state.rocks.rocks ?? []).slice().sort((a, b) => String(a.title).localeCompare(String(b.title)));
-    const rockChoices = (selected) =>
-      sorted
-        .map((r) => `<option value="${esc(r.id)}"${r.id === selected?.id ? " selected" : ""}>${esc(r.title)}${r.state === "active" ? "" : ` (${esc(r.state)})`}</option>`)
-        .join("");
     return `<div class="quick-fix quick-fix-rows" data-multi="${esc(flag.rule)}">
-      ${refs
-        .map((ref) => {
-          const parked = ref.parkedRockId ? rockById(ref.parkedRockId) : null;
-          return `<div class="qf-row" data-swing="${esc(ref.label)}" data-swing-id="${esc(ref.optionId ?? "")}" data-owner="${esc(flag.values?.ownerId ?? "")}">
-            <span class="qf-title">${esc(ref.label)}</span>
-            ${parked && parked.state === "backlog"
-              ? `<button type="button" class="sm" data-qf="swing-activate" data-rock-id="${esc(parked.id)}">Make "${esc(parked.title)}" active</button>`
-              : `<button type="button" class="sm" data-qf="swing-add">Add as rock</button>`}
-            ${ref.optionId
-              ? (() => {
-                  // A rock named nearly the same ("Ready to Pour" for "New Products: Ready
-                  // to Pour") is almost always the one meant, so it is offered first.
-                  const likely = likelyRock(ref.label, sorted);
-                  return `<select class="sm" data-qf-input="swing-rock" aria-label="Existing rock"><option value="">or link a rock…</option>${rockChoices(likely)}</select>
-                 <button type="button" class="${likely ? "" : "ghost "}sm" data-qf="swing-link">Link</button>
-                 ${likely ? `<span class="meta">Looks like "${esc(likely.title)}"</span>` : ""}`;
-                })()
-              : ""}
-          </div>`;
-        })
-        .join("")}
+      ${refs.map((ref) => swingRow(ref, { ownerId: flag.values?.ownerId ?? "" })).join("")}
       <span class="meta">A new rock is active, on track, owned by ${esc(subjectOf(flag).label ?? "them")} and linked to the Big Swing. Edit it afterwards for the KPI and dates.</span>
+    </div>`;
+  }
+
+  // A Big Swing option in ClickUp that no live rock claims. The same fixes, plus an owner
+  // to choose (nobody is doing the work in this flag's view) and "Not a rock", for an
+  // option that is ongoing work rather than a project; that sets this one flag aside
+  // while the option stays unclaimed, and the others stay.
+  if (flag.rule === "leadership.dropdown_orphan_option") {
+    const ref = { label: flag.values?.label ?? subjectOf(flag).label, optionId: flag.values?.optionId ?? null, parkedRockId: flag.values?.parkedRockId ?? null };
+    if (!ref.optionId || swingClaimed(ref)) return "";
+    return `<div class="quick-fix quick-fix-rows">
+      ${swingRow(ref, { chooseOwner: true, notARock: true })}
+      <span class="meta">A new rock is active and on track, linked to this Big Swing. Edit it afterwards for the KPI and dates.</span>
     </div>`;
   }
 
@@ -988,6 +970,46 @@ function quickFix(flag) {
       .map((r) => `<span class="qf-rock" data-rock="${esc(r.id)}">${esc(r.title)}
           <button type="button" class="ghost sm" data-qf="set" data-field="state" data-value="backlog">Backlog</button></span>`)
       .join("")}
+  </div>`;
+}
+
+/** Whether a live (active or shipped) rock already claims a Big Swing, by id or name. */
+function swingClaimed(ref) {
+  return (state.rocks?.rocks ?? []).some(
+    (r) =>
+      (r.state === "active" || r.state === "shipped") &&
+      ((ref.optionId && String(r.clickupBigSwingOptionId ?? "") === String(ref.optionId)) ||
+        String(r.title).trim().toLowerCase() === String(ref.label).trim().toLowerCase()),
+  );
+}
+
+/**
+ * One row of fixes for a Big Swing no live rock claims: add it as a rock, make its
+ * backlog rock active, or link an existing rock to it. Shared by the person-level flag
+ * (who is working on it) and the option-level one (nobody yet).
+ */
+function swingRow(ref, { ownerId = "", chooseOwner = false, notARock = false } = {}) {
+  const sorted = (state.rocks?.rocks ?? []).slice().sort((a, b) => String(a.title).localeCompare(String(b.title)));
+  const parked = ref.parkedRockId ? rockById(ref.parkedRockId) : null;
+  // A rock named nearly the same ("Ready to Pour" for "New Products: Ready to Pour") is
+  // almost always the one meant, so it is offered first.
+  const likely = ref.optionId ? likelyRock(ref.label, sorted) : null;
+  const rockChoices = sorted
+    .map((r) => `<option value="${esc(r.id)}"${r.id === likely?.id ? " selected" : ""}>${esc(r.title)}${r.state === "active" ? "" : ` (${esc(r.state)})`}</option>`)
+    .join("");
+  const owners = (state.rocks?.people ?? []).map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+  return `<div class="qf-row" data-swing="${esc(ref.label)}" data-swing-id="${esc(ref.optionId ?? "")}" data-owner="${esc(ownerId)}">
+    <span class="qf-title">${esc(ref.label)}</span>
+    ${parked && parked.state === "backlog"
+      ? `<button type="button" class="sm" data-qf="swing-activate" data-rock-id="${esc(parked.id)}">Make "${esc(parked.title)}" active</button>`
+      : `${chooseOwner ? `<select class="sm" data-qf-input="swing-owner" aria-label="Owner"><option value="">Owner…</option>${owners}</select>` : ""}
+         <button type="button" class="sm" data-qf="swing-add">Add as rock</button>`}
+    ${ref.optionId
+      ? `<select class="sm" data-qf-input="swing-rock" aria-label="Existing rock"><option value="">or link a rock…</option>${rockChoices}</select>
+         <button type="button" class="${likely ? "" : "ghost "}sm" data-qf="swing-link">Link</button>
+         ${likely ? `<span class="meta">Looks like "${esc(likely.title)}"</span>` : ""}`
+      : ""}
+    ${notARock ? `<button type="button" class="ghost sm" data-qf="swing-not-rock" title="Ongoing work, not a project: set this flag aside">Not a rock</button>` : ""}
   </div>`;
 }
 
@@ -1097,23 +1119,27 @@ document.addEventListener("click", (event) => {
   const card = el.closest(".flag[data-key]");
 
   // Unclaimed Big Swings: rows keyed on the swing, not on a rock.
-  const swingRow = el.closest("[data-swing]");
-  if (card && swingRow) {
-    const label = swingRow.dataset.swing;
-    const optionId = swingRow.dataset.swingId || null;
+  const row = el.closest("[data-swing]");
+  if (card && row) {
+    const label = row.dataset.swing;
+    const optionId = row.dataset.swingId || null;
     if (el.dataset.qf === "swing-add") {
+      const owner = row.dataset.owner || row.querySelector('[data-qf-input="swing-owner"]')?.value || null;
       return saveRockPatch(
         card,
-        { title: label, state: "active", status: "on_track", owner: swingRow.dataset.owner || null, ...(optionId ? { clickupBigSwingOptionId: optionId } : {}) },
+        { title: label, state: "active", status: "on_track", owner, ...(optionId ? { clickupBigSwingOptionId: optionId } : {}) },
         { note: `Added "${label}" as a rock` },
       );
+    }
+    if (el.dataset.qf === "swing-not-rock") {
+      return saveTriage(card, { status: "dismissed", note: `"${label}" is ongoing work, not a rock` });
     }
     if (el.dataset.qf === "swing-activate") {
       const id = el.dataset.rockId;
       return saveRockPatch(card, { id, state: "active", ...(optionId ? { clickupBigSwingOptionId: optionId } : {}) }, { note: `Made "${rockById(id)?.title ?? label}" active` });
     }
     if (el.dataset.qf === "swing-link") {
-      const id = swingRow.querySelector('[data-qf-input="swing-rock"]')?.value;
+      const id = row.querySelector('[data-qf-input="swing-rock"]')?.value;
       if (!id) return showQuickFixError(el.closest(".quick-fix"), "Pick a rock first.");
       const rock = rockById(id);
       // A rock already on another Big Swing would lose that link, so say so first.

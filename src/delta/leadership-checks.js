@@ -222,24 +222,37 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
       });
     }
 
-    const queueLabels = new Set(queue.filter((i) => i.state === "active").map((i) => String(i.title).toLowerCase()));
-    const queueOptionIds = new Set(queue.map((i) => i.clickupBigSwingOptionId).filter(Boolean).map(String));
+    // An option is claimed by an active or shipped rock, by its id or, for a rock with no
+    // Big Swing set, by name. BAU is expected work, never a rock.
+    const live = queue.filter((i) => i.state === "active" || i.state === "shipped");
+    const liveIds = new Set(live.map((i) => i.clickupBigSwingOptionId).filter(Boolean).map(String));
+    const liveTitles = new Set(live.map((i) => String(i.title).trim().toLowerCase()));
+    const parked = [...backlog, ...queue.filter((i) => i.state === "backlog")];
     const orphaned = swingOptions.filter(
       (o) =>
-        !queueOptionIds.has(String(o.id)) &&
-        !queueLabels.has(String(o.label).toLowerCase()) &&
-        !bauMarkers.includes(String(o.label).toLowerCase()),
+        !liveIds.has(String(o.id)) &&
+        !liveTitles.has(String(o.label).trim().toLowerCase()) &&
+        !bauMarkers.includes(String(o.label).trim().toLowerCase()),
     );
 
-    if (orphaned.length) {
+    // One flag per option, named, so each can be fixed, or set aside as not a rock,
+    // on its own.
+    for (const option of orphaned) {
+      const rock = parked.find(
+        (i) =>
+          (i.clickupBigSwingOptionId && String(i.clickupBigSwingOptionId) === String(option.id)) ||
+          String(i.title).trim().toLowerCase() === String(option.label).trim().toLowerCase(),
+      );
       add({
         layer: 1,
         rule: "leadership.dropdown_orphan_option",
         severity: "info",
         advisable: false,
-        subject: { type: "field", id: "big-swing-field-orphans", label: "Big Swing dropdown" },
-        message: `${orphaned.length} Big Swing option(s) in ClickUp match no active leadership priority. Tickets can still be filed against them.`,
-        values: { orphaned: orphaned.map((o) => o.label) },
+        subject: { type: "swingOption", id: String(option.id), label: option.label },
+        message: rock
+          ? `The Big Swing "${option.label}" belongs to "${rock.title}", which is in the backlog, so tickets filed against it ladder up to nothing. Make the rock active, or leave it if that work should wait.`
+          : `The Big Swing "${option.label}" in ClickUp matches no active or shipped rock, so tickets filed against it ladder up to nothing. Add it as a rock, link a rock to it, or mark it as not a rock.`,
+        values: { optionId: String(option.id), label: option.label, parkedRockId: rock?.id ?? null },
       });
     }
   }
