@@ -27,6 +27,12 @@
       "_openTasks": 2
     },
     {
+      "clickupUserId": "87474920",
+      "name": "Akansha Gupta",
+      "countsTowardCapacity": true,
+      "_comment": "Added 2026-10-19 at Alex's request, so she can own rocks. ClickUp id from the workspace member list."
+    },
+    {
       "clickupUserId": "87365453",
       "name": "Alex Turney",
       "countsTowardCapacity": false,
