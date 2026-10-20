@@ -137,3 +137,45 @@ test("controls swinging in two tests become one site-wide note, not two test fla
   assert.match(notes[0].message, /\[HP\] Shop For Your Family's Health: 60 to 70; \[KDE-BTS\] -> Bundle Builder V3: 60 to 70/);
   assert.match(notes[0].message, /site-wide move, not a test result/);
 });
+
+/* ------------------------------ decisions due ------------------------------
+   A quiet test is only prompted when a call is due and none is recorded. */
+
+function quietFlags(recommendation, notes = null) {
+  const t = makeTest({ groups: [ctl({ aov: metric(60, { interval: [59, 61] }) }), v1({ aov: metric(80, { interval: [79, 81] }) })] });
+  const before = makeTest({ groups: [ctl({ aov: metric(60.2) }), v1({ aov: metric(80.1) })] });
+  const { flags } = computeFlags({
+    snapshots: { intelligems: igSnapshot([t]), errors: {} },
+    baselines: { clickup: { snapshot: null }, intelligems: { snapshot: igSnapshot([before]) }, leadership: { snapshot: null }, shopify: { snapshot: null } },
+    config: { ...config, intelligems: { ...config.intelligems, verdictMap: { ...(config.intelligems.verdictMap ?? {}), directional_win: recommendation } } },
+    testNotes: notes,
+    dateKey: "2026-09-10",
+    nowIso: "2026-09-10T13:00:00Z",
+  });
+  return flags;
+}
+
+test("a quiet test still at Keep Running, or with a decision recorded, is not prompted", () => {
+  assert.ok(!quietFlags("Ship", { e1: { decision: "Shipping to 100% Monday." } }).some((f) => f.rule === "intelligems.decision_due"));
+  assert.ok(!quietFlags("Ship").some((f) => f.rule === "intelligems.quiet_needs_owner_note"), "the old daily prompt is gone");
+});
+
+test("a quiet test ready for a call with no decision is prompted, with the numbers", () => {
+  const flag = quietFlags("Ship").find((f) => f.rule === "intelligems.decision_due");
+  assert.ok(flag, "the gate is met and the recommendation is Ship");
+  assert.match(flag.message, /is ready for a call: the recommendation is Ship after 16 days and 400 orders in its smallest group, and no decision is recorded/);
+});
+
+test("a quiet test that has not met the gate sits quietly", () => {
+  const small = (g) => ({ ...g, orders: 40 });
+  const t = makeTest({ minOrdersPerGroup: 40, totalOrders: 80, groups: [small(ctl({ aov: metric(60, { interval: [59, 61] }) })), small(v1({ aov: metric(80, { interval: [79, 81] }) }))] });
+  const before = makeTest({ minOrdersPerGroup: 40, groups: [small(ctl({ aov: metric(60.2) })), small(v1({ aov: metric(80.1) }))] });
+  const { flags } = computeFlags({
+    snapshots: { intelligems: igSnapshot([t]), errors: {} },
+    baselines: { clickup: { snapshot: null }, intelligems: { snapshot: igSnapshot([before]) }, leadership: { snapshot: null }, shopify: { snapshot: null } },
+    config,
+    dateKey: "2026-09-10",
+    nowIso: "2026-09-10T13:00:00Z",
+  });
+  assert.ok(!flags.some((f) => f.rule === "intelligems.decision_due"), "Keep Running is not a call");
+});

@@ -22,8 +22,10 @@ Layer 2, but on **results** rather than ticket activity.
 
 - Compare the last snapshot against the most recent snapshot on test results.
 - If a big change appears, flag it for Alex to look into.
-- If no notable change, **prompt the owner** to look in and note next steps or a decision.
-  A quiet test is not a non-event; it still needs a human to say what happens next.
+- If no notable change, say nothing, unless a call is due: the readiness gate is met, the
+  recommendation is Ship, Iterate or Kill, and no decision is recorded in the test's notes.
+  Then prompt for the decision (`intelligems.decision_due`). A test still at Keep Running is
+  meant to sit quietly (changed 2026-10-19; it used to prompt on every quiet test daily).
 
 ## Which metrics
 

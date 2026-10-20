@@ -462,7 +462,7 @@ function flagTiles(flags) {
   return [
     tile(open.filter((f) => f.severity === "p1").length, "P1"),
     tile(open.filter((f) => f.severity === "attention").length, "Attention"),
-    tile(open.filter((f) => f.severity === "prompt").length, "Owner prompts"),
+    tile(open.filter((f) => f.severity === "prompt").length, "Decisions due"),
   ].join("");
 }
 
@@ -475,7 +475,7 @@ function renderAllFlags({ rebuildTools = false } = {}) {
   const open = flags.filter((f) => viewOf(f) === "open");
   const handled = (sev) => flags.filter((f) => f.severity === sev && viewOf(f) !== "open").length;
   const note = (n) => (n ? ` ${plural(n, "handled item is", "handled items are")} under Waiting and Parked above.` : "");
-  renderFlags($("prompts"), open.filter((f) => f.severity === "prompt"), `No quiet tests waiting on an owner.${note(handled("prompt"))}`);
+  renderFlags($("prompts"), open.filter((f) => f.severity === "prompt"), `No test is waiting on a decision.${note(handled("prompt"))}`);
   renderFlags($("hygiene"), open.filter((f) => f.severity === "info"), `Nothing outstanding.${note(handled("info"))}`);
 
   // The collapsed headers are the summary, so each says how much is inside.
@@ -676,7 +676,7 @@ function saveAttnPrefs() {
 /**
  * The flags a view lists. Open is the attention list. Waiting and Parked hold every
  * handled flag whatever its severity, because they are where a handled hygiene item or
- * owner prompt is found again and undone.
+ * decision prompt is found again and undone.
  */
 function flagsForView(view) {
   const flags = state.report?.flags ?? [];

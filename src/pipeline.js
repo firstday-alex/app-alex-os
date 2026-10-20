@@ -202,12 +202,22 @@ export async function runPipeline(opts = {}) {
     logger.warn("settings.unavailable", { err, note: "falling back to defaults" });
   }
 
+  // The test notes: who owns each test, and what has been decided. Read before the flags,
+  // because a test with a decision recorded is not asked for one.
+  let testNotes = {};
+  try {
+    testNotes = (await new TestNotesStore(store.backend, logger).readAll()).notes ?? {};
+  } catch (err) {
+    logger.warn("test_notes.unavailable", { err, note: "test flags render without owners, and decided tests may be prompted" });
+  }
+
   const computed = computeFlags({
     snapshots,
     baselines,
     config,
     settings,
     statusLedger,
+    testNotes,
     dateKey,
     nowIso: now.toISOString(),
     logger,
@@ -218,17 +228,12 @@ export async function runPipeline(opts = {}) {
   // flags themselves know nothing about. Put on the test so a test's flags have an owner
   // to filter and group by, the way a ticket's and a rock's already do.
   if (detail.intelligems?.tests?.length) {
-    try {
-      const notes = (await new TestNotesStore(store.backend, logger).readAll()).notes ?? {};
-      const roster = [...(config.people?.team ?? []), ...(config.people?.alex ? [config.people.alex] : [])];
-      for (const test of detail.intelligems.tests) {
-        const id = notes[String(test.id)]?.[ASSIGNEE_FIELD];
-        if (!id) continue;
-        const person = roster.find((p) => String(p.clickupUserId) === String(id));
-        test.owner = { clickupUserId: String(id), name: person?.name ?? null };
-      }
-    } catch (err) {
-      logger.warn("test_notes.unavailable", { err, note: "test flags render without an owner" });
+    const roster = [...(config.people?.team ?? []), ...(config.people?.alex ? [config.people.alex] : [])];
+    for (const test of detail.intelligems.tests) {
+      const id = testNotes[String(test.id)]?.[ASSIGNEE_FIELD];
+      if (!id) continue;
+      const person = roster.find((p) => String(p.clickupUserId) === String(id));
+      test.owner = { clickupUserId: String(id), name: person?.name ?? null };
     }
   }
 

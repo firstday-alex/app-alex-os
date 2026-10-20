@@ -127,7 +127,7 @@ function clickupFlags(delta, { config, dateKey, fieldMap }) {
   return flags;
 }
 
-function intelligemsFlags(delta, { config, dateKey }) {
+function intelligemsFlags(delta, { config, dateKey, testNotes = null }) {
   const flags = [];
   const add = (spec) => flags.push(makeFlag(spec, { dateKey }));
 
@@ -233,16 +233,21 @@ function intelligemsFlags(delta, { config, dateKey }) {
       });
     }
 
-    // Nothing notable moved. Prompt the owner for next steps or a decision.
-    if (test.quiet) {
+    // A quiet test is only worth a prompt when a call is actually due: the gate is met and
+    // the numbers point somewhere (Ship, Iterate or Kill), and no decision is written in
+    // its notes. A test still at Keep Running is meant to sit quietly; asking about it
+    // every morning was noise.
+    const call = test.recommendation?.recommendation;
+    const decided = Boolean(testNotes?.[String(test.id)]?.decision);
+    if (test.quiet && call && call !== "Keep Running" && !test.recommendation?.unmappedVerdict && !decided) {
       add({
         layer: 3,
-        rule: "intelligems.quiet_needs_owner_note",
+        rule: "intelligems.decision_due",
         severity: "prompt",
-        subject: { ...subject, id: `${test.id}:quiet` },
-        message: `"${test.name}" did not move since yesterday. The owner should note next steps or make a decision.`,
+        subject: { ...subject, id: `${test.id}:decision` },
+        message: `"${test.name}" is ready for a call: the recommendation is ${call} after ${test.daysRunning ?? "?"} days and ${test.minOrdersPerGroup ?? "?"} orders in its smallest group, and no decision is recorded. Add one in its notes.`,
         values: {
-          recommendation: test.recommendation.recommendation,
+          recommendation: call,
           daysRunning: test.daysRunning,
           ordersInSmallestGroup: test.minOrdersPerGroup,
           stabilized: test.timeseriesStabilized?.stabilized ?? null,
@@ -350,7 +355,7 @@ function intelligemsFlags(delta, { config, dateKey }) {
  * `sections` records which layers are present and which are missing and why. A partial
  * readout beats no readout, and the reader has to be able to see the difference.
  */
-export function computeFlags({ snapshots, baselines, config, settings = null, statusLedger = null, dateKey, nowIso, logger }) {
+export function computeFlags({ snapshots, baselines, config, settings = null, statusLedger = null, testNotes = null, dateKey, nowIso, logger }) {
   const sections = {};
   const flags = [];
 
@@ -394,7 +399,7 @@ export function computeFlags({ snapshots, baselines, config, settings = null, st
   let igDelta = null;
   if (snapshots.intelligems) {
     igDelta = intelligemsDelta(baselines.intelligems?.snapshot ?? null, snapshots.intelligems, { config, logger, settings, now: new Date(nowIso) });
-    flags.push(...intelligemsFlags(igDelta, { config, dateKey }));
+    flags.push(...intelligemsFlags(igDelta, { config, dateKey, testNotes }));
     sections.intelligems = { present: true, baselineDate: baselines.intelligems?.dateKey ?? null, counts: igDelta.counts };
   } else {
     sections.intelligems = { present: false, reason: snapshots.errors?.intelligems ?? "collector did not run" };

@@ -329,7 +329,7 @@ export function renderText(report) {
   }
 
   if (prompts.length) {
-    lines.push(`OWNER PROMPTS. ${prompts.length} item(s) that did not move and need a next step from their owner.`);
+    lines.push(`DECISIONS DUE. ${prompts.length} test(s) ready for a call with no decision recorded.`);
     for (const flag of prompts) lines.push(`  ${flag.message}`);
     lines.push("");
   }
@@ -395,7 +395,7 @@ export function renderSlackBlocks(report, config) {
     text: {
       type: "mrkdwn",
       text: [
-        `*${counts.p1} P1* · *${counts.attention} need attention* · ${counts.prompt} owner prompt(s)${counts.newToday == null ? "" : ` · ${counts.newToday} new today`}`,
+        `*${counts.p1} P1* · *${counts.attention} need attention* · ${counts.prompt} decision(s) due${counts.newToday == null ? "" : ` · ${counts.newToday} new today`}`,
         ...(counts.triaged && (counts.triaged.waiting || counts.parked)
           ? [`${counts.triaged.waiting} waiting on someone · ${counts.parked} parked`]
           : []),
