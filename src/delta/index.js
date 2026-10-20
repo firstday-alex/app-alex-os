@@ -272,19 +272,9 @@ function intelligemsFlags(delta, { config, dateKey, testNotes = null }) {
       }
     }
 
-    // A test nobody described is a test nobody will be able to read in three months.
-    // Info, not attention: it is a documentation gap, not a problem with the result.
-    if (test.experienceDiff?.descriptionMissing) {
-      add({
-        layer: 3,
-        rule: "intelligems.no_description",
-        severity: "info",
-        advisable: false,
-        subject: { ...subject, id: `${test.id}:description` },
-        message: `"${test.name}" has no description in Intelligems. The system can say what it changes mechanically${test.experienceDiff.summary ? ` (${test.experienceDiff.summary})` : ""}, but not why.`,
-        values: { types: test.experienceDiff.types, derivedSummary: test.experienceDiff.summary },
-      });
-    }
+    // No flag for a test with no description in Intelligems: Alex removed it on
+    // 2026-10-20. The Tests view still shows what a test changes, worked out from its
+    // setup, so the gap is visible where it matters without a line in the readout.
 
     if (test.metricsConfigured === false) {
       add({
