@@ -2,6 +2,11 @@
   "_comment": "Layer 0. Store-wide metrics from ShopifyQL, for the overview at the top of the dashboard. Queries and formulas are config, not code: adding a metric or changing a filter is an edit here, never a deploy of new logic.",
   "_VERIFIED": "Every query and window below was run against the live First Day store on 2026-09-10 and returned rows. ShopifyQL is read-only aggregated reporting.",
   "shopDomain": "first-day-inc.myshopify.com",
+  "adminReport": {
+    "storeHandle": "first-day-inc",
+    "reportId": "324141154",
+    "_comment": "The Shopify analytics report the dashboard's 'Check in Shopify' links open, with the tile's own query passed in the ql parameter. Taken from a report link Alex shared on 2026-10-19. Opening a link does not change the report; pressing Save in Shopify would overwrite it with that query, so a dedicated scratch report is the safer target. Remove this block to hide the links."
+  },
   "apiVersion": "2026-07",
   "currency": "USD",
   "filters": {
@@ -39,12 +44,14 @@
   },
   "queries": {
     "acquisition": {
+      "label": "Orders and sales",
       "schema": "sales",
       "show": "gross_sales, discounts, shipping_charges, orders, average_order_value",
       "filter": "newCustomerOnlineStore",
       "orderBy": null
     },
     "sessions": {
+      "label": "Sessions",
       "schema": "sessions",
       "show": "sessions, sessions_with_cart_additions, sessions_that_reached_checkout, sessions_that_completed_checkout, conversion_rate",
       "filter": null,
@@ -53,6 +60,7 @@
     },
     "_comment": "A query is run once per window. The collector assembles FROM <schema> SHOW <show> WHERE <filter> SINCE <since> UNTIL <until>.",
     "subscription": {
+      "label": "Subscription orders",
       "schema": "sales",
       "show": "orders",
       "filter": "newCustomerOnlineStoreSubscription",
@@ -60,6 +68,7 @@
       "_comment": "The numerator for Sub. Opt-In. Deliberately NOT a GROUP BY subscription_or_one_time: an order containing both a subscription line and a one-time line appears in both groups, so the groups sum to 12,968 against 9,902 distinct orders. Dividing by that sum understates opt-in by about 18 points."
     },
     "oneTime": {
+      "label": "One-time orders",
       "schema": "sales",
       "show": "orders",
       "filter": "newCustomerOnlineStoreOneTime",

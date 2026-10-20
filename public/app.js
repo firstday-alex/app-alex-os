@@ -152,6 +152,31 @@ function formatMetric(value, format, { precise = false } = {}) {
   return COUNT.format(Math.round(value));
 }
 
+/**
+ * "Check in Shopify" links: one per window, opening the exact query behind the number
+ * in a Shopify report. A tile built from two queries (Sub. Opt-In divides subscription
+ * orders by all orders) gets a row for each, so both halves can be checked.
+ */
+function shopifyLinksRow(links, windows) {
+  if (!links) return "";
+  const byQuery = new Map();
+  for (const w of windows ?? []) {
+    for (const link of links[w.key] ?? []) {
+      if (!byQuery.has(link.query)) byQuery.set(link.query, { label: link.label, links: [] });
+      byQuery.get(link.query).links.push({ window: w.label, url: link.url });
+    }
+  }
+  if (!byQuery.size) return "";
+  const multi = byQuery.size > 1;
+  return [...byQuery.values()]
+    .map(
+      (q) => `<div class="metric-src"><span>${esc(multi ? q.label : "Check in Shopify")}</span>${q.links
+        .map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer" title="Open this ${esc(l.window)} query in Shopify">${esc(l.window)} ↗</a>`)
+        .join("")}</div>`,
+    )
+    .join("");
+}
+
 function renderStoreMetrics(report) {
   const section = report.sections?.shopify;
   const data = report.detail?.shopify;
@@ -213,6 +238,7 @@ function renderStoreMetrics(report) {
         <div class="metric-label">${esc(t.label)}${info}</div>
         <div class="metric-value">${esc(formatMetric(t.value, t.format, { precise }))}</div>
         <div class="metric-cmps">${cmps}</div>
+        ${shopifyLinksRow(t.shopifyLinks, data?.windows)}
       </div>`;
     })
     .join("");
@@ -277,6 +303,7 @@ function renderFunnel(report) {
 
   host.innerHTML = `
     <h3 class="funnel-title">${esc(f.label)} <span class="meta">${esc(f.window.label)} · comparisons are on the step rate, not the count</span></h3>
+    ${shopifyLinksRow(f.shopifyLinks, report.detail?.shopify?.windows)}
     <div class="funnel">${rows}</div>`;
 }
 

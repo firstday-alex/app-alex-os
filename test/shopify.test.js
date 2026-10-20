@@ -16,8 +16,11 @@ import {
   windowDays,
   runQuery,
   collectShopify,
+  shopifyReportUrl,
+  formulaSources,
 } from "../src/collectors/shopify.js";
 import { testConfig } from "./fixtures/config.js";
+import { loadConfig as loadRealConfig } from "../src/config.js";
 
 /** What the live store returned for the MTD / 7D / 30D windows, new customers, online store. */
 const LIVE = {
@@ -433,4 +436,32 @@ test("both row shapes parse, because rows is a JSON scalar with no schema guaran
 
   const empty = parseTable({ columns, rows: [] });
   assert.equal(empty.metrics.orders, null, "no rows means unknown, not zero");
+});
+
+/* ---------------------------- check in Shopify ----------------------------
+   Every store number links to a Shopify report running exactly the query behind it, so
+   a number that looks wrong can be checked against Shopify's own answer. */
+
+test("a report link carries the exact query, encoded the way Shopify reads it", () => {
+  const config = { shopify: { shopDomain: "first-day-inc.myshopify.com", adminReport: { storeHandle: "first-day-inc", reportId: "324141154" } } };
+  const ql = "FROM sales SHOW orders WHERE new_or_returning_customer = 'New' DURING yesterday";
+  const url = new URL(shopifyReportUrl(config, ql));
+  assert.equal(url.origin + url.pathname, "https://admin.shopify.com/store/first-day-inc/analytics/reports/324141154");
+  assert.equal(url.searchParams.get("ql"), ql, "decodes back to the query, quotes and all");
+  assert.equal(shopifyReportUrl({ shopify: { shopDomain: "x.myshopify.com" } }, ql), null, "no report configured, no link");
+});
+
+test("Sub. Opt-In links to both of its queries, ncAOV to its one", () => {
+  const config = loadRealConfig();
+  const optin = config.shopify.derived.sub_optin;
+  assert.deepEqual(formulaSources(optin.formula, optin.from).sort(), ["acquisition", "subscription"]);
+  const aov = config.shopify.derived.net_aov;
+  assert.deepEqual(formulaSources(aov.formula, aov.from), ["acquisition"]);
+});
+
+test("the linked query for a window is the one the collector runs", () => {
+  const config = loadRealConfig();
+  const ql = buildQuery(config, "subscription", "yesterday");
+  assert.match(ql, /^FROM sales SHOW orders WHERE .*subscription_or_one_time = 'subscription' DURING yesterday$/);
+  assert.equal(new URL(shopifyReportUrl(config, ql)).searchParams.get("ql"), ql);
 });

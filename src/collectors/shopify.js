@@ -163,6 +163,53 @@ export function buildQuery(config, queryName, windowName) {
     .join(" ");
 }
 
+/** The queries a derived formula reads: `query.metric` names its query, a bare metric is the formula's own. */
+export function formulaSources(formula, defaultQuery = null) {
+  const names = new Set();
+  for (const token of String(formula ?? "").match(/[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?/g) ?? []) {
+    if (token.includes(".")) names.add(token.split(".")[0]);
+    else if (defaultQuery) names.add(defaultQuery);
+  }
+  return [...names];
+}
+
+/**
+ * A link that opens one query in a Shopify analytics report, so a number on the
+ * dashboard can be checked against Shopify's own answer to exactly the same question.
+ *
+ * Shopify reads the query from the `ql` parameter of a report URL and runs it in place
+ * of the report's own. It needs a report to open, so config names one
+ * (shopify.adminReport). Opening the link does not change that report; saving it there
+ * would. Null when no report is configured.
+ */
+export function shopifyReportUrl(config, ql) {
+  const report = config.shopify?.adminReport;
+  const handle = report?.storeHandle ?? String(config.shopify?.shopDomain ?? "").replace(/\.myshopify\.com$/, "");
+  if (!report?.reportId || !handle) return null;
+  return `https://admin.shopify.com/store/${encodeURIComponent(handle)}/analytics/reports/${encodeURIComponent(report.reportId)}?${new URLSearchParams({ ql })}`;
+}
+
+/** For each window, a link to each query a number is built from. */
+function sourceLinks(config, sources, windowNames) {
+  const sc = config.shopify;
+  const out = {};
+  for (const windowName of windowNames) {
+    out[windowName] = sources
+      .map((queryName) => {
+        let ql;
+        try {
+          ql = buildQuery(config, queryName, windowName);
+        } catch {
+          return null;
+        }
+        const url = shopifyReportUrl(config, ql);
+        return url ? { query: queryName, label: sc.queries?.[queryName]?.label ?? queryName, url } : null;
+      })
+      .filter(Boolean);
+  }
+  return out;
+}
+
 /**
  * Evaluate a derived formula over one window's results.
  *
@@ -390,6 +437,12 @@ export async function collectShopify({ config, token, env = process.env, store, 
       companions,
       formula: sc.derived?.[tile.metric]?.formula ?? null,
       filter: filterName ? sc.filters?.[filterName] ?? null : null,
+      // The query, or for a derived tile each query, behind the number in every window.
+      shopifyLinks: sourceLinks(
+        config,
+        tile.from === "derived" ? formulaSources(sc.derived?.[tile.metric]?.formula, sc.derived?.[tile.metric]?.from) : [tile.from],
+        windowNames,
+      ),
     };
   });
 
@@ -418,6 +471,7 @@ export async function collectShopify({ config, token, env = process.env, store, 
         return {
           label: funnelSpec.label ?? "Conversion funnel",
           window: { key: primaryName, label: sc.windows[primaryName].label },
+          shopifyLinks: sourceLinks(config, [funnelSpec.from], windowNames),
           steps: primarySteps.map((step, index) => ({
             ...step,
             comparisons: comparisonWindows.map((windowName) => {
