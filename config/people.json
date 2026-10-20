@@ -1,41 +1,34 @@
 {
-  "_comment": "Team roster. Maps ClickUp user ids to a display name and a Slack member id. The one-big-swing capacity rule needs this to know its denominator.",
+  "_comment": "Team roster. Maps ClickUp user ids to a display name. The one-big-swing capacity rule needs this to know its denominator. No contact details: the system only ever communicates with Alex, never with the team.",
   "_BLOCKER": "The workspace has 54 members, which is the whole company. The team below was inferred from who actually holds OPEN work in Current Sprint as of 2026-09-10, which is the only defensible denominator for the one-big-swing rule. Alex must confirm it: getting this list wrong makes 'everyone is at capacity' either meaningless or wrong.",
   "team": [
     {
       "clickupUserId": "87349065",
       "name": "Robson Lopes",
-      "slackUserId": "U09KFSKDCPQ",
       "countsTowardCapacity": true,
       "_openTasks": 6
     },
     {
       "clickupUserId": "44140689",
       "name": "Blake Tucker",
-      "slackUserId": null,
       "countsTowardCapacity": true,
-      "_openTasks": 2,
-      "_TODO_slack": "Slack has one Blake (U050NDP5N8P, blake@firstday.com) but no surname to confirm it is Blake Tucker. Set slackUserId once confirmed."
+      "_openTasks": 2
     },
     {
       "clickupUserId": "81872941",
       "name": "Oleksandr Zghonnyk",
-      "slackUserId": null,
       "countsTowardCapacity": true,
-      "_openTasks": 1,
-      "_TODO_slack": "Not found in Slack search by name. Set slackUserId by hand."
+      "_openTasks": 1
     },
     {
       "clickupUserId": "87471371",
       "name": "Cristobal Alanis",
-      "slackUserId": "U0BTG0KRRFZ",
       "countsTowardCapacity": true,
       "_openTasks": 2
     },
     {
       "clickupUserId": "87365453",
       "name": "Alex Turney",
-      "slackUserId": "U09RXGL86GL",
       "countsTowardCapacity": false,
       "_comment": "Alex reads the readout rather than holding a queue in it, but currently holds 2 open tickets. countsTowardCapacity is false so Alex is not counted in the 'everyone is full' denominator. Flip it if Alex should carry a big swing like everyone else."
     }

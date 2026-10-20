@@ -69,7 +69,6 @@ Connect the repo. Build settings come from `netlify.toml`; there is no build ste
 | `SLACK_BOT_TOKEN` | `xoxb-...`, scope `chat:write` |
 | `SLACK_SIGNING_SECRET` | verifies inbound Slack requests |
 | `SLACK_READOUT_CHANNEL` | channel id, e.g. `C0123456789` |
-| `SLACK_NUDGE_CHANNEL` | optional. Channel id the dashboard's Nudge owner posts to, tagging the owner. Pick one the team is in. Falls back to `SLACK_READOUT_CHANNEL` |
 | `ANTHROPIC_API_KEY` | advisor and learning skill only |
 | `GITHUB_TOKEN` | scoped to this repo: contents + pull requests write |
 | `DASHBOARD_PASSWORD` | the shared dashboard password |

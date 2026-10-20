@@ -11,7 +11,6 @@ import { FlagLedger, annotateFlags, flagKey, activeTriage, flagRef } from "../sr
 import { handleTriage } from "../netlify/functions/slack-interactive.mjs";
 import { workingDaysBetween, addWorkingDays } from "../src/lib/time.js";
 import { buildReport } from "../src/render/report.js";
-import { resolveRecipient, nudgeRoster, sendNudge, nudgeThreadKey, NudgeError } from "../src/send/nudge.js";
 
 function backend() {
   const map = new Map();
@@ -202,58 +201,6 @@ test("a readout without a ledger reads as it always did", () => {
   assert.equal(r.summary.newToday, null);
 });
 
-/* ---------------------------------- nudge ---------------------------------- */
-
-const nudgeConfig = {
-  system: { slack: { nudges: { channelEnv: "SLACK_NUDGE_CHANNEL" } }, http: { maxAttempts: 1 } },
-  people: {
-    team: [
-      { name: "Robson Lopes", clickupUserId: "1", slackUserId: "U1" },
-      { name: "Blake Tucker", clickupUserId: "2", slackUserId: null },
-      { name: "Blake Other", clickupUserId: "3", slackUserId: "U3" },
-    ],
-    alex: { name: "Alex Turney", clickupUserId: "9", slackUserId: "UA" },
-  },
-};
-
-test("a recipient matches exactly, or by a unique first name, and never by a guess", () => {
-  const roster = nudgeRoster(nudgeConfig);
-  assert.equal(resolveRecipient(roster, "Robson Lopes").slackUserId, "U1");
-  assert.equal(resolveRecipient(roster, "robson").slackUserId, "U1", "ClickUp's short username");
-  assert.equal(resolveRecipient(roster, "Blake"), null, "two Blakes is ambiguous");
-  assert.equal(resolveRecipient(roster, "Blake Tucker").name, "Blake Tucker");
-});
-
-test("a nudge tags the owner in the nudge channel and records its thread", async () => {
-  const b = backend();
-  const calls = [];
-  const fetchImpl = async (url, options) => {
-    calls.push({ url, body: JSON.parse(options.body) });
-    return new Response(JSON.stringify({ ok: true, channel: "CN", ts: "1.2" }), { status: 200, headers: { "content-type": "application/json" } });
-  };
-  const sent = await sendNudge({
-    config: nudgeConfig,
-    env: { SLACK_NUDGE_CHANNEL: "CN", SLACK_READOUT_CHANNEL: "CR", SLACK_BOT_TOKEN: "xoxb-t" },
-    store: { backend: b },
-    to: "Robson",
-    text: "What's next?",
-    flagKey: "clickup.stalled:t1",
-    fetchImpl,
-  });
-  assert.deepEqual(sent, { to: "Robson Lopes", channel: "CN", ts: "1.2" });
-  assert.equal(calls[0].body.channel, "CN");
-  assert.match(calls[0].body.text, /^Posted by Claude/, "every message identifies itself as Claude");
-  assert.match(calls[0].body.text, /<@U1> What's next\?/);
-  assert.ok(await b.get(nudgeThreadKey("CN", "1.2")), "the thread is recorded so its replies skip the learning skill");
-});
-
-test("a nudge with no Slack id or no channel is refused before anything is sent", async () => {
-  const args = { config: nudgeConfig, store: { backend: backend() }, text: "hi", flagKey: "k", fetchImpl: async () => assert.fail("must not call Slack") };
-  await assert.rejects(sendNudge({ ...args, env: { SLACK_NUDGE_CHANNEL: "CN" }, to: "Blake Tucker" }), (err) => err instanceof NudgeError && /no Slack member ID/.test(err.message));
-  await assert.rejects(sendNudge({ ...args, env: {}, to: "Robson" }), /SLACK_NUDGE_CHANNEL/);
-  await assert.rejects(sendNudge({ ...args, env: { SLACK_NUDGE_CHANNEL: "CN" }, to: "Nobody" }), /not on the roster/);
-});
-
 /* ---------------------------- triage from Slack ---------------------------- */
 
 test("each flag in the Slack readout carries triage buttons, inside Slack's limits", () => {
@@ -312,12 +259,19 @@ test("a snooze from Slack is dated in working days", async () => {
   assert.match(responses[0].blocks[1].elements[0].text, new RegExp(`Snoozed until ${t.until}`));
 });
 
-test("only Alex can triage from Slack", async () => {
+test("only Alex can triage from Slack, and anyone else gets no reply at all", async () => {
   const { result, responses, ledger } = await slackClick({ user: "UOTHER" });
   assert.equal(result.reason, "not_alex");
   assert.equal(ledger.entries["clickup.stalled:t1"].triage, undefined);
-  assert.equal(responses[0].response_type, "ephemeral");
-  assert.match(responses[0].text, /^Posted by Claude/, "the refusal identifies itself as Claude");
+  assert.deepEqual(responses, [], "the system only communicates with Alex");
+});
+
+test("the team roster carries no contact details", async () => {
+  const { default: people } = await import("../config/people.json", { with: { type: "json" } });
+  for (const person of people.team) {
+    assert.equal(person.slackUserId, undefined, `${person.name} has a Slack id; the system never contacts the team`);
+    assert.equal(person.email, undefined, `${person.name} has an email; the system never contacts the team`);
+  }
 });
 
 test("a button on a flag that has since cleared says so and writes nothing", async () => {

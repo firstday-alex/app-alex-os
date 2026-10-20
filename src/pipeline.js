@@ -216,7 +216,7 @@ export async function runPipeline(opts = {}) {
 
   // Who owns each test. Chosen on the Tests view and kept in the test notes, which the
   // flags themselves know nothing about. Put on the test so a test's flags have an owner
-  // to filter by and nudge, the way a ticket's and a rock's already do.
+  // to filter and group by, the way a ticket's and a rock's already do.
   if (detail.intelligems?.tests?.length) {
     try {
       const notes = (await new TestNotesStore(store.backend, logger).readAll()).notes ?? {};

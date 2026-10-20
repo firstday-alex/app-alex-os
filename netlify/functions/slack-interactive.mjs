@@ -7,7 +7,8 @@
 // Triage: Done, Snooze, Not a problem. Written straight to the flag ledger, the same
 // write the dashboard makes, and the button row is replaced in the message with what was
 // done and by whom. Only Alex can triage: the readout is Alex's queue, and a teammate
-// clearing a flag about their own work would defeat it.
+// clearing a flag about their own work would defeat it. A click from anyone else is
+// logged and otherwise ignored, with no reply: the system only communicates with Alex.
 
 import { loadConfig } from "../../src/config.js";
 import { createLogger } from "../../src/lib/logger.js";
@@ -37,13 +38,13 @@ const ephemeral = (text) => ({ response_type: "ephemeral", replace_original: fal
 export async function handleTriage({ payload, action, config, store, logger, respondImpl = respond }) {
   const user = payload.user?.id ?? null;
   const alex = config.people?.alex?.slackUserId ?? null;
+  // Without Alex's id there is no telling who clicked, so nobody can triage.
   if (!alex) {
-    await respondImpl(payload, ephemeral("Triage from Slack is off until config.people.alex.slackUserId is set, so nobody else can clear Alex's flags."), logger);
+    logger.warn("triage.alex_slack_id_unset", { user });
     return { ok: false, reason: "alex_unset" };
   }
   if (user !== alex) {
-    logger.info("triage.refused_other_user", { user });
-    await respondImpl(payload, ephemeral("Only Alex can triage readout flags. If this one is yours to fix, reply in the thread instead."), logger);
+    logger.info("triage.ignored_other_user", { user });
     return { ok: false, reason: "not_alex" };
   }
 
@@ -106,8 +107,17 @@ export default async (req) => {
   }
 
   const action = (payload.actions ?? [])[0];
+  const config = loadConfig();
+
+  // Every button here is Alex's. Anyone else's click gets no reply at all, because the
+  // system only communicates with Alex.
+  const alex = config.people?.alex?.slackUserId ?? null;
+  if (payload.type === "block_actions" && (!alex || payload.user?.id !== alex)) {
+    logger.info("slack.click_ignored", { user: payload.user?.id ?? null, action: action?.action_id ?? null, alexIdSet: Boolean(alex) });
+    return new Response("", { status: 200 });
+  }
+
   if (payload.type === "block_actions" && SLACK_TRIAGE[action?.action_id]) {
-    const config = loadConfig();
     try {
       await handleTriage({ payload, action, config, store: await Store.open({ config, logger }), logger });
     } catch (err) {

@@ -54,7 +54,6 @@ async function load() {
   state.today = body.today ?? null;
   state.flagEntries = body.flagEntries ?? null;
   state.people = body.people ?? [];
-  state.nudgeChannelSet = Boolean(body.nudgeChannelSet);
 
   if (body.empty) {
     $("banners").innerHTML = `<div class="note"><strong>Nothing yet.</strong> ${esc(body.message)}</div>`;
@@ -274,7 +273,6 @@ function triageOf(flag) {
   if (t.until && state.today && t.until <= state.today) return null;
   return t;
 }
-const nudgesOf = (flag) => (state.flagEntries ? state.flagEntries[keyOf(flag)]?.nudges : flag.nudges) ?? [];
 const viewOf = (flag) => {
   const t = triageOf(flag);
   return !t ? "open" : t.status === "waiting" ? "waiting" : "parked";
@@ -313,8 +311,6 @@ function ageBadges(flag) {
   if (flag.isNew) out.push(`<span class="chip age-new">new today</span>`);
   else if (flag.openDays) out.push(`<span class="chip">open ${esc(plural(flag.openDays, "working day", "working days"))}</span>`);
   if (flag.escalated) out.push(`<span class="chip bad" title="Left at Attention past the escalation mark, so it is now a P1">escalated</span>`);
-  const last = nudgesOf(flag).at(-1);
-  if (last) out.push(`<span class="chip" title="Posted in Slack">nudged ${esc(last.to)} ${esc(new Date(last.at).toLocaleDateString())}</span>`);
   return out.join("");
 }
 
@@ -340,7 +336,7 @@ function triageActions() {
       </select>
       <button type="button" class="ghost sm" data-triage="waiting-open">Waiting on…</button>
       <button type="button" class="ghost sm" data-triage="dismiss-open">Not a problem…</button>
-      <button type="button" class="ghost sm" data-triage="nudge-open">Nudge owner</button>
+      <button type="button" class="ghost sm" data-triage="nudge-open" title="A message for you to send yourself">Draft a nudge</button>
     </div>
     <div class="triage-panel hidden"></div>`;
 }
@@ -686,10 +682,13 @@ function matchPerson(name) {
   return first.length === 1 ? first[0] : null;
 }
 
-/** The nudge text. Fixed wording, no model: Alex reads and edits it before it goes. */
+/**
+ * A nudge for Alex to send himself. The system never contacts the team, so this is only
+ * ever copied: fixed wording, no model, edited before it is copied.
+ */
 function nudgeText(flag) {
   const { url } = flagContext(flag);
-  return `Alex asked me to check in on this from the daily readout: ${flag.message}${url ? ` ${url}` : ""}\nWhat's the next step, and when do you expect it to move? A reply in this thread is perfect.`;
+  return `Quick check on this: ${flag.message}${url ? ` ${url}` : ""}\nWhat's the next step, and when do you expect it to move?`;
 }
 
 function openPanel(card, kind) {
@@ -718,31 +717,11 @@ function openPanel(card, kind) {
   } else if (kind === "nudge") {
     panel.innerHTML = `
       <label>To ${personSelect("tp-person")}</label>
-      <label class="wide">Message <span class="meta">Posted in Slack tagging them, signed as Claude. Replies come back in its thread.</span>
+      <label class="wide">Message <span class="meta">For you to send yourself. Nothing is sent from here.</span>
         <textarea id="tp-text" rows="4">${esc(nudgeText(flag))}</textarea></label>
-      <p class="meta" id="tp-nudge-note"></p>
-      <button type="button" class="sm" data-triage="nudge-send">Send in Slack</button>
-      <button type="button" class="ghost sm" data-triage="nudge-copy">Copy, and mark waiting</button>`;
-    updateNudgeNote(card);
+      <button type="button" class="sm" data-triage="nudge-copy">Copy, and mark waiting</button>`;
   }
   panel.classList.remove("hidden");
-}
-
-function updateNudgeNote(card) {
-  const name = card.querySelector("#tp-person")?.value;
-  const send = card.querySelector('[data-triage="nudge-send"]');
-  const note = card.querySelector("#tp-nudge-note");
-  if (!send || !note) return;
-  const person = matchPerson(name);
-  const reason = !state.nudgeChannelSet
-    ? "No nudge channel is set. Set SLACK_NUDGE_CHANNEL in Netlify, or copy the message."
-    : !person
-      ? `${name} is not on the roster in config/people.json. Copy the message instead.`
-      : !person.canNudge
-        ? `There is no Slack member ID for ${person.name} in config/people.json yet. Copy the message instead.`
-        : "";
-  send.disabled = Boolean(reason);
-  note.textContent = reason;
 }
 
 function chosenPerson(card) {
@@ -757,7 +736,6 @@ document.addEventListener("change", (event) => {
   if (event.target.dataset.triage === "snooze" && event.target.value) {
     saveTriage(card, { status: "snoozed", workingDays: Number(event.target.value) });
   }
-  if (event.target.id === "tp-person") updateNudgeNote(card);
 });
 
 document.addEventListener("click", async (event) => {
@@ -787,26 +765,6 @@ document.addEventListener("click", async (event) => {
       return showPanelError(card, "The browser would not copy. Select the message and copy it by hand.");
     }
     return saveTriage(card, { status: "waiting", waitingOn: who });
-  }
-  if (action === "nudge-send") {
-    const who = chosenPerson(card);
-    if (!who) return;
-    el.disabled = true;
-    el.textContent = "Sending…";
-    try {
-      const res = await fetch(`${FN}/nudge`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key: card.dataset.key, layer: card.dataset.layer, to: who, text: card.querySelector("#tp-text")?.value ?? "" }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
-      applyEntry(body);
-    } catch (err) {
-      el.disabled = false;
-      el.textContent = "Send in Slack";
-      showPanelError(card, `Not sent: ${err.message}`);
-    }
   }
 });
 

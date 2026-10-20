@@ -8,7 +8,6 @@ import { loadConfig } from "../../src/config.js";
 import { createLogger } from "../../src/lib/logger.js";
 import { Store } from "../../src/lib/storage.js";
 import { verifySlackSignature } from "../../src/send/slack.js";
-import { nudgeThreadKey } from "../../src/send/nudge.js";
 
 export default async (req) => {
   const config = loadConfig();
@@ -46,14 +45,6 @@ export default async (req) => {
   if (event.bot_id || event.subtype === "bot_message") return new Response("", { status: 200 });
   if (event.type !== "message" || !event.thread_ts) return new Response("", { status: 200 });
 
-  // A reply under a nudge is a teammate answering Alex, not feedback on the readout,
-  // and that holds for Alex's own replies there too.
-  const store = await Store.open({ config, logger });
-  if (await store.backend.get(nudgeThreadKey(event.channel, event.thread_ts))) {
-    logger.info("learning.ignored_nudge_thread", { ts: event.ts });
-    return new Response("", { status: 200 });
-  }
-
   const alexSlackId = config.people?.alex?.slackUserId ?? null;
   if (alexSlackId && event.user !== alexSlackId) {
     logger.info("learning.ignored_other_user", { user: event.user });
@@ -66,6 +57,7 @@ export default async (req) => {
   }
 
   // Slack retries an event it believes was not acknowledged. Do the work once.
+  const store = await Store.open({ config, logger });
   const dedupeKey = `learning/seen/${event.client_msg_id ?? `${event.channel}-${event.ts}`}.json`;
   if (await store.backend.get(dedupeKey)) {
     logger.info("learning.duplicate_event", { ts: event.ts });

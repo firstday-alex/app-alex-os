@@ -51,11 +51,7 @@
   },
   "slack": {
     "advisorButtonText": "Ask for recommendation",
-    "postPartialReadouts": true,
-    "nudges": {
-      "_comment": "Nudge owner posts to SLACK_NUDGE_CHANNEL, falling back to SLACK_READOUT_CHANNEL, tagging the owner so replies land in a thread Alex can see. Pick a channel the team is in, or they will not be notified. Replies in a nudge thread never reach the learning skill.",
-      "channelEnv": "SLACK_NUDGE_CHANNEL"
-    }
+    "postPartialReadouts": true
   },
   "anthropic": {
     "model": "claude-opus-5",

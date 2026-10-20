@@ -7,7 +7,7 @@
 //
 // Two writers, each owning different fields:
 //   the pipeline   firstSeen, lastSeen, layer. Observations, recorded every run.
-//   the dashboard  triage and nudges. Decisions, recorded when Alex makes one.
+//   the dashboard  triage. Decisions, recorded when Alex makes one.
 // Each writer re-reads the document and changes only its own fields, so a triage saved
 // while a run is in flight is not overwritten by that run.
 //
@@ -93,13 +93,11 @@ export function annotateFlags(flags, entries, { dateKey, sections = {}, escalate
       lastSeen: dateKey,
       layer: flag.layer,
       ...(triage ? { triage } : {}),
-      ...(before.nudges?.length ? { nudges: before.nudges } : {}),
     };
 
     const openDays = workingDaysBetween(firstSeen, dateKey, workingWeekdays);
     const out = { ...flag, key, firstSeen, openDays, isNew: firstSeen === dateKey };
     if (triage) out.triage = triage;
-    if (before.nudges?.length) out.nudges = before.nudges;
 
     // Something left at Attention for a week has stopped being something to keep an eye
     // on. It goes to P1, and says so, so the change in severity is never a mystery.
@@ -138,19 +136,18 @@ export class FlagLedger {
   }
 
   /**
-   * The pipeline's write. Observations come from `computed`; triage and nudges come from
-   * a fresh read, because the dashboard may have written since the run started.
+   * The pipeline's write. Observations come from `computed`; triage comes from a fresh
+   * read, because the dashboard may have written since the run started.
    */
   async saveObservations(computed) {
     const fresh = await this.read();
     const entries = {};
     for (const [key, entry] of Object.entries(computed)) {
       const live = fresh.entries[key] ?? {};
-      const { triage: _t, nudges: _n, ...observed } = entry;
+      const { triage: _t, ...observed } = entry;
       entries[key] = {
         ...observed,
         ...(live.triage ? { triage: live.triage } : entry.triage ? { triage: entry.triage } : {}),
-        ...(live.nudges?.length ? { nudges: live.nudges } : entry.nudges?.length ? { nudges: entry.nudges } : {}),
       };
     }
     const doc = { version: (fresh.version ?? 0) + 1, updatedAt: new Date().toISOString(), entries };
@@ -193,18 +190,6 @@ export class FlagLedger {
       entry.triage = triage;
     }
 
-    doc.entries = { ...doc.entries, [key]: entry };
-    doc.version = (doc.version ?? 0) + 1;
-    doc.updatedAt = new Date().toISOString();
-    await this.backend.set(DOC_KEY, doc);
-    return entry;
-  }
-
-  /** Records a nudge sent about a flag, newest last, keeping the last ten. */
-  async recordNudge(key, nudge, { today, layer = null } = {}) {
-    const doc = await this.read();
-    const entry = { ...(doc.entries[key] ?? { firstSeen: today, lastSeen: today, layer }) };
-    entry.nudges = [...(entry.nudges ?? []), nudge].slice(-10);
     doc.entries = { ...doc.entries, [key]: entry };
     doc.version = (doc.version ?? 0) + 1;
     doc.updatedAt = new Date().toISOString();

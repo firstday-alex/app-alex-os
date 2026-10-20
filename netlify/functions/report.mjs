@@ -9,7 +9,6 @@ import { Store } from "../../src/lib/storage.js";
 import { isAuthorized, unauthorized, json } from "../../src/lib/dashboard-auth.js";
 import { dateKey } from "../../src/lib/time.js";
 import { FlagLedger } from "../../src/store/flag-ledger.js";
-import { nudgeRoster, nudgeChannel } from "../../src/send/nudge.js";
 
 export default async (req) => {
   const auth = isAuthorized(req);
@@ -47,9 +46,7 @@ export default async (req) => {
     advisorButtonText: config.system.slack?.advisorButtonText ?? "Ask for recommendation",
     today: dateKey(new Date(), config.system.timezone),
     flagEntries,
-    // Who a nudge can go to. Slack ids stay on the server; the page only needs to know
-    // whether one exists.
-    people: nudgeRoster(config).map((p) => ({ name: p.name, clickupUserId: p.clickupUserId, canNudge: Boolean(p.slackUserId) })),
-    nudgeChannelSet: Boolean(nudgeChannel(config, process.env)),
+    // Who a flag can be waiting on. Names only: the system never contacts the team.
+    people: (config.people?.team ?? []).filter((p) => p?.name).map((p) => ({ name: p.name, clickupUserId: p.clickupUserId == null ? null : String(p.clickupUserId) })),
   });
 };
