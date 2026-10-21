@@ -179,3 +179,24 @@ test("a quiet test that has not met the gate sits quietly", () => {
   });
   assert.ok(!flags.some((f) => f.rule === "intelligems.decision_due"), "Keep Running is not a call");
 });
+
+/* ------------------------------ primary metrics ------------------------------ */
+
+test("a primary metric moving on the control is a site-wide move, not a flag on the test", () => {
+  const now = makeTest({ name: "[Broad PDP] Sticky ATC Test", groups: [ctl({ conversion_rate: metric(0.034, { interval: [0.033, 0.035] }) }), v1({ conversion_rate: metric(0.036, { interval: [0.035, 0.037] }) })] });
+  const before = makeTest({ name: "[Broad PDP] Sticky ATC Test", groups: [ctl({ conversion_rate: metric(0.031) }), v1({ conversion_rate: metric(0.032) })] });
+  const flags = igFlags([now], [before]);
+  assert.ok(!flags.some((f) => f.rule === "intelligems.p0_moved"), "neither the control nor a variant moving with it is the test");
+  const note = flags.find((f) => f.rule === "intelligems.control_moved" && f.values.metric === "conversion_rate");
+  assert.match(note.message, /^Conversion rate moved outside its normal range in the control group of 1 test since the last readout \(\[Broad PDP\] Sticky ATC Test: 3\.10% to 3\.40%\)/);
+});
+
+test("a primary metric moving on a variant while the control holds is reported with the numbers", () => {
+  const now = makeTest({ groups: [ctl({ conversion_rate: metric(0.031, { interval: [0.03, 0.032] }) }), v1({ conversion_rate: metric(0.036, { interval: [0.035, 0.037] }) })] });
+  const before = makeTest({ groups: [ctl({ conversion_rate: metric(0.0312) }), v1({ conversion_rate: metric(0.032) })] });
+  const flag = igFlags([now], [before]).find((f) => f.rule === "intelligems.p0_moved");
+  assert.equal(
+    flag.message,
+    '"Subscription upsell on PDP", variant "Benefit tabs": conversion rate, a primary metric, moved from 3.20% to 3.60% since the last readout, outside its 95% range of 3.50% to 3.70%. The control held steady (3.12% to 3.10%), so this is the variant, not the site.',
+  );
+});

@@ -43,6 +43,7 @@ export function p0Moves(test, baselineTest, config) {
           metric: name,
           groupId: group.id,
           groupName: group.name,
+          isControl: Boolean(group.isControl),
           today: now.value,
           baseline: then.value,
           interval: [low, high],
@@ -51,6 +52,28 @@ export function p0Moves(test, baselineTest, config) {
     }
   }
   return moves;
+}
+
+/**
+ * Sorts P0 moves by what they mean, the same way the P1 band does. A control that moved
+ * is the site moving: reported once across tests as context, and the variants that
+ * moved with it on that metric are not the test. A variant that moved while its control
+ * held steady is the test, and carries the control's numbers to show it.
+ */
+export function splitP0Moves(moves, test, baselineTest) {
+  const control = (test.groups ?? []).find((g) => g.isControl) ?? null;
+  const before = control ? (baselineTest?.groups ?? []).find((g) => g.id === control.id) : null;
+  const controlMoved = new Set(moves.filter((m) => m.isControl).map((m) => m.metric));
+  return {
+    variants: moves
+      .filter((m) => !m.isControl && !controlMoved.has(m.metric))
+      .map((m) => {
+        const now = control?.metrics?.[m.metric]?.value;
+        const then = before?.metrics?.[m.metric]?.value;
+        return { ...m, control: now != null && then != null ? { name: control.name, today: now, baseline: then } : null };
+      }),
+    controlSwings: moves.filter((m) => m.isControl).map((m) => ({ metric: m.metric, groupId: m.groupId, groupName: m.groupName, values: { today: m.today, baseline: m.baseline, interval: m.interval } })),
+  };
 }
 
 /** Probability to beat control crossing the threshold in either direction. */
@@ -165,7 +188,8 @@ export function intelligemsDelta(baseline, current, { config, logger, settings =
       !(before.minOrdersPerGroup >= config.intelligems.readinessGate.minOrdersPerGroup &&
         before.daysRunning >= config.intelligems.readinessGate.minDaysRunning);
 
-    const p0 = p0Moves(test, before, config);
+    const p0Split = splitP0Moves(p0Moves(test, before, config), test, before);
+    const p0 = p0Split.variants;
     const p1 = checkTestP1Bands(test, before, config, logger);
     const crossings = probabilityCrossings(test, before);
     const trades = tradeOffs(test, config);
@@ -199,13 +223,13 @@ export function intelligemsDelta(baseline, current, { config, logger, settings =
       }),
     );
 
-    const notable = verdictChanged || gateJustMet || p0.length > 0 || p1.variants.length > 0 || p1.controlSwings.length > 0 || crossings.length > 0;
+    const notable = verdictChanged || gateJustMet || p0.length > 0 || p0Split.controlSwings.length > 0 || p1.variants.length > 0 || p1.controlSwings.length > 0 || crossings.length > 0;
 
     tests.push({
       ...test,
       before: before ? { verdict: before.verdict, daysRunning: before.daysRunning, minOrdersPerGroup: before.minOrdersPerGroup } : null,
       recommendation,
-      changes: { verdictChanged, gateJustMet, p0Moves: p0, p1OutOfBand: p1.variants, p1ControlSwings: p1.controlSwings, probabilityCrossings: crossings },
+      changes: { verdictChanged, gateJustMet, p0Moves: p0, p1OutOfBand: p1.variants, p1ControlSwings: p1.controlSwings, p0ControlSwings: p0Split.controlSwings, probabilityCrossings: crossings },
       tradeOffs: trades,
       trees,
       futureValue,

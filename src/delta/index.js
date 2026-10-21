@@ -162,7 +162,14 @@ function intelligemsFlags(delta, { config, dateKey, testNotes = null }) {
         rule: "intelligems.p0_moved",
         severity: "p1",
         subject: { ...subject, id: `${test.id}:${move.groupId}:${move.metric}` },
-        message: `"${test.name}" P0 metric ${move.metric} on ${move.groupName} moved beyond its own confidence interval since yesterday.`,
+        message: (() => {
+          const fmt = (v) => formatMetricValue(move.metric, v);
+          const [low, high] = move.interval ?? [];
+          const control = move.control
+            ? ` The control held steady (${fmt(move.control.baseline)} to ${fmt(move.control.today)}), so this is the variant, not the site.`
+            : " The control could not be checked, so a site-wide move is not ruled out.";
+          return `"${test.name}", variant "${move.groupName}": ${metricLabel(move.metric)}, a primary metric, moved from ${fmt(move.baseline)} to ${fmt(move.today)} since the last readout, outside its 95% range of ${fmt(low)} to ${fmt(high)}.${control}`;
+        })(),
         values: move,
       });
     }
@@ -316,7 +323,7 @@ function intelligemsFlags(delta, { config, dateKey, testNotes = null }) {
   // across every test, instead of a flag per test that reads like a test result.
   const byMetric = new Map();
   for (const test of delta.tests ?? []) {
-    for (const swing of test.changes?.p1ControlSwings ?? []) {
+    for (const swing of [...(test.changes?.p0ControlSwings ?? []), ...(test.changes?.p1ControlSwings ?? [])]) {
       if (!byMetric.has(swing.metric)) byMetric.set(swing.metric, []);
       byMetric.get(swing.metric).push({ test: test.name, testId: test.id, ...swing.values });
     }
