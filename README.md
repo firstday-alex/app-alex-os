@@ -157,9 +157,10 @@ token alone still produces a readout.
 
 ### Decisions only Alex can make
 
-4. **The verdict mapping** — which of the six actionable verdicts means Ship, Iterate or
-   Kill. The other seven are already handled.
-5. **The mini readout tolerance window** for a shipped test.
+4. ~~The verdict mapping~~ and ~~the mini readout window~~: decided 2026-10-22 (strong
+   win Ship, strong loss Kill, directional and mixed Iterate, only past the gate with a
+   clear result; shipped rocks 14 days, active rocks 7). Still open on the Setup page: the
+   metric lists and the LTV references.
 6. **The real leadership queue**, replacing the example item.
 7. **Central or Pacific.** The store reports in Pacific; the readout is specified for 8 AM
    Central. Two hours apart, so "yesterday" differs between them.
@@ -205,7 +206,25 @@ has to infer:
 | `idle` | Not Started and untouched. Expected early in a sprint, worth noticing late in one. |
 
 Severities: **p1** (Layer 1 items and material test movement), **attention**,
-**prompt** (a quiet test whose owner owes a next step), **info** (hygiene).
+**prompt** (a test ready for a call with no decision recorded), **info** (hygiene).
+Store moves and control-group moves are **context**: shown with the store numbers, never
+in a list to act on.
+
+## Using the dashboard
+
+| Where | What it is for |
+|---|---|
+| **Today's 3** (top of the readout) | The three open flags to do first: severity, then how long each has been open, then whether it touches a rock. Re-ranks as you handle them. |
+| **This week** | The roll-up Friday's readout opens with: rocks shipped and slipping, tickets closed by person, alignment against a week ago, flags handled. Copy button for a leadership summary. |
+| **Store** | Month to date, yesterday, last 7 or 30 days, all complete days ending yesterday. Site-wide moves sit here, above the tiles. Every number links to its query in Shopify. |
+| **Needs your attention** | Open, Waiting and Parked; filter by severity, area, owner; group by age, area, owner, issue or item. Each flag has Done, Snooze, Waiting on, Not a problem and Draft a nudge, and rock flags carry the fix itself. |
+| **Rocks** | The leadership queue and its change history. `#rocks/<id>` opens one. |
+| **Sprint** | Opens with *Before sprint planning*: the backlog's Ready tickets checked against the rocks. |
+| **1:1 prep** | One person: rocks, sprint, open flags, what is waiting on them, and talking points to copy. `#people/<clickup id>` links to a person. |
+| **Tests** | Each test's readout. `#tests/<experience id>` opens one. |
+
+The system only ever communicates with Alex. Nudges are drafts to copy; nothing is sent
+to the team, and the team roster holds no contact details.
 
 ---
 
