@@ -44,10 +44,11 @@
     ]
   },
   "dashboard": {
-    "sessionTtlHours": 12,
+    "sessionTtlHours": 720,
     "refreshMinIntervalSeconds": 60,
     "testReadoutMinIntervalSeconds": 300,
-    "_comment_testReadout": "The test readout posts a real message to a channel other people read, and a post cannot be unposted. Five minutes, against the refresh button's one: the throttle here is about the channel, not the API."
+    "_comment_testReadout": "The test readout posts a real message to a channel other people read, and a post cannot be unposted. Five minutes, against the refresh button's one: the throttle here is about the channel, not the API.",
+    "_comment_session": "A sign-in lasts 30 days (Alex, 2026-10-22), so the dashboard is not a daily login. Signing in again is one password on the screen the page returns to."
   },
   "slack": {
     "advisorButtonText": "Ask for recommendation",

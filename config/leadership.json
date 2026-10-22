@@ -1,23 +1,24 @@
 {
   "miniReadout": {
-    "toleranceWindowDays": 7,
+    "toleranceWindowDays": 14,
     "perProjectType": {},
-    "_TODO": "OPEN QUESTION from the spec, not yet decided: what is the tolerance window for a shipped test mini readout, and is it one global number or per project type. 7 days is a placeholder chosen to match the readiness gate. Per-type overrides go in perProjectType as { \"<type>\": <days> }."
+    "_decided": "Alex, 2026-10-22: a shipped rock's mini readout is due 14 days after it ships, then every 14 days. One global number; per-type overrides can go in perProjectType as { \"<type>\": <days> }. Active rocks keep their own 7 day check-in window (checkIn.windowDays)."
   },
-
   "capacity": {
     "bigSwingsPerPerson": 2,
     "_comment": "Each team member holds up to two big leadership projects at a time (set 2026-10-19; it was one). Alex is exempt and can hold as many as needed: see countsTowardCapacity in people.json. When every member is at the cap, remaining leadership items route to the backlog rather than being assigned. This caps rocks owned, not big swings in the sprint: that rule was removed for everyone on 2026-10-19."
   },
-
   "crossLayer": {
     "requireOneBigSwingPerPerson": true,
     "unrelatedTicketPileThreshold": 5,
     "_comment": "A person is flagged when they hold a big swing plus a pile of tickets that link to no leadership priority and are not marked business as usual. Business as usual work is expected and allowed. It just should not crowd out the one big swing."
   },
-
   "dropdownSync": {
     "enforce": true,
     "_comment": "The Leadership Priority dropdown in ClickUp must offer exactly the active items in the leadership queue, plus the BAU markers. Drift is flagged, never auto-corrected. The system does not write to ClickUp."
+  },
+  "checkIn": {
+    "windowDays": 7,
+    "_comment": "How long an ACTIVE rock can go without a check-in before it is flagged. Separate from the shipped-rock mini readout window above."
   }
 }

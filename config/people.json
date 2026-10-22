@@ -33,6 +33,12 @@
       "_comment": "Added 2026-10-19 at Alex's request, so she can own rocks. ClickUp id from the workspace member list."
     },
     {
+      "clickupUserId": "4378173",
+      "name": "Kate Chernenko",
+      "countsTowardCapacity": true,
+      "_comment": "Added 2026-10-22: Alex confirmed she is on the team."
+    },
+    {
       "clickupUserId": "87365453",
       "name": "Alex Turney",
       "countsTowardCapacity": false,
@@ -52,6 +58,5 @@
     "Drew Videira": "81375017",
     "Daniel J Franklin": "75458568",
     "Yoed Negri": "87431913"
-  },
-  "_TODO_CONFIRM": "Kate Chernenko (4378173) held sprint work earlier in the year but has nothing open now. Add her if she is still on the team."
+  }
 }

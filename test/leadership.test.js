@@ -296,3 +296,25 @@ test("each Big Swing option no live rock claims gets its own named flag", () => 
   assert.match(parked.message, /belongs to "New Products: Ready to Pour", which is in the backlog/);
   assert.equal(parked.values.parkedRockId, "r3");
 });
+
+test("a shipped rock gets 14 days for its readout, an active rock 7 for its check-in", () => {
+  const cfg = testConfig();
+  cfg.leadership.miniReadout.toleranceWindowDays = 14;
+  cfg.leadership.checkIn = { windowDays: 7 };
+  const tenDaysAgo = new Date(new Date(NOW_ISO).getTime() - 10 * 86_400_000).toISOString().slice(0, 10);
+  const result = leadershipChecks({
+    leadership: leadership({
+      queue: [
+        rock({ id: "s", title: "Shipped one", state: "shipped", shippedAt: tenDaysAgo, checkInDate: tenDaysAgo }),
+        rock({ id: "a", title: "Active one", state: "active", checkInDate: tenDaysAgo }),
+      ],
+    }),
+    clickup: { fieldMap: FIELD_MAP },
+    config: cfg,
+    dateKey: "2026-09-10",
+    nowIso: NOW_ISO,
+  });
+  const subjects = (rule) => result.flags.filter((f) => f.rule === rule).map((f) => f.subject.label);
+  assert.deepEqual(subjects("leadership.mini_readout_overdue"), [], "10 days is inside the shipped window");
+  assert.deepEqual(subjects("leadership.check_in_overdue"), ["Active one"], "10 days is past the active window");
+});

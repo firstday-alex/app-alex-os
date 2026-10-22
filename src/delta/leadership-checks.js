@@ -97,7 +97,8 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
 
   /* --- an active rock nobody has checked in on --- */
   for (const item of queue.filter((i) => i.state === "active")) {
-    const tolerance = toleranceFor(item, lc);
+    // An active rock has its own check-in window, shorter than a shipped rock's readout.
+    const tolerance = lc.checkIn?.windowDays ?? toleranceFor(item, lc);
     const since = daysBetween(item.checkInDate ?? item.startDate, nowIso);
     if (since != null && since > tolerance) {
       add({

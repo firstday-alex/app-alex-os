@@ -85,7 +85,7 @@
     "filtered_strong_loss": "Keep Running",
     "filtered_mixed_signals": "Keep Running",
     "filtered_not_ready": "Keep Running",
-    "_TODO": "Alex to decide the mapping for the six actionable verdicts. The rest are not decisions. The spec listed six verdicts; the platform actually returns thirteen. 'error' means the verdict could not be computed. The six filtered_* variants are returned when filters were sent, and the platform documents that they describe a narrowed population rather than the full randomized group, so they must never be treated as wins or losses. This pipeline sends no filters, so filtered_* should never appear; they map to Keep Running so that a future filter cannot silently produce a Ship."
+    "_decided": "Alex, 2026-10-22: strong_win is Ship, strong_loss is Kill, directional and mixed results are Iterate. This mapping only applies once a test has passed the readiness gate AND has a clear result on a decision metric (decisionMetrics); before that every test is Keep Running. The filtered_* verdicts describe a narrowed population and always map to Keep Running, so a future filter cannot silently produce a Ship."
   },
   "metrics": {
     "p0": [
