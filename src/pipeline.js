@@ -14,7 +14,9 @@ import { SettingsStore } from "./store/settings.js";
 import { StatusLedger } from "./store/status-ledger.js";
 import { FlagLedger, annotateFlags } from "./store/flag-ledger.js";
 import { TestNotesStore, ASSIGNEE_FIELD } from "./store/test-notes.js";
-import { dateKey as toDateKey, zonedParts, baselineCandidateKeys } from "./lib/time.js";
+import { STATUS_LABELS } from "./store/rocks.js";
+import { buildWeekly, weeklyLines } from "./delta/weekly.js";
+import { dateKey as toDateKey, zonedParts, baselineCandidateKeys, shiftDateKey } from "./lib/time.js";
 import { collectClickUp } from "./collectors/clickup.js";
 import { collectIntelligems } from "./collectors/intelligems.js";
 import { collectLeadership } from "./collectors/leadership.js";
@@ -262,6 +264,43 @@ export async function runPipeline(opts = {}) {
     await flagLedger.saveObservations(annotated.entries);
   } catch (err) {
     logger.warn("flag_ledger.unavailable", { err, note: "flags render without age or triage" });
+  }
+
+  /* ------------------------------- the week -------------------------------
+     The Friday roll-up, built every run so the dashboard can show it any day. From what
+     is already stored: the rocks audit trail, this run's tickets, last week's official
+     report and the flag ledger. A failure here costs the roll-up, never the readout. */
+  try {
+    const prefix = config.system.storage?.reportPrefix ?? "reports";
+    let lastWeek = null;
+    const reportKeys = await store.backend.keys(`${prefix}/`);
+    for (const back of [7, 8, 6, 9, 5, 10]) {
+      const day = shiftDateKey(dateKey, -back);
+      const key = reportKeys.filter((k) => k.startsWith(`${prefix}/${day}-official-`)).sort().at(-1);
+      if (!key) continue;
+      const old = await store.backend.get(key);
+      if (old) {
+        lastWeek = { dateKey: day, crossSummary: old.detail?.crossLayer?.summary ?? old.sections?.crossLayer?.summary ?? null };
+        break;
+      }
+    }
+    detail.weekly = buildWeekly({
+      now,
+      audit: await rocksStore.auditTrail({ limit: 200 }),
+      rocks: [...(detail.leadership?.queue ?? []), ...(detail.leadership?.backlog ?? []).map((r) => ({ ...r, state: r.state ?? "backlog" }))],
+      tasks: snapshots.clickup?.items ?? [],
+      cross: detail.crossLayer?.summary ?? null,
+      lastWeek,
+      ledgerEntries: (await new FlagLedger(store.backend, logger).read()).entries,
+      flags,
+      tests: detail.intelligems?.tests ?? [],
+      preSprint: detail.preSprint ?? null,
+      statusLabels: STATUS_LABELS,
+    });
+    // The same lines Friday's readout uses, so the dashboard says it identically.
+    detail.weekly.lines = weeklyLines(detail.weekly);
+  } catch (err) {
+    logger.warn("weekly.unavailable", { err });
   }
 
   /* -------------------------------- render -------------------------------- */

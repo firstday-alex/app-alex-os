@@ -534,3 +534,7 @@ details.section > summary h2 { margin: 0; border: 0; padding: 0; }
 .person-points ul { margin: 0; padding-left: 18px; }
 .person-points li { margin: 3px 0; }
 ul.plain { margin: 0; padding-left: 18px; }
+
+/* This week */
+.week-lines { margin: 0; padding-left: 18px; }
+.week-lines li { margin: 4px 0; }

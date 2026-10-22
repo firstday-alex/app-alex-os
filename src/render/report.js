@@ -7,6 +7,11 @@
 import { flagRef } from "../store/flag-ledger.js";
 import { isContext } from "../delta/flags.js";
 import { topFlags } from "../delta/priority.js";
+import { weeklyLines } from "../delta/weekly.js";
+import { weekdayOfKey } from "../lib/time.js";
+
+/** Friday's readout leads with the week; the rest of the week it is on the dashboard. */
+const isFriday = (dateKey) => Boolean(dateKey) && weekdayOfKey(dateKey) === 5;
 
 const SIGNAL_MARK = { stalled: "STALLED", waiting: "waiting", moving: "moving", idle: "idle" };
 
@@ -307,6 +312,12 @@ export function renderText(report) {
   const aged = needsAttention.some((f) => f.isNew !== undefined);
   const fresh = needsAttention.filter((f) => f.isNew);
   const still = needsAttention.filter((f) => !f.isNew);
+  if (isFriday(report.dateKey) && detail.weekly) {
+    lines.push("WEEK IN REVIEW.");
+    for (const l of weeklyLines(detail.weekly)) lines.push(`  ${l}`);
+    lines.push("");
+  }
+
   const top = topFlags(flags);
   if (top.length) {
     lines.push("TODAY'S 3. Start here.");
@@ -418,6 +429,12 @@ export function renderSlackBlocks(report, config) {
     },
   });
 
+  if (isFriday(report.dateKey) && report._render.detail?.weekly) {
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: ["*Week in review*", ...weeklyLines(report._render.detail.weekly).map((l) => `• ${l}`)].join("\n").slice(0, 2900) },
+    });
+  }
   const top = topFlags(flags);
   if (top.length) {
     blocks.push({

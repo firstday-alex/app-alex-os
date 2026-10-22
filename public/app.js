@@ -139,6 +139,7 @@ function render() {
     }
   };
   part("the flags", () => renderAllFlags({ rebuildTools: true }));
+  part("the week", () => renderWeek(report));
   part("the store metrics", () => renderStoreMetrics(report));
   part("the funnel", () => renderFunnel(report));
   part("Layer 1", () => renderLayer1(report));
@@ -548,6 +549,37 @@ function renderTopThree(flags) {
        ${top.map(flagCard).join("")}`
     : `<div class="start-here-head"><h2>Today's 3</h2><span class="meta">nothing open that needs you. The full lists are below.</span></div>`;
 }
+
+/**
+ * This week: the Friday roll-up, any day. The same lines the Friday readout leads with,
+ * and a button to copy them, for a summary to leadership.
+ */
+function renderWeek(report) {
+  const host = $("week");
+  if (!host) return;
+  const w = report.detail?.weekly;
+  if (!w?.lines) {
+    host.innerHTML = `<p class="sub">The week in review appears after the next refresh.</p>`;
+    sectionCount("week", "");
+    return;
+  }
+  sectionCount("week", `${plural(w.rocks.shipped.length, "rock shipped", "rocks shipped")} · ${plural(w.tickets.closed, "ticket closed", "tickets closed")}`);
+  host.innerHTML = `
+    <p class="sub">Since ${esc(new Date(w.since).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }))}. Friday's readout opens with this.</p>
+    <ul class="week-lines">${w.lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>
+    <div class="bar" style="margin-top:8px"><button type="button" class="ghost sm" id="copy-week">Copy the week</button><span class="meta" id="copy-week-note"></span></div>`;
+}
+
+document.addEventListener("click", async (event) => {
+  if (event.target.id !== "copy-week") return;
+  const lines = state.report?.detail?.weekly?.lines ?? [];
+  try {
+    await navigator.clipboard.writeText(["The week in review", ...lines.map((l) => `- ${l}`)].join("\n"));
+    $("copy-week-note").textContent = "Copied.";
+  } catch {
+    $("copy-week-note").textContent = "The browser would not copy. Select the lines and copy them by hand.";
+  }
+});
 
 function renderStoreContext(flags) {
   const host = $("store-context");

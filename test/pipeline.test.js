@@ -378,3 +378,13 @@ test("the cross layer check runs when the sprint list has a Big Swing field", as
   assert.equal(result.report.sections.crossLayer.present, true);
   assert.ok(!result.report.flags.some((f) => f.rule === "clickup.big_swing_field_missing"));
 });
+
+test("Friday's readout leads with the week in review; other days do not", async () => {
+  const ctx = await setup();
+  const thursday = await runPipeline({ ...ctx, mode: "refresh", now: new Date("2026-09-10T19:00:00Z"), env: baseEnv });
+  assert.ok(thursday.report.detail.weekly, "built every day for the dashboard");
+  assert.ok(!thursday.report.text.includes("WEEK IN REVIEW"));
+  const friday = await runPipeline({ ...ctx, mode: "refresh", now: new Date("2026-09-11T19:00:00Z"), env: baseEnv });
+  assert.match(friday.report.text, /WEEK IN REVIEW\.\n(  .*\n)*  \d+ ticket\(s\) closed/);
+  assert.ok(friday.report.text.indexOf("WEEK IN REVIEW") < friday.report.text.indexOf("NEEDS YOUR ATTENTION"));
+});
