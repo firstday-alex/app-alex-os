@@ -38,6 +38,16 @@
       ],
       "type": "drop_down",
       "_comment": "Created 2026-09-10. This is the field the cross layer rule is actually about: 'at least one, and really only one, big swing tied to a leadership priority'. Rock Reference says which quarterly outcome a ticket serves; Big Swing says which project it belongs to. They are different questions and the system reads both."
+    },
+    "readyToStart": {
+      "id": "72c5ec33-ab55-466c-980c-53b10c6f916a",
+      "readyOptionId": "2751e6bb-4516-49da-a4d0-3b0ef8808f1d",
+      "matchName": [
+        "Ready to Start?"
+      ],
+      "type": "drop_down",
+      "_comment": "On both the sprint and the backlog list. A backlog ticket set to Ready is in the pool for the next sprint, which is what the pre-sprint check reads. Option ids read live 2026-10-22.",
+      "readyOrderindex": 1
     }
   },
   "statusMap": {
@@ -91,5 +101,9 @@
     "fetchCommentsOnlyWhenUpdated": true,
     "commentFetchCapPerRun": 60
   },
-  "_DROPDOWN_NOTE": "ClickUp returns a dropdown value as EITHER the option uuid OR its orderindex. A real task in this list returns `value: 0`. The collector indexes both forms and always stores the uuid, since that is the only part that survives a rename or a reorder."
+  "_DROPDOWN_NOTE": "ClickUp returns a dropdown value as EITHER the option uuid OR its orderindex. A real task in this list returns `value: 0`. The collector indexes both forms and always stores the uuid, since that is the only part that survives a rename or a reorder.",
+  "preSprint": {
+    "enabled": true,
+    "_comment": "Before sprint planning: reads the backlog tickets marked Ready to Start = Ready and checks the coming sprint against the rocks. Alex chose the backlog list as the planning pool on 2026-10-22. Read only."
+  }
 }

@@ -240,6 +240,59 @@ export async function fetchTaskPages({ config, token, logger, fetchImpl, sleep }
 }
 
 /**
+ * The planning pool for the next sprint: backlog tickets with Ready to Start = Ready.
+ * Filtered by ClickUp, so the whole backlog is never pulled. Open tickets only.
+ */
+export async function fetchBacklogReady({ config, token, logger, fetchImpl, sleep }) {
+  const cu = config.clickup;
+  const ready = cu.customFields?.readyToStart;
+  if (!cu.backlogListId || !ready?.id || !ready.readyOptionId) return null;
+  const http = config.system.http;
+
+  const result = await paginate({
+    label: "clickup.backlog.task",
+    maxPages: Math.min(http.maxPages ?? 10, 10),
+    logger,
+    fetchPage: async (page) => {
+      const params = new URLSearchParams({
+        page: String(page),
+        include_closed: "false",
+        subtasks: "false",
+        custom_fields: JSON.stringify([{ field_id: ready.id, operator: "=", value: ready.readyOptionId }]),
+      });
+      const url = `${cu.apiBase}/list/${cu.backlogListId}/task?${params}`;
+      const { body } = await httpJson(url, {
+        headers: authHeaders(token),
+        logger,
+        label: "clickup.backlog.task",
+        fetchImpl,
+        timeoutMs: http.timeoutMs,
+        maxAttempts: http.maxAttempts,
+        backoffMsSchedule: http.backoffMsSchedule,
+        sleep,
+      });
+      return body ?? {};
+    },
+    extract: (body) => body.tasks ?? [],
+    isLastPage: (body) => body.last_page === true,
+  });
+
+  // Checked again here, not trusted to the filter: if ClickUp ever ignored it, the pool
+  // would silently become the whole backlog. A dropdown value comes back as the option id
+  // or as its orderindex, so either counts.
+  const isReady = (task) => {
+    const value = (task.custom_fields ?? []).find((f) => f.id === ready.id)?.value;
+    if (value == null) return false;
+    return String(value) === String(ready.readyOptionId) || (ready.readyOrderindex != null && Number(value) === Number(ready.readyOrderindex));
+  };
+  const items = result.items.filter(isReady);
+  if (items.length !== result.items.length) {
+    logger?.warn?.("clickup.backlog_filter_not_applied", { returned: result.items.length, ready: items.length });
+  }
+  return { ...result, items };
+}
+
+/**
  * Comments for tasks that moved. A comment bumps date_updated, so comparing
  * date_updated against the baseline catches new comments cheaply. Capped per run so a
  * board-wide edit cannot blow through the rate limit.
@@ -365,6 +418,19 @@ export async function collectClickUp({ config, token, store, logger, fetchImpl, 
     else task.commentCount = baselineById.get(task.id)?.commentCount ?? null;
   }
 
+  // The next sprint's pool. A failure here costs the pre-sprint panel, never the readout.
+  let backlogReady = null;
+  let backlogReadyError = null;
+  if (config.clickup.preSprint?.enabled) {
+    try {
+      const pulled = await fetchBacklogReady({ config, token, logger, fetchImpl, sleep });
+      backlogReady = pulled ? pulled.items.map((task) => normalizeTask(task, { fieldMap, statusMap: config.clickup.statusMap, logger })) : null;
+    } catch (err) {
+      backlogReadyError = err.message;
+      logger?.warn?.("clickup.backlog_ready_failed", { err });
+    }
+  }
+
   const members = (config.people?.team ?? []).some((p) => p.clickupUserId != null)
     ? config.people.team.map((p) => ({ id: String(p.clickupUserId), username: p.name, fromConfig: true }))
     : await fetchTeamMembers({ config, token, logger, fetchImpl, sleep });
@@ -377,6 +443,8 @@ export async function collectClickUp({ config, token, store, logger, fetchImpl, 
     items: tasks,
     comments,
     members,
+    backlogReady,
+    backlogReadyError,
     meta: { pages, truncated, commentsFetched: fetched, taskCount: tasks.length },
   };
 }

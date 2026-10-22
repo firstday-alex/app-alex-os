@@ -1462,6 +1462,50 @@ function renderStaleness(report) {
     </table></div>`;
 }
 
+/**
+ * Before sprint planning: the backlog tickets marked Ready, checked against the rocks.
+ * What needs fixing is listed first and open; what is fine is a collapsed table.
+ */
+function preSprintHtml(p) {
+  if (!p) return "";
+  if (!p.available) {
+    return `<details class="pre-sprint"><summary><h3>Before sprint planning</h3><span class="meta">not available: ${esc(p.reason ?? "")}</span></summary></details>`;
+  }
+  const ticket = (t) =>
+    `<li>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)} ↗</a>` : esc(t.name)}${t.swing ? ` <span class="meta">${esc(t.swing)}</span>` : ""}</li>`;
+  const noSwingPeople = p.people.filter((x) => x.noBigSwing);
+  const gaps = [
+    noSwingPeople.length
+      ? `<div class="ps-gap"><p class="ps-head bad">${esc(plural(noSwingPeople.length, "person has", "people have"))} no big swing queued</p>
+         <p>${noSwingPeople.map((x) => `<strong>${esc(x.name)}</strong> <span class="meta">${esc(plural(x.ready, "Ready ticket", "Ready tickets"))}, none on a live rock</span>`).join("<br>")}</p></div>`
+      : "",
+    p.unqueuedRocks.length
+      ? `<div class="ps-gap"><p class="ps-head bad">${esc(plural(p.unqueuedRocks.length, "active rock has", "active rocks have"))} nothing queued or open</p>
+         <p class="flag-links">${p.unqueuedRocks.map((r) => `<a href="#rocks/${encodeURIComponent(r.id)}">${esc(r.title)}${r.owner ? ` · ${esc(r.owner)}` : ""}</a>`).join("")}</p></div>`
+      : "",
+    p.noSwing.length
+      ? `<div class="ps-gap"><p class="ps-head">${esc(plural(p.noSwing.length, "Ready ticket has", "Ready tickets have"))} no Big Swing</p><ul>${p.noSwing.map(ticket).join("")}</ul></div>`
+      : "",
+    p.unclaimedSwing.length
+      ? `<div class="ps-gap"><p class="ps-head">${esc(plural(p.unclaimedSwing.length, "Ready ticket is", "Ready tickets are"))} on a Big Swing no active rock claims</p><ul>${p.unclaimedSwing.map(ticket).join("")}</ul></div>`
+      : "",
+    p.unowned.length
+      ? `<div class="ps-gap"><p class="ps-head">${esc(plural(p.unowned.length, "Ready ticket has", "Ready tickets have"))} nobody on it</p><ul>${p.unowned.map(ticket).join("")}</ul></div>`
+      : "",
+  ].filter(Boolean);
+  const rows = p.people
+    .map((x) => `<tr><td>${esc(x.name)}</td><td>${esc(x.ready)}</td><td class="wrap">${x.rocks.length ? esc(x.rocks.join(", ")) : "—"}</td><td class="wrap">${x.carryover.length ? esc(x.carryover.join(", ")) : "—"}</td></tr>`)
+    .join("");
+  return `<details class="pre-sprint" ${gaps.length ? "open" : ""}>
+    <summary><h3>Before sprint planning</h3><span class="meta">${esc(plural(p.readyCount, "ticket", "tickets"))} marked Ready in the backlog${gaps.length ? ` · <span class="bad">${esc(plural(gaps.length, "gap", "gaps"))}</span>` : " · no gaps"}</span></summary>
+    <p class="sub">The backlog's Ready tickets are the pool for the next sprint. This checks the pool against the rocks while it is still cheap to change.</p>
+    ${gaps.join("") || `<p class="sub">Everyone has a big swing queued and every active rock has work. Nothing to fix before planning.</p>`}
+    <details><summary class="meta">By person</summary>
+      <div class="scroll"><table><thead><tr><th>Person</th><th>Ready</th><th>Rocks in the pool</th><th>Carried over</th></tr></thead><tbody>${rows}</tbody></table></div>
+    </details>
+  </details>`;
+}
+
 function renderLayer2(report) {
   const section = report.sections.clickup;
   const delta = report.detail?.clickup;
@@ -1489,6 +1533,7 @@ function renderLayer2(report) {
   const head = `<thead><tr><th>Signal</th><th>Task</th><th>Status</th><th>Owner</th><th>Assignees</th><th>Leadership priority</th><th>Untouched</th><th>In status</th></tr></thead>`;
 
   $("layer2").innerHTML = `
+    ${preSprintHtml(report.detail?.preSprint)}
     <p class="sub">${c.total} tasks. ${c.notStarted} not started, ${c.inProgress} in progress, ${c.done} done. ${c.stalled} stalled, ${c.changed} changed since the baseline.</p>
     ${delta.hasBaseline ? "" : `<div class="note"><strong>First run.</strong> There is no previous snapshot, so there is no day over day comparison yet.</div>`}
     <h3>In progress</h3>

@@ -6,6 +6,7 @@
 import { makeFlag, sortFlags, logFlags } from "./flags.js";
 import { metricLabel, formatMetricValue } from "./p1band.js";
 import { describeResult } from "./readiness.js";
+import { preSprintCheck } from "./pre-sprint.js";
 import { clickupDelta } from "./clickup-delta.js";
 import { intelligemsDelta } from "./intelligems-delta.js";
 import { leadershipChecks } from "./leadership-checks.js";
@@ -502,6 +503,21 @@ export function computeFlags({ snapshots, baselines, config, settings = null, st
   return {
     flags: sorted,
     sections,
-    detail: { shopify, clickup: cuDelta, intelligems: igDelta, leadership, crossLayer: cross },
+    detail: {
+      shopify,
+      clickup: cuDelta,
+      intelligems: igDelta,
+      leadership,
+      crossLayer: cross,
+      preSprint: snapshots.clickup
+        ? preSprintCheck({
+            backlogReady: snapshots.clickup.backlogReady,
+            error: snapshots.clickup.backlogReadyError,
+            sprintTasks: cuDelta?.tasks ?? [],
+            leadership: snapshots.leadership,
+            config,
+          })
+        : { available: false, reason: "the ClickUp pull did not run" },
+    },
   };
 }
