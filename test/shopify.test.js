@@ -14,6 +14,7 @@ import {
   evaluateFormula,
   compareWindows,
   windowDays,
+  effectiveWindows,
   runQuery,
   collectShopify,
   shopifyReportUrl,
@@ -147,9 +148,28 @@ test("a total with an unknown window length is not compared rather than compared
   assert.match(cmp.reason, /window length unknown/);
 });
 
-test("month-to-date length is the days elapsed, not a fixed number", () => {
-  assert.equal(windowDays({ since: "startOfMonth(0m)" }, new Date("2026-09-11T02:00:00Z")), 11);
+test("month-to-date length is the days elapsed in the store's timezone, not UTC", () => {
+  // 02:00 UTC on the 11th is still the evening of the 10th in Los Angeles.
+  assert.equal(windowDays({ since: "startOfMonth(0m)", until: "today" }, new Date("2026-09-11T02:00:00Z")), 10);
+  // Ending yesterday, only complete days count.
+  assert.equal(windowDays({ since: "startOfMonth(0m)", until: "yesterday" }, new Date("2026-10-22T16:00:00Z")), 21);
   assert.equal(windowDays({ since: "-7d", days: 7 }), 7);
+});
+
+test("on the 1st, month to date has no complete day, so it becomes last month", () => {
+  const firstOfNov = new Date("2026-11-01T16:00:00Z");
+  const windows = effectiveWindows({ mtd: { label: "MTD", since: "startOfMonth(0m)", until: "yesterday", primary: true }, d7: { since: "-7d", until: "yesterday", days: 7 } }, firstOfNov);
+  assert.deepEqual(windows.mtd, { label: "Last month", since: "startOfMonth(-1m)", until: "yesterday", primary: true });
+  assert.equal(windowDays(windows.mtd, firstOfNov), 31, "October");
+  assert.equal(windows.d7.since, "-7d", "other windows are untouched");
+  assert.equal(effectiveWindows({ mtd: { since: "startOfMonth(0m)", until: "yesterday" } }, new Date("2026-11-02T16:00:00Z")).mtd.since, "startOfMonth(0m)");
+});
+
+test("the live windows are complete days ending yesterday", async () => {
+  const { loadConfig } = await import("../src/config.js");
+  const live = loadConfig().shopify;
+  for (const key of ["mtd", "d7", "d30"]) assert.equal(live.windows[key].until, "yesterday", `${key} must not include today's partial day`);
+  assert.equal(buildQuery(loadConfig(), "subscription", "d7").endsWith("SINCE -7d UNTIL yesterday"), true);
 });
 
 /* -------------------------------- collector -------------------------------- */
@@ -164,7 +184,7 @@ test("the collector produces the MTD value with both comparisons", async () => {
   });
 
   assert.equal(snapshot.primaryWindow.label, "MTD");
-  assert.equal(snapshot.primaryWindow.days, 11);
+  assert.equal(snapshot.primaryWindow.days, 10, "the 10th in Los Angeles, though the 11th in UTC");
 
   const aov = snapshot.tiles.find((t) => t.metric === "net_aov");
   assert.ok(Math.abs(aov.value - 69.97) < 0.01);

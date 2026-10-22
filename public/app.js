@@ -334,7 +334,7 @@ function renderStoreMetrics(report) {
   const win = shownWindow;
   const others = (data?.windows ?? []).filter((w) => w.key !== win?.key).map((w) => w.label).join(", ");
   $("store-sub").innerHTML =
-    `${esc(data?.shopDomain ?? "")} · showing <strong>${esc(STORE_WINDOW_NAMES[win?.key] ?? win?.label ?? "")}</strong>${win?.key === "mtd" && win?.days ? ` (${esc(win.days)} days elapsed)` : ""} against ${esc(others)}. ` +
+    `${esc(data?.shopDomain ?? "")} · showing <strong>${esc(STORE_WINDOW_NAMES[win?.key] ?? win?.label ?? "")}</strong>${win?.days > 1 ? ` (${esc(win.days)} complete days)` : ""} against ${esc(others)}. Every period ends yesterday, so today's partial day never skews a comparison. ` +
     `Totals are compared per day, marked <span class="basis">/d</span>, because a month-to-date total against a 7 day total measures the window, not the business. ` +
     `Context for everything below: a sitewide move is not a test result.`;
 }

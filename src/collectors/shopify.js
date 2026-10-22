@@ -11,6 +11,7 @@
 // ShopifyQL from server-side code.
 
 import { httpJson } from "../lib/http.js";
+import { zonedParts } from "../lib/time.js";
 
 const TOKEN_CACHE_KEY = "shopify/access-token";
 // Refresh a few minutes early so a token cannot expire mid-run.
@@ -282,15 +283,44 @@ export function compareWindows(primary, other, { kind, primaryDays, otherDays })
   return { changePct: ((primary - other) / Math.abs(other)) * 100, basis: "direct" };
 }
 
-/** Days elapsed in a window. MTD has no fixed length, so it is counted. */
-export function windowDays(win, now) {
+/** The store's calendar date for `now`: { year, month, day }. */
+function storeDate(now, timeZone) {
+  const [year, month, day] = zonedParts(now, timeZone).dateKey.split("-").map(Number);
+  return { year, month, day };
+}
+
+/**
+ * Days in a window. MTD has no fixed length, so it is counted in the store's timezone:
+ * complete days through yesterday when it ends yesterday, or including today when it
+ * ends today. "Last month" (MTD on the 1st) is the previous month's length.
+ */
+export function windowDays(win, now = new Date(), timeZone = "America/Los_Angeles") {
   if (win.days) return win.days;
   if (win.during === "yesterday" || win.during === "today") return 1;
-  if (String(win.since).startsWith("startOfMonth")) {
-    return now.getUTCDate(); // days elapsed this month, including today
-  }
+  const { year, month, day } = storeDate(now, timeZone);
+  if (String(win.since) === "startOfMonth(-1m)") return new Date(Date.UTC(year, month - 1, 0)).getUTCDate();
+  if (String(win.since).startsWith("startOfMonth")) return win.until === "yesterday" ? day - 1 : day;
   const relative = String(win.since).match(/^-(\d+)d$/);
   return relative ? Number(relative[1]) : null;
+}
+
+/**
+ * The windows as they apply today. Month to date ends yesterday, so on the 1st it has no
+ * complete day; it becomes the whole previous month for that one day rather than an
+ * empty query, and says so in its label.
+ */
+export function effectiveWindows(windows, now = new Date(), timeZone = "America/Los_Angeles") {
+  const out = {};
+  const { day } = storeDate(now, timeZone);
+  for (const [key, win] of Object.entries(windows ?? {})) {
+    if (key.startsWith("_")) {
+      out[key] = win;
+      continue;
+    }
+    const mtd = String(win.since).startsWith("startOfMonth(0m)") && win.until === "yesterday";
+    out[key] = mtd && day === 1 ? { ...win, since: "startOfMonth(-1m)", until: "yesterday", label: "Last month" } : win;
+  }
+  return out;
 }
 
 /**
@@ -330,9 +360,12 @@ export async function runQuery({ config, token, query, logger, fetchImpl, sleep,
   return raw ? { ...parsed, table: result.tableData } : parsed;
 }
 
-export async function collectShopify({ config, token, env = process.env, store, logger, fetchImpl, sleep, now = new Date() }) {
+export async function collectShopify({ config: baseConfig, token, env = process.env, store, logger, fetchImpl, sleep, now = new Date() }) {
+  if (!baseConfig.shopify?.shopDomain) throw new Error("config.shopify.shopDomain is not set");
+  // Every query, link and label below reads the windows as they apply today.
+  const timeZone = baseConfig.shopify.timezone ?? "America/Los_Angeles";
+  const config = { ...baseConfig, shopify: { ...baseConfig.shopify, windows: effectiveWindows(baseConfig.shopify.windows, now, timeZone) } };
   const sc = config.shopify;
-  if (!sc?.shopDomain) throw new Error("config.shopify.shopDomain is not set");
 
   // A caller may pass a token directly (tests); otherwise resolve one, exchanging the
   // client credentials if needed.
@@ -379,7 +412,7 @@ export async function collectShopify({ config, token, env = process.env, store, 
     }
   }
 
-  const daysFor = Object.fromEntries(windowNames.map((w) => [w, windowDays(sc.windows[w], now)]));
+  const daysFor = Object.fromEntries(windowNames.map((w) => [w, windowDays(sc.windows[w], now, timeZone)]));
   const comparisonWindows = windowNames.filter((w) => w !== primaryName);
 
   const tiles = (sc.tiles ?? []).map((tile) => {

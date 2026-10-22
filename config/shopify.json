@@ -9,6 +9,8 @@
   },
   "apiVersion": "2026-07",
   "currency": "USD",
+  "timezone": "America/Los_Angeles",
+  "_comment_timezone": "The store's own timezone (Shopify reports PDT/PST). ShopifyQL's 'yesterday' and 'startOfMonth' are in it, so month-to-date day counts are too.",
   "filters": {
     "newCustomerOnlineStore": "new_or_returning_customer = 'New' AND is_canceled_order = false AND sales_channel = 'Online Store' AND excludes_post_order_adjustments = true",
     "_comment": "Reused across every window so the three numbers are genuinely comparable. The subscription filter is the acquisition filter plus one clause, so the opt-in numerator and denominator share an identical base. subscription_or_one_time takes the values 'subscription' and 'one_time', lowercase.",
@@ -19,7 +21,7 @@
     "mtd": {
       "label": "MTD",
       "since": "startOfMonth(0m)",
-      "until": "today",
+      "until": "yesterday",
       "days": null,
       "primary": true
     },
@@ -31,16 +33,16 @@
     "d7": {
       "label": "7D",
       "since": "-7d",
-      "until": "today",
+      "until": "yesterday",
       "days": 7
     },
     "d30": {
       "label": "30D",
       "since": "-30d",
-      "until": "today",
+      "until": "yesterday",
       "days": 30
     },
-    "_comment": "The primary window is the number shown; the rest are what it is compared against, nearest first. A window is either a named range (DURING yesterday) or explicit SINCE/UNTIL bounds; DURING replaces both and must not be combined with either. `days` puts TOTALS on a per-day footing before comparing, which a rate does not need."
+    "_comment": "The primary window is the number shown; the rest are what it is compared against, nearest first. A window is either a named range (DURING yesterday) or explicit SINCE/UNTIL bounds; DURING replaces both and must not be combined with either. Every window is COMPLETE days only, ending yesterday in the store's timezone: 'SINCE -7d UNTIL today' returns 8 days including today's partial one, which divided by 7 overstated every per-day total (verified live 2026-10-22). 'UNTIL -1d' is not the same as 'UNTIL yesterday': it stops before yesterday. On the 1st, month to date has no complete day, so it shows the whole previous month. `days` puts TOTALS on a per-day footing before comparing, which a rate does not need."
   },
   "queries": {
     "acquisition": {
