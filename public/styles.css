@@ -519,3 +519,8 @@ details.section > summary h2 { margin: 0; border: 0; padding: 0; }
 .ps-gap ul { margin: 4px 0 0; padding-left: 18px; }
 .ps-head { margin: 0 0 4px; font-weight: 600; }
 .ps-head.bad, .pre-sprint .bad { color: var(--red); }
+
+/* Today's 3 */
+.start-here { margin: 6px 0 10px; }
+.start-here-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; border-bottom: 2px solid var(--green); padding-bottom: 6px; margin: 18px 0 10px; }
+.start-here-head h2 { margin: 0; border: 0; padding: 0; }

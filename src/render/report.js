@@ -6,6 +6,7 @@
 
 import { flagRef } from "../store/flag-ledger.js";
 import { isContext } from "../delta/flags.js";
+import { topFlags } from "../delta/priority.js";
 
 const SIGNAL_MARK = { stalled: "STALLED", waiting: "waiting", moving: "moving", idle: "idle" };
 
@@ -306,6 +307,13 @@ export function renderText(report) {
   const aged = needsAttention.some((f) => f.isNew !== undefined);
   const fresh = needsAttention.filter((f) => f.isNew);
   const still = needsAttention.filter((f) => !f.isNew);
+  const top = topFlags(flags);
+  if (top.length) {
+    lines.push("TODAY'S 3. Start here.");
+    top.forEach((flag, i) => lines.push(`  ${i + 1}. ${line(flag)}`));
+    lines.push("");
+  }
+
   lines.push(
     `NEEDS YOUR ATTENTION. ${needsAttention.length} item(s).${aged && needsAttention.length ? ` ${fresh.length} new today, ${still.length} still open.` : ""}`,
   );
@@ -410,6 +418,13 @@ export function renderSlackBlocks(report, config) {
     },
   });
 
+  const top = topFlags(flags);
+  if (top.length) {
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: [`*Today's 3* · start here`, ...top.map((f, i) => `${i + 1}. ${f.message}${ageNote(f)}`)].join("\n").slice(0, 2900) },
+    });
+  }
   const actionable = flags.filter((f) => f.severity !== "info" && !f.triage && !isContext(f));
   const context = flags.filter(isContext);
   if (context.length) {
@@ -515,6 +530,7 @@ export function buildReport({ runId, mode, dateKey, nowIso, flags, sections, det
       triaged: { done: triageCount("done"), snoozed: triageCount("snoozed"), waiting: triageCount("waiting"), dismissed: triageCount("dismissed") },
       parked: triageCount("done") + triageCount("snoozed") + triageCount("dismissed"),
       context: flags.filter(isContext).length,
+      topThree: topFlags(flags).map((f) => f.id),
     },
     flags,
     sections,

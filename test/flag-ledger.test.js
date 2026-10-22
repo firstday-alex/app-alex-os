@@ -305,3 +305,14 @@ test("a store move left open a week is not escalated, because it is not a task l
   assert.equal(flags[0].severity, "attention");
   assert.equal(flags[0].escalated, undefined);
 });
+
+test("the readout opens with Today's 3, in the text and in Slack", () => {
+  const r = report([
+    flag({ id: "a", key: "a", message: "Attention one.", isNew: true, openDays: 0 }),
+    flag({ id: "b", key: "b", severity: "p1", message: "The P1.", isNew: false, openDays: 2 }),
+  ]);
+  assert.match(r.text, /TODAY'S 3\. Start here\.\n  1\. \[P1\] \[L2\] The P1\. \(open 2 working days\)\n  2\. \[ATTENTION\] \[L2\] Attention one\./);
+  assert.ok(r.text.indexOf("TODAY'S 3") < r.text.indexOf("NEEDS YOUR ATTENTION"));
+  assert.deepEqual(r.summary.topThree, ["b", "a"]);
+  assert.match(JSON.stringify(r.slackBlocks), /Today's 3\* · start here\\n1\. The P1\./);
+});

@@ -476,6 +476,7 @@ function renderAllFlags({ rebuildTools = false } = {}) {
   const flags = state.report?.flags ?? [];
   if ($("flag-tiles")) $("flag-tiles").innerHTML = flagTiles(flags);
   renderStoreContext(flags);
+  renderTopThree(flags);
   if (rebuildTools) renderAttentionTools(flags);
   renderAttention();
   const open = flags.filter((f) => viewOf(f) === "open");
@@ -496,6 +497,38 @@ function renderAllFlags({ rebuildTools = false } = {}) {
  * Site-wide moves, above the store tiles: store metrics that moved, and control groups
  * that moved with them. Read before any test result, and nothing to triage.
  */
+/**
+ * Today's 3: the three open flags to do first. A copy of src/delta/priority.js so the
+ * list re-ranks as flags are handled during the day; a test pins that the two agree.
+ */
+const PRIORITY_BASE = { p1: 100, attention: 50, prompt: 40 };
+function priorityScore(flag) {
+  const base = PRIORITY_BASE[flag.severity];
+  if (base == null) return null;
+  const age = Math.min(flag.openDays ?? 0, 10) * 3;
+  const escalated = flag.escalated ? 10 : 0;
+  const rock = flag.layer === 1 || flag.subject?.type === "priority" || flag.rule === "intelligems.ready_for_call" ? 15 : 0;
+  return base + age + escalated + rock;
+}
+function topFlags(flags, n = 3) {
+  return flags
+    .map((flag, index) => ({ flag, index, score: triageOf(flag) || isContextFlag(flag) ? null : priorityScore(flag) }))
+    .filter((x) => x.score != null)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, n)
+    .map((x) => x.flag);
+}
+
+function renderTopThree(flags) {
+  const host = $("start-here");
+  if (!host) return;
+  const top = topFlags(flags);
+  host.innerHTML = top.length
+    ? `<div class="start-here-head"><h2>Today's 3</h2><span class="meta">start here: ranked by severity, how long each has been open, and whether it touches a rock</span></div>
+       ${top.map(flagCard).join("")}`
+    : `<div class="start-here-head"><h2>Today's 3</h2><span class="meta">nothing open that needs you. The full lists are below.</span></div>`;
+}
+
 function renderStoreContext(flags) {
   const host = $("store-context");
   if (!host) return;
