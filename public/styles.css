@@ -524,3 +524,13 @@ details.section > summary h2 { margin: 0; border: 0; padding: 0; }
 .start-here { margin: 6px 0 10px; }
 .start-here-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; border-bottom: 2px solid var(--green); padding-bottom: 6px; margin: 18px 0 10px; }
 .start-here-head h2 { margin: 0; border: 0; padding: 0; }
+
+/* 1:1 prep */
+.people-pick { margin: 0 0 14px; flex-wrap: wrap; }
+.person-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 6px 0 10px; }
+.person-head h3 { margin: 0; font-size: 18px; text-transform: none; letter-spacing: 0; color: var(--ink); }
+.person-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.person-points { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--green); border-radius: 4px; padding: 10px 14px; margin: 0 0 8px; }
+.person-points ul { margin: 0; padding-left: 18px; }
+.person-points li { margin: 3px 0; }
+ul.plain { margin: 0; padding-left: 18px; }

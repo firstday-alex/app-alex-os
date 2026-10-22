@@ -125,17 +125,35 @@ function render() {
 
   const flags = report.flags ?? [];
   state.flagCtx = flagContextIndex(report);
-  renderAllFlags({ rebuildTools: true });
 
-  renderStoreMetrics(report);
-  renderFunnel(report);
-  renderLayer1(report);
-  renderCross(report);
-  renderLayer2(report);
-  renderStaleness(report);
-  renderTests();
-  renderOpenItems();
+  // Each part is drawn on its own. One that fails says so in place, and the rest of the
+  // page, and the rocks load after it, still happen: a broken section must not blank
+  // the dashboard.
+  const failed = [];
+  const part = (name, fn) => {
+    try {
+      fn();
+    } catch (err) {
+      console.error(`render ${name}`, err);
+      failed.push(name);
+    }
+  };
+  part("the flags", () => renderAllFlags({ rebuildTools: true }));
+  part("the store metrics", () => renderStoreMetrics(report));
+  part("the funnel", () => renderFunnel(report));
+  part("Layer 1", () => renderLayer1(report));
+  part("the cross layer", () => renderCross(report));
+  part("the sprint", () => renderLayer2(report));
+  part("staleness", () => renderStaleness(report));
+  part("the tests", () => renderTests());
+  part("the open decisions", () => renderOpenItems());
   $("report-text").textContent = report.text ?? "";
+  if (failed.length) {
+    $("banners").insertAdjacentHTML(
+      "beforeend",
+      `<div class="missing"><strong>Part of the page could not be drawn:</strong> ${esc(failed.join(", "))}. The rest is complete. Refresh to try again.</div>`,
+    );
+  }
   loadRocks();
 }
 
@@ -477,6 +495,8 @@ function renderAllFlags({ rebuildTools = false } = {}) {
   if ($("flag-tiles")) $("flag-tiles").innerHTML = flagTiles(flags);
   renderStoreContext(flags);
   renderTopThree(flags);
+  // The 1:1 view shows the same flags, so a triage there redraws it too.
+  if (!$("view-people")?.classList.contains("hidden")) renderPeople();
   if (rebuildTools) renderAttentionTools(flags);
   renderAttention();
   const open = flags.filter((f) => viewOf(f) === "open");
@@ -1568,14 +1588,14 @@ function renderLayer2(report) {
           <td>${esc(task.status)}</td>
           <td>${esc(task.taskOwners.map((u) => u.username).join(", ") || "no owner")}</td>
           <td>${esc(task.assignees.map((u) => u.username).join(", ") || "unassigned")}</td>
-          <td>${esc(task.leadershipPriority?.label ?? "none")}</td>
+          <td>${esc(task.bigSwing?.label ?? "none")}</td>
           <td>${task.idleDays == null ? "—" : `${esc(task.idleDays)}d`}</td>
           <td>${stalenessLabel(task)}</td>
         </tr>`,
       )
       .join("");
 
-  const head = `<thead><tr><th>Signal</th><th>Task</th><th>Status</th><th>Owner</th><th>Assignees</th><th>Leadership priority</th><th>Untouched</th><th>In status</th></tr></thead>`;
+  const head = `<thead><tr><th>Signal</th><th>Task</th><th>Status</th><th>Owner</th><th>Assignees</th><th>Big Swing</th><th>Untouched</th><th>In status</th></tr></thead>`;
 
   $("layer2").innerHTML = `
     ${preSprintHtml(report.detail?.preSprint)}
@@ -2855,7 +2875,147 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 
 /* ----------------------------------- nav ----------------------------------- */
 
-const VIEW_TITLES = { readout: "Readout", rocks: "Rocks", sprint: "Sprint", staleness: "Staleness", tests: "Tests", setup: "Setup" };
+const VIEW_TITLES = { readout: "Readout", rocks: "Rocks", sprint: "Sprint", people: "1:1 prep", staleness: "Staleness", tests: "Tests", setup: "Setup" };
+
+/* --------------------------------- 1:1 prep ---------------------------------
+   One person at a time, built entirely from what the dashboard already holds: the
+   report, the live triage, the rocks and the test notes. Nothing is fetched for it and
+   nothing about it leaves the page; the talking points are copied for Alex to use. */
+
+const DAY_MS = 86_400_000;
+
+/** Whether a name as ClickUp or a rock spells it is this person: exact, or first name. */
+function isPerson(name, person) {
+  const a = String(name ?? "").trim().toLowerCase();
+  const b = String(person?.name ?? "").trim().toLowerCase();
+  if (!a || !b) return false;
+  return a === b || a.split(/\s+/)[0] === b.split(/\s+/)[0];
+}
+
+function personData(person) {
+  const report = state.report ?? {};
+  const d = report.detail ?? {};
+  const id = String(person.clickupUserId ?? "");
+  const tasks = (d.clickup?.tasks ?? []).filter((t) =>
+    [...(t.taskOwners ?? []), ...(t.assignees ?? [])].some((u) => String(u.id) === id || isPerson(u.username, person)),
+  );
+  const open = tasks.filter((t) => t.bucket !== "done");
+  const weekAgo = Date.now() - 7 * DAY_MS;
+  const doneThisWeek = tasks.filter((t) => t.bucket === "done" && t.dateClosed && t.dateClosed >= weekAgo);
+  const rocks = (state.rocks?.rocks ?? []).filter((r) => String(r.owner ?? "") === id);
+  const cross = (d.crossLayer?.people ?? []).find((p) => String(p.id) === id) ?? null;
+  const flags = (report.flags ?? []).filter((f) => !isContextFlag(f) && flagContext(f).owners.some((o) => isPerson(o, person)));
+  const openFlags = flags.filter((f) => viewOf(f) === "open");
+  const waiting = (report.flags ?? []).filter((f) => viewOf(f) === "waiting" && isPerson(triageOf(f)?.waitingOn, person));
+  const tests = (d.intelligems?.tests ?? []).filter((t) => {
+    const assignee = state.testNotes?.notes?.[t.id]?.assignee ?? t.owner?.clickupUserId;
+    return assignee != null && String(assignee) === id;
+  });
+  return { tasks, open, doneThisWeek, rocks, cross, openFlags, waiting, tests };
+}
+
+/** Deterministic talking points: what to raise, in the order it matters. */
+function talkingPoints(person, data) {
+  const points = [];
+  const labels = state.rocks?.statusLabels ?? {};
+  for (const r of data.rocks.filter((r) => r.state === "active")) {
+    const since = r.checkInDate ? Math.floor((Date.now() - Date.parse(r.checkInDate)) / DAY_MS) : null;
+    points.push(`${r.title}: ${labels[r.status] ?? r.status}${since == null ? ", never checked in" : `, last check-in ${since} days ago`}${r.kpi ? `. KPI ${r.kpi}` : ", no KPI set"}.`);
+  }
+  if (data.cross && data.cross.totalTickets > 0 && data.cross.distinctBigSwings === 0) points.push("No big swing in their sprint: none of their tickets is on a live rock.");
+  const stalled = data.open.filter((t) => t.signal === "stalled");
+  if (stalled.length) points.push(`${plural(stalled.length, "ticket has", "tickets have")} stalled: ${stalled.slice(0, 3).map((t) => `"${t.name}" (${t.idleDays}d)`).join(", ")}.`);
+  for (const f of data.waiting) points.push(`Waiting on them: ${f.message}`);
+  for (const f of data.openFlags.filter((f) => f.severity === "p1").slice(0, 3)) points.push(`P1: ${f.message}`);
+  for (const t of data.tests) points.push(`Test "${t.name}": ${t.recommendation?.recommendation ?? "running"}, ${t.daysRunning ?? "?"} days in.`);
+  if (data.doneThisWeek.length) points.push(`Shipped this week: ${data.doneThisWeek.slice(0, 5).map((t) => `"${t.name}"`).join(", ")}.`);
+  return points;
+}
+
+function renderPeople() {
+  const people = (state.people ?? []).filter((p) => p.clickupUserId);
+  const pick = $("people-pick");
+  const host = $("people-view");
+  if (!pick || !host) return;
+  if (!state.report) {
+    host.innerHTML = `<p class="sub">Loading the readout…</p>`;
+    return;
+  }
+  if (!people.length) {
+    pick.innerHTML = "";
+    host.innerHTML = `<p class="sub">No team roster in config/people.json.</p>`;
+    return;
+  }
+  const selected = people.find((p) => String(p.clickupUserId) === String(state.peopleSelected)) ?? people[0];
+  state.peopleSelected = String(selected.clickupUserId);
+  pick.innerHTML = people
+    .map((p) => `<button type="button" class="ghost dod-window${p === selected ? " on" : ""}" data-person="${esc(p.clickupUserId)}" aria-pressed="${p === selected}">${esc(p.name.split(/\s+/)[0])}</button>`)
+    .join("");
+
+  const data = personData(selected);
+  const points = talkingPoints(selected, data);
+  const labels = state.rocks?.statusLabels ?? {};
+  const taskRow = (t) => `<tr>
+      <td><span class="sig ${esc(t.signal)}">${esc(t.signal)}</span></td>
+      <td class="wrap">${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)}</td>
+      <td>${esc(t.status)}</td>
+      <td class="wrap">${esc(t.bigSwing?.label ?? "—")}</td>
+      <td>${t.idleDays == null ? "—" : `${esc(t.idleDays)}d`}</td>
+    </tr>`;
+  const chip = (n, one, many, bad = false) => `<span class="chip${bad && n ? " bad" : ""}">${esc(plural(n, one, many))}</span>`;
+
+  host.innerHTML = `
+    <div class="person-head">
+      <h3>${esc(selected.name)}</h3>
+      <span class="person-chips">${chip(data.rocks.filter((r) => r.state === "active").length, "active rock", "active rocks")} ${chip(data.open.length, "open ticket", "open tickets")} ${chip(data.cross?.distinctBigSwings ?? 0, "big swing", "big swings")} ${chip(data.openFlags.length, "open flag", "open flags", true)} ${chip(data.waiting.length, "item waiting on them", "items waiting on them", true)}</span>
+    </div>
+
+    <div class="person-points">
+      <div class="bar" style="margin:0 0 6px"><strong>Talking points</strong><span class="grow"></span><button type="button" class="ghost sm" id="copy-points">Copy for my notes</button></div>
+      ${points.length ? `<ul>${points.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : `<p class="sub">Nothing to raise from the data. Ask what is in their way.</p>`}
+      <p class="meta" id="copy-points-note"></p>
+    </div>
+
+    <h3>Rocks</h3>
+    ${data.rocks.length
+      ? `<div class="flag-links">${data.rocks.map((r) => `<a href="#rocks/${encodeURIComponent(r.id)}">${esc(r.title)} · ${esc(labels[r.status] ?? r.status)} · ${esc(r.state)}</a>`).join("")}</div>`
+      : `<p class="sub">No rocks.</p>`}
+
+    <h3>Open sprint tickets</h3>
+    ${data.open.length
+      ? `<div class="scroll"><table><thead><tr><th>Signal</th><th>Ticket</th><th>Status</th><th>Big Swing</th><th>Untouched</th></tr></thead><tbody>${data.open.map(taskRow).join("")}</tbody></table></div>`
+      : `<p class="sub">Nothing open in the current sprint.</p>`}
+    ${data.cross ? `<p class="meta">${esc(plural(data.cross.bauTickets?.length ?? 0, "BAU ticket", "BAU tickets"))}, ${esc(plural(data.cross.unrelatedTickets?.length ?? 0, "ticket", "tickets"))} on no rock.</p>` : ""}
+
+    ${data.doneThisWeek.length ? `<h3>Done this week</h3><ul class="plain">${data.doneThisWeek.map((t) => `<li>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)}</li>`).join("")}</ul>` : ""}
+
+    ${data.tests.length ? `<h3>Tests they own</h3><div class="flag-links">${data.tests.map((t) => `<a href="#tests/${encodeURIComponent(t.id)}">${esc(t.name)} · ${esc(t.recommendation?.recommendation ?? "")}</a>`).join("")}</div>` : ""}
+
+    <h3>Open flags about them</h3>
+    <div id="people-flags">${data.openFlags.length ? data.openFlags.map(flagCard).join("") : `<p class="sub">None.</p>`}</div>
+
+    ${data.waiting.length ? `<h3>Waiting on them</h3>${data.waiting.map(flagCard).join("")}` : ""}`;
+  state.peoplePoints = points;
+}
+
+$("people-pick")?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-person]");
+  if (!button) return;
+  state.peopleSelected = button.dataset.person;
+  history.replaceState(null, "", `#people/${encodeURIComponent(button.dataset.person)}`);
+  renderPeople();
+});
+document.addEventListener("click", async (event) => {
+  if (event.target.id !== "copy-points") return;
+  const person = (state.people ?? []).find((p) => String(p.clickupUserId) === String(state.peopleSelected));
+  const text = [`1:1 with ${person?.name ?? ""}`, ...(state.peoplePoints ?? []).map((p) => `- ${p}`)].join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    $("copy-points-note").textContent = "Copied.";
+  } catch {
+    $("copy-points-note").textContent = "The browser would not copy. Select the points and copy them by hand.";
+  }
+});
 
 /* -------------------------------- settings -------------------------------- */
 
@@ -3063,6 +3223,7 @@ function showView(name) {
   closeDrawer();
   if (name === "rocks" && !state.rocks) loadRocks();
   if (name === "setup" && !state.settings) loadSettings();
+  if (name === "people") renderPeople();
   if (name === "tests" && !state.testNotes) loadTestNotes().then(renderTests);
 }
 
@@ -3108,6 +3269,10 @@ function routeFromHash() {
   showView(name);
   if (name === "tests" && target) focusTest(target);
   if (name === "rocks" && target) focusRock(target);
+  if (name === "people" && target) {
+    state.peopleSelected = target;
+    renderPeople();
+  }
   if (name === "readout" && target) {
     // Sections start collapsed, so open the one holding the target before scrolling to it.
     const el = $(target);
