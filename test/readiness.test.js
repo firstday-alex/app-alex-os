@@ -4,8 +4,9 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evaluateGate, recommendFor } from "../src/delta/readiness.js";
-import { test as makeTest } from "./fixtures/tests.js";
+import { evaluateGate, recommendFor, clearResults } from "../src/delta/readiness.js";
+import { test as makeTest, group as makeGroup, metric as makeMetric, snapshot as igSnapshot } from "./fixtures/tests.js";
+import { computeFlags } from "../src/delta/index.js";
 import { testConfig } from "./fixtures/config.js";
 
 const config = testConfig();
@@ -82,4 +83,70 @@ test("a met gate with no verdict from the platform still does not invent one", (
   const result = recommendFor(makeTest({ daysRunning: 14, minOrdersPerGroup: 900, verdict: null }), config);
   assert.equal(result.recommendation, "Keep Running");
   assert.match(result.reason, /no verdict/);
+});
+
+/* ------------------- the gate is enough data, not a result -------------------
+   Past the gate, a call still needs a clear win or loss on a decision metric. */
+
+const decisionConfig = {
+  ...config,
+  intelligems: {
+    ...config.intelligems,
+    decisionMetrics: { metrics: [{ metric: "net_revenue_per_visitor", label: "RPV" }, { metric: "conversion_rate", label: "CVR" }] },
+  },
+};
+const withVariant = (metrics) =>
+  makeTest({
+    daysRunning: 21,
+    minOrdersPerGroup: 412,
+    verdict: "directional_win",
+    groups: [makeGroup(), makeGroup({ id: "g_v", name: "Variant A", isControl: false, metrics })],
+  });
+
+test("past the gate with no clear result on any decision metric, the test keeps running", () => {
+  const result = recommendFor(
+    withVariant({ conversion_rate: makeMetric(0.032, { uplift: 0.03, upliftInterval: [-0.01, 0.07], probBeatControl: 0.88 }) }),
+    decisionConfig,
+  );
+  assert.equal(result.recommendation, "Keep Running", "a directional verdict past the gate is not a call");
+  assert.equal(result.awaitingResult, true);
+  assert.match(result.reason, /no clear win or loss yet on RPV or CVR/);
+});
+
+test("past the gate with a clear win on a decision metric, the verdict stands and names the result", () => {
+  const test_ = withVariant({ conversion_rate: makeMetric(0.034, { uplift: 0.041, upliftInterval: [0.012, 0.07], probBeatControl: 0.97 }) });
+  const result = recommendFor(test_, decisionConfig);
+  assert.equal(result.recommendation, "Iterate");
+  assert.deepEqual(result.clearResults.map((r) => [r.label, r.direction, r.groupName]), [["CVR", "win", "Variant A"]]);
+  assert.match(result.reason, /CVR \+4\.1% for "Variant A" \(a clear win\)/);
+});
+
+test("a clear loss counts too, and a metric outside the decision list does not", () => {
+  const loss = withVariant({ net_revenue_per_visitor: makeMetric(2.1, { uplift: -0.08, upliftInterval: [-0.12, -0.03], probBeatControl: 0.02 }) });
+  assert.deepEqual(clearResults(loss, decisionConfig.intelligems.decisionMetrics.metrics).map((r) => r.direction), ["loss"]);
+  const elsewhere = withVariant({ aov: makeMetric(90, { uplift: 0.1, upliftInterval: [0.05, 0.15], probBeatControl: 0.99 }) });
+  assert.equal(recommendFor(elsewhere, decisionConfig).recommendation, "Keep Running");
+});
+
+function flagsBetween(before, now) {
+  return computeFlags({
+    snapshots: { intelligems: igSnapshot([now]), errors: {} },
+    baselines: { clickup: { snapshot: null }, intelligems: { snapshot: igSnapshot([before]) }, leadership: { snapshot: null }, shopify: { snapshot: null } },
+    config: decisionConfig,
+    dateKey: "2026-10-22",
+    nowIso: "2026-10-22T13:00:00Z",
+  }).flags;
+}
+
+test("passing the gate alone raises nothing; a clear result after it raises ready for a call", () => {
+  const unclear = { conversion_rate: makeMetric(0.032, { uplift: 0.03, upliftInterval: [-0.01, 0.07], probBeatControl: 0.88 }) };
+  const clear = { conversion_rate: makeMetric(0.034, { uplift: 0.041, upliftInterval: [0.012, 0.07], probBeatControl: 0.97 }) };
+  const notYet = { ...withVariant(unclear), daysRunning: 6, minOrdersPerGroup: 280 };
+
+  const justPassed = flagsBetween(notYet, withVariant(unclear));
+  assert.ok(!justPassed.some((f) => ["intelligems.ready_for_call", "intelligems.gate_met", "intelligems.decision_due"].includes(f.rule)));
+
+  const nowClear = flagsBetween(withVariant(unclear), withVariant(clear));
+  const flag = nowClear.find((f) => f.rule === "intelligems.ready_for_call");
+  assert.match(flag.message, /is ready for a call: CVR \+4\.1% for "Variant A" \(a clear win\), after 21 days and 412 orders in the smallest group\. The recommendation is Iterate\./);
 });

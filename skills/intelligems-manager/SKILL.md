@@ -56,6 +56,13 @@ group**, not total across the test.
 
 If either is unmet the recommendation is **Keep Running**. No verdict yet.
 
+**Passing the gate is not a reason to decide** (Alex, 2026-10-22). Past it, the verdict
+mapping only applies once a decision metric (`decisionMetrics`: RPV, Sub opt-in, CVR, AOV)
+shows a clear win or loss for a variant: uplift interval excludes zero and probability to
+beat control clears the strong bar. Until then the recommendation stays Keep Running. The
+readout raises `intelligems.ready_for_call` when a test first gets there, naming the result,
+and nothing when the gate alone is passed.
+
 Intelligems applies the same gate itself and returns `not_ready` until it is met, so this
 skill asks for the verdict rather than reinventing it — but it **also computes the gate
 locally and flags any disagreement** between the two, taking the conservative answer. Not

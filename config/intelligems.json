@@ -50,6 +50,27 @@
     "minOrdersPerGroup": 300,
     "_comment": "Confirmed against a live test: '[KCM-PDP] Price per Gummy' at 42 runtime_days with 254/238 orders per variant returns verdict not_ready. Days met, orders not, so not ready. 300 is per group. The platform returns runtime_days and orders_per_variant inside the testResult block, so the gate is read rather than recomputed, and any disagreement with our own arithmetic is flagged."
   },
+  "decisionMetrics": {
+    "metrics": [
+      {
+        "metric": "net_revenue_per_visitor",
+        "label": "RPV"
+      },
+      {
+        "metric": "pct_subscription_orders",
+        "label": "Sub opt-in"
+      },
+      {
+        "metric": "conversion_rate",
+        "label": "CVR"
+      },
+      {
+        "metric": "net_revenue_per_order",
+        "label": "AOV"
+      }
+    ],
+    "_comment": "Passing the readiness gate means there is enough data, not a result. A test is only ready for a call (Ship, Iterate or Kill) once one of these shows a clear win or loss for a variant against control: uplift interval excludes zero and probability to beat control at or past the strong bar (95%). Until then it is Keep Running, whatever the platform verdict. Set by Alex 2026-10-22. AOV is net_revenue_per_order."
+  },
   "verdictMap": {
     "strong_win": "Ship",
     "directional_win": "Iterate",

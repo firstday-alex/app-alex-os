@@ -46,6 +46,11 @@ not by asking someone to work harder. There is no cap on big swings in a person'
 is not met, the answer is Keep Running, and the interesting question becomes when it will
 be met, not what the numbers currently say.
 
+**The gate is enough data, not a result.** Past it, a test is only ready for a call once a
+variant has a clear win or loss against control on RPV, Sub opt-in, CVR or AOV: the uplift
+interval excludes zero and the probability to beat control is at or past 95% (or at or
+below 5%). Without that it is still Keep Running, whatever the platform verdict says.
+
 **Lifetime value can outweigh first-order conversion.** When a test shifts the
 subscription mix and the LTV reference values are present, weigh six month value, not just
 the immediate conversion number. When those values are absent, say that the lifetime

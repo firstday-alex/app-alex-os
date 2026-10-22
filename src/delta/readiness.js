@@ -5,10 +5,51 @@
 // the test, and Intelligems applies the same gate itself, returning `not_ready` until it
 // is met.
 //
+// The gate is necessary, not sufficient. Passing it means there is enough data to judge,
+// not that there is anything to judge: a call is only due once a decision metric (RPV,
+// Sub opt-in, CVR, AOV, from config.intelligems.decisionMetrics) shows a clear win or
+// loss for a variant against control. Until then the recommendation stays Keep Running,
+// whatever the platform verdict maps to.
+//
 // So we ask Intelligems for its verdict AND compute the gate ourselves. Not because we
 // distrust them, but because a silent disagreement between the two is exactly the kind of
 // quiet bug that produces a confident wrong readout. When they disagree we say so and
 // take the more conservative answer.
+
+import { classify } from "./significance.js";
+
+/**
+ * The decision metrics where a variant has a clear result against control: the uplift
+ * interval excludes zero and the probability to beat control clears the strong bar, in
+ * either direction. The same "Strong" the test readouts show.
+ */
+export function clearResults(test, decisionMetrics, thresholds = {}) {
+  const out = [];
+  for (const group of test.groups ?? []) {
+    if (group.isControl) continue;
+    for (const { metric, label } of decisionMetrics) {
+      const m = group.metrics?.[metric];
+      const result = classify(m, thresholds);
+      if (result.level === "strong_win" || result.level === "strong_loss") {
+        out.push({
+          metric,
+          label,
+          groupName: group.name,
+          direction: result.level === "strong_win" ? "win" : "loss",
+          upliftPct: m?.upliftPct ?? (m?.uplift == null ? null : m.uplift * 100),
+          probability: m?.probBeatControl ?? null,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/** "CVR +4.1% for "Variant A"". */
+export function describeResult(r) {
+  const pct = r.upliftPct == null ? "" : ` ${r.upliftPct > 0 ? "+" : ""}${Number(r.upliftPct).toFixed(1)}%`;
+  return `${r.label}${pct} for "${r.groupName}" (a clear ${r.direction})`;
+}
 
 export function evaluateGate(test, gate) {
   const minDays = gate.minDaysRunning;
@@ -38,7 +79,7 @@ export function evaluateGate(test, gate) {
  * Until the gate is passed the recommendation is Keep Running. No verdict. Once it is
  * passed, the Intelligems verdict maps through config.intelligems.verdictMap.
  */
-export function recommendFor(test, config) {
+export function recommendFor(test, config, { thresholds } = {}) {
   const gateConfig = config.intelligems.readinessGate;
   const map = config.intelligems.verdictMap ?? {};
   const gate = evaluateGate(test, gateConfig);
@@ -90,11 +131,29 @@ export function recommendFor(test, config) {
     };
   }
 
+  // Enough data is not a result. With decision metrics configured, a call needs a clear
+  // win or loss on one of them; otherwise the test keeps running.
+  const decisionMetrics = config.intelligems.decisionMetrics?.metrics ?? null;
+  const results = decisionMetrics ? clearResults(test, decisionMetrics, thresholds) : null;
+  if (results && results.length === 0 && mapped !== "Keep Running") {
+    const names = decisionMetrics.map((d) => d.label);
+    return {
+      recommendation: "Keep Running",
+      verdict,
+      gate,
+      disagreement,
+      awaitingResult: true,
+      clearResults: [],
+      reason: `Gate met at ${gate.days} days and ${gate.orders} orders in the smallest group, but no clear win or loss yet on ${names.slice(0, -1).join(", ")} or ${names.at(-1)}. Platform verdict: ${verdict}.`,
+    };
+  }
+
   return {
     recommendation: mapped,
     verdict,
     gate,
     disagreement,
-    reason: `Gate met at ${gate.days} days and ${gate.orders} orders in the smallest group. Platform verdict: ${verdict}.`,
+    clearResults: results,
+    reason: `Gate met at ${gate.days} days and ${gate.orders} orders in the smallest group${results?.length ? `, with ${results.map(describeResult).join("; ")}` : ""}. Platform verdict: ${verdict}.`,
   };
 }

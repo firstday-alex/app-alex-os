@@ -5,6 +5,7 @@
 
 import { makeFlag, sortFlags, logFlags } from "./flags.js";
 import { metricLabel, formatMetricValue } from "./p1band.js";
+import { describeResult } from "./readiness.js";
 import { clickupDelta } from "./clickup-delta.js";
 import { intelligemsDelta } from "./intelligems-delta.js";
 import { leadershipChecks } from "./leadership-checks.js";
@@ -145,14 +146,17 @@ function intelligemsFlags(delta, { config, dateKey, testNotes = null }) {
       });
     }
 
-    if (test.changes.gateJustMet) {
+    // Ready for a call: past the gate AND a clear result on a decision metric. Passing the
+    // gate alone raises nothing: enough data is not a result.
+    if (test.changes.readyJustNow) {
+      const results = test.recommendation.clearResults ?? [];
       add({
         layer: 3,
-        rule: "intelligems.gate_met",
+        rule: "intelligems.ready_for_call",
         severity: "p1",
-        subject: { ...subject, id: `${test.id}:gate` },
-        message: `"${test.name}" just passed the readiness gate at ${test.recommendation.gate.days} days and ${test.recommendation.gate.orders} orders in the smallest group. It can take a real verdict now.`,
-        values: test.recommendation.gate,
+        subject: { ...subject, id: `${test.id}:ready` },
+        message: `"${test.name}" is ready for a call: ${results.length ? `${results.map(describeResult).join("; ")}, ` : ""}after ${test.recommendation.gate.days} days and ${test.recommendation.gate.orders} orders in the smallest group. The recommendation is ${test.recommendation.recommendation}.`,
+        values: { gate: test.recommendation.gate, clearResults: results, recommendation: test.recommendation.recommendation },
       });
     }
 
@@ -252,7 +256,7 @@ function intelligemsFlags(delta, { config, dateKey, testNotes = null }) {
         rule: "intelligems.decision_due",
         severity: "prompt",
         subject: { ...subject, id: `${test.id}:decision` },
-        message: `"${test.name}" is ready for a call: the recommendation is ${call} after ${test.daysRunning ?? "?"} days and ${test.minOrdersPerGroup ?? "?"} orders in its smallest group, and no decision is recorded. Add one in its notes.`,
+        message: `"${test.name}" is ready for a call: the recommendation is ${call} after ${test.daysRunning ?? "?"} days and ${test.minOrdersPerGroup ?? "?"} orders in its smallest group${test.recommendation?.clearResults?.length ? `, on ${test.recommendation.clearResults.map(describeResult).join("; ")}` : ""}, and no decision is recorded. Add one in its notes.`,
         values: {
           recommendation: call,
           daysRunning: test.daysRunning,

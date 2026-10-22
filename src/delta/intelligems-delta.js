@@ -179,7 +179,13 @@ export function intelligemsDelta(baseline, current, { config, logger, settings =
   const tests = [];
   for (const test of current?.items ?? []) {
     const before = baselineById.get(test.id) ?? null;
-    const recommendation = recommendFor(test, config);
+    const recommendation = recommendFor(test, config, { thresholds });
+    // Ready for a call means the recommendation just left Keep Running: the gate is met
+    // AND a decision metric has a clear result. The gate alone is not a reason to decide.
+    const readyJustNow =
+      Boolean(before) &&
+      recommendation.recommendation !== "Keep Running" &&
+      recommendFor(before, config, { thresholds }).recommendation === "Keep Running";
 
     const verdictChanged = Boolean(before) && (before.verdict ?? null) !== (test.verdict ?? null);
     const gateJustMet =
@@ -223,13 +229,13 @@ export function intelligemsDelta(baseline, current, { config, logger, settings =
       }),
     );
 
-    const notable = verdictChanged || gateJustMet || p0.length > 0 || p0Split.controlSwings.length > 0 || p1.variants.length > 0 || p1.controlSwings.length > 0 || crossings.length > 0;
+    const notable = verdictChanged || readyJustNow || p0.length > 0 || p0Split.controlSwings.length > 0 || p1.variants.length > 0 || p1.controlSwings.length > 0 || crossings.length > 0;
 
     tests.push({
       ...test,
       before: before ? { verdict: before.verdict, daysRunning: before.daysRunning, minOrdersPerGroup: before.minOrdersPerGroup } : null,
       recommendation,
-      changes: { verdictChanged, gateJustMet, p0Moves: p0, p1OutOfBand: p1.variants, p1ControlSwings: p1.controlSwings, p0ControlSwings: p0Split.controlSwings, probabilityCrossings: crossings },
+      changes: { verdictChanged, gateJustMet, readyJustNow, p0Moves: p0, p1OutOfBand: p1.variants, p1ControlSwings: p1.controlSwings, p0ControlSwings: p0Split.controlSwings, probabilityCrossings: crossings },
       tradeOffs: trades,
       trees,
       futureValue,
