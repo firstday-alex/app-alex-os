@@ -300,3 +300,43 @@ test("an unclaimed Big Swing carries what is needed to add it as a rock in one c
     { label: "Carpe Bundle Builder Inspired Funnel", optionId: "23eba93e", parkedRockId: "p_back" },
   ]);
 });
+
+/* ------------------------------ a rock whose work stopped ------------------------------ */
+
+const DAY = 86_400_000;
+const nowMs = typeof NOW === "number" ? NOW : new Date(NOW).getTime();
+const touched = (daysAgo) => nowMs - daysAgo * DAY;
+const ROCKS_ON_TRACK = {
+  ...LEADERSHIP,
+  queue: LEADERSHIP.queue.map((r) => ({ ...r, status: "on_track" })),
+};
+
+test("an On Track rock whose open tickets have all stopped moving is flagged, naming the freshest one", () => {
+  const result = check(
+    [
+      { ...task({ id: "a", name: "Upsell copy", bigSwing: SUB, bucket: "inProgress", dateUpdated: touched(9) }), ...owner("u1", "dana") },
+      { ...task({ id: "b", name: "Upsell design", bigSwing: SUB, bucket: "notStarted", dateUpdated: touched(14) }), ...owner("u1", "dana") },
+    ],
+    ROCKS_ON_TRACK,
+  );
+  const flag = result.flags.find((f) => f.rule === "crosslayer.rock_work_stalled");
+  assert.ok(flag);
+  assert.equal(flag.subject.label, "Subscription upsell");
+  assert.equal(flag.message, '"Subscription upsell" is marked On Track, but none of its 2 open tickets have moved in 9 days. The most recent was "Upsell copy".');
+});
+
+test("one ticket touched this week is enough to keep a rock off the stalled list", () => {
+  const result = check(
+    [
+      { ...task({ id: "a", bigSwing: SUB, bucket: "inProgress", dateUpdated: touched(2) }), ...owner("u1", "dana") },
+      { ...task({ id: "b", bigSwing: SUB, bucket: "inProgress", dateUpdated: touched(20) }), ...owner("u1", "dana") },
+    ],
+    ROCKS_ON_TRACK,
+  );
+  assert.ok(!result.flags.some((f) => f.rule === "crosslayer.rock_work_stalled"));
+});
+
+test("a ticket whose last touch is unknown never makes a rock look stalled", () => {
+  const result = check([{ ...task({ id: "a", bigSwing: SUB, bucket: "inProgress", dateUpdated: null }), ...owner("u1", "dana") }], ROCKS_ON_TRACK);
+  assert.ok(!result.flags.some((f) => f.rule === "crosslayer.rock_work_stalled"));
+});

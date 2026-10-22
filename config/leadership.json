@@ -11,7 +11,9 @@
   "crossLayer": {
     "requireOneBigSwingPerPerson": true,
     "unrelatedTicketPileThreshold": 5,
-    "_comment": "A person is flagged when they hold a big swing plus a pile of tickets that link to no leadership priority and are not marked business as usual. Business as usual work is expected and allowed. It just should not crowd out the one big swing."
+    "_comment": "A person is flagged when they hold a big swing plus a pile of tickets that link to no leadership priority and are not marked business as usual. Business as usual work is expected and allowed. It just should not crowd out the one big swing.",
+    "rockStalledAfterDays": 7,
+    "_comment_stalled": "An active rock whose open sprint tickets on its Big Swing have all gone untouched this many days is flagged, however its status reads: the earliest sign a rock is slipping is work stopping while the rock still says On Track."
   },
   "dropdownSync": {
     "enforce": true,

@@ -886,10 +886,11 @@ const ROCK_FIXES = {
   "leadership.rock_without_kpi": "kpi",
   "leadership.unassigned": "owner",
   "leadership.rock_not_linked": "link",
+  "crosslayer.rock_work_stalled": "stalled",
 };
 
 function quickFix(flag) {
-  if (!String(flag.rule).startsWith("leadership.") && flag.rule !== "crosslayer.big_swing_without_rock") return "";
+  if (!String(flag.rule).startsWith("leadership.") && !["crosslayer.big_swing_without_rock", "crosslayer.rock_work_stalled"].includes(flag.rule)) return "";
   if (!state.rocks) return `<div class="quick-fix"><span class="meta">Loading the rock to edit…</span></div>`;
   const subject = subjectOf(flag);
   const kind = ROCK_FIXES[flag.rule];
@@ -905,6 +906,17 @@ function quickFix(flag) {
           <button type="button" class="sm" data-qf="checkin-today">Checked in today</button>
           <label>or on <input type="date" class="sm" data-qf-input="checkInDate" value="${esc(rock.checkInDate ?? "")}"></label>
           <button type="button" class="ghost sm" data-qf="save" data-field="checkInDate">Save date</button>`);
+      case "stalled": {
+        // Say it is in trouble, or that you looked and it is fine; the tickets are where to
+        // see why it stopped.
+        const tickets = (flag.values?.tickets ?? [])
+          .map((t) => `<a href="${esc(t.url ?? "#")}" target="_blank" rel="noreferrer">${esc(t.name)} · ${esc(t.idleDays)}d ↗</a>`)
+          .join("");
+        return field(`
+          ${rock.status === "at_risk" ? "" : `<button type="button" class="sm" data-qf="set" data-field="status" data-value="at_risk">Mark At Risk</button>`}
+          <button type="button" class="ghost sm" data-qf="checkin-today">Checked in today</button>
+          ${tickets ? `<span class="flag-links">${tickets}</span>` : ""}`);
+      }
       case "status":
         return field(`
           <span class="meta">Status</span>

@@ -230,6 +230,36 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
     }
   }
 
+  // A rock whose work has stopped. It has open tickets on its Big Swing, but none has
+  // been touched in a week. Its status can still say On Track, which is the point: the
+  // gap between what a rock says and what its tickets do is the earliest warning.
+  const stalledAfter = lc.rockStalledAfterDays ?? 7;
+  for (const item of activeItems) {
+    const tickets = openTasks.filter((t) => {
+      if (!t.bigSwing?.optionId) return false;
+      if (item.clickupBigSwingOptionId) return String(t.bigSwing.optionId) === String(item.clickupBigSwingOptionId);
+      return String(t.bigSwing.label ?? "").trim().toLowerCase() === String(item.title).trim().toLowerCase();
+    });
+    const known = tickets.filter((t) => t.idleDays != null);
+    if (!known.length || known.length < tickets.length) continue; // an unknown age is not a stall
+    const freshest = known.reduce((a, b) => (a.idleDays <= b.idleDays ? a : b));
+    if (freshest.idleDays < stalledAfter) continue;
+    const onTrack = item.status === "on_track";
+    add({
+      layer: "cross",
+      rule: "crosslayer.rock_work_stalled",
+      severity: "attention",
+      subject: { type: "priority", id: `${item.id}:stalled`, label: item.title },
+      message: `"${item.title}" ${onTrack ? "is marked On Track, but" : "has"} none of its ${tickets.length === 1 ? "1 open ticket has" : `${tickets.length} open tickets have`} moved in ${freshest.idleDays} days. The most recent was "${freshest.name}".`,
+      values: {
+        status: item.status ?? null,
+        owner: item.owner?.name ?? null,
+        idleDays: freshest.idleDays,
+        tickets: tickets.slice(0, 10).map((t) => ({ id: t.id, name: t.name, url: t.url, idleDays: t.idleDays, status: t.status })),
+      },
+    });
+  }
+
   // A leadership priority nobody is actually working on. The queue says it is active and
   // owned, but no open ticket ladders up to it.
   const laddered = new Set();
