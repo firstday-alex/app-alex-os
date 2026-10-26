@@ -111,10 +111,11 @@ export function probabilityCrossings(test, baselineTest, threshold = PROB_CROSS_
  * This is deliberately arithmetic, not judgement. It lists which P0 metrics moved up and
  * which moved down with statistical confidence, and says plainly when they conflict. The
  * judgement call on a conflict is what the Strategic Advisor is for, and it only runs when
- * Alex asks. When the LTV reference values are configured, a shift in subscription mix is
- * also valued over six months rather than over the first order alone.
+ * Alex asks. When the LTV references are set, each challenger also carries its lifetime
+ * value against control from the future-value projection, so a shift in subscription mix
+ * is valued over the horizon rather than over the first order alone.
  */
-export function tradeOffs(test, config) {
+export function tradeOffs(test, config, futureValue = null) {
   const p0 = config.intelligems.metrics?.p0 ?? [];
   const { control, challengers } = controlAndChallengers(test);
   const analysis = [];
@@ -141,8 +142,7 @@ export function tradeOffs(test, config) {
       else flat.push({ metric: name, uplift, upliftPct: pct, note: "interval spans zero" });
     }
 
-    const ltv = config.references?.ltv ?? {};
-    const ltvConfigured = ltv.subscription6MonthLtv?.value != null && ltv.oneTime6MonthLtv?.value != null;
+    const projected = futureValue?.available ? futureValue.variants.find((v) => v.id === group.id) ?? null : null;
 
     analysis.push({
       groupId: group.id,
@@ -152,16 +152,17 @@ export function tradeOffs(test, config) {
       losses,
       flat,
       conflict: wins.length > 0 && losses.length > 0,
-      // Six month value, when the reference values exist. Rendered as "not configured"
-      // otherwise, never as zero.
-      futureValue: ltvConfigured
+      // Lifetime value against control, when the references exist. Rendered as "not
+      // configured" otherwise, never as zero.
+      futureValue: projected
         ? {
-            subscriptionLtv: ltv.subscription6MonthLtv.value,
-            oneTimeLtv: ltv.oneTime6MonthLtv.value,
-            spread: ltv.subscription6MonthLtv.value - ltv.oneTime6MonthLtv.value,
-            note: "Weigh a shift in subscription mix on six month value, not first order alone.",
+            method: futureValue.method,
+            horizonMonths: futureValue.horizonMonths,
+            upliftPct: projected.upliftPct,
+            immediateUpliftPct: projected.immediateUpliftPct,
+            disagreesWithImmediate: projected.disagreesWithImmediate,
           }
-        : { configured: false, note: "LTV reference values not configured" },
+        : { configured: false, note: futureValue?.reason ?? "LTV references not configured" },
     });
   }
 
@@ -198,7 +199,8 @@ export function intelligemsDelta(baseline, current, { config, logger, settings =
     const p0 = p0Split.variants;
     const p1 = checkTestP1Bands(test, before, config, logger);
     const crossings = probabilityCrossings(test, before);
-    const trades = tradeOffs(test, config);
+    const futureValue = projectFutureValue(test, settings, now);
+    const trades = tradeOffs(test, config, futureValue);
 
     // The cascading tree, per challenger, and the lifetime view of the whole test.
     const control = (test.groups ?? []).find((g) => g.isControl) ?? null;
@@ -208,7 +210,6 @@ export function intelligemsDelta(baseline, current, { config, logger, settings =
         const roots = buildMetricTree(group, control, config.intelligems.metricTree, thresholds);
         return { groupId: group.id, groupName: group.name, roots, headline: treeHeadline(roots) };
       });
-    const futureValue = projectFutureValue(test, settings, now);
 
     // Where the test actually won or lost. Only reported when a segment contradicts the
     // aggregate; confirming it in six segments is noise.

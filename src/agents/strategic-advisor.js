@@ -5,34 +5,80 @@
 // plus its stored context, and returns a recommendation with the reasoning and the trade
 // offs it weighed.
 //
-// The business context lives in skills/strategic-advisor/SKILL.md. That file is the one
-// piece of this system expected to keep changing, and the Learning Skill can edit it with
-// Alex's approval, same as the manager skills.
+// The goals come from the rocks, read fresh from the latest report on every call, so the
+// advisor weighs a flag against what leadership is actually chasing this quarter. The
+// standing context (how the business works, constraints, risk appetite) lives in
+// skills/strategic-advisor/SKILL.md, which the Learning Skill can edit with Alex's
+// approval, same as the manager skills.
 
 import { ask, readSkill } from "./anthropic.js";
+import { SettingsStore } from "../store/settings.js";
+
+const LTV_KEYS = [
+  "subscriptionLtvMultiplier",
+  "oneTimeLtvMultiplier",
+  "ltvMultiplierHorizonMonths",
+  "ltvMultipliersAsOf",
+  "subscriptionLtv6mo",
+  "oneTimeLtv6mo",
+  "ltvHorizonMonths",
+  "ltvAsOf",
+];
+
+/**
+ * The rocks, active and recently shipped, trimmed to what a recommendation is weighed
+ * against. They are the biggest goals this quarter, so every answer sees all of them,
+ * whatever the flag is about.
+ */
+export function rocksForAdvice(queue = []) {
+  return queue.map((rock) => ({
+    id: rock.id,
+    title: rock.title,
+    priority: rock.priority ?? null,
+    state: rock.state ?? null,
+    status: rock.status ?? null,
+    owner: rock.owner?.name ?? null,
+    kpi: rock.kpi ?? null,
+    checkInDate: rock.checkInDate ?? null,
+    shippedAt: rock.shippedAt || null,
+    intelligemsExperienceId: rock.intelligemsExperienceId ?? null,
+    notes: rock.notes ?? null,
+  }));
+}
+
+/** The rock a ticket serves, through its Big Swing option, else by Big Swing label. */
+function rockForTask(task, queue) {
+  const swing = task?.bigSwing;
+  if (!swing?.optionId && !swing?.label) return null;
+  return (
+    queue.find((r) => swing.optionId && r.clickupBigSwingOptionId && String(r.clickupBigSwingOptionId) === String(swing.optionId)) ??
+    queue.find((r) => swing.label && String(r.title).trim().toLowerCase() === String(swing.label).trim().toLowerCase()) ??
+    null
+  );
+}
 
 /**
  * Assembles everything known about one flagged item. The advisor sees no more and no less
  * than this, which is what makes its answers reproducible enough to argue with.
  */
-export function gatherContext({ flag, report, config }) {
+export function gatherContext({ flag, report, config, settings = null }) {
   const detail = report.detail ?? {};
-  const context = { flag, dateKey: report.dateKey, mode: report.mode };
+  const queue = detail.leadership?.queue ?? [];
+  const context = { flag, dateKey: report.dateKey, mode: report.mode, rocks: rocksForAdvice(queue) };
 
   if (flag.subject?.type === "task") {
     const taskId = String(flag.subject.id).split(":")[0];
     context.task = (detail.clickup?.tasks ?? []).find((t) => t.id === taskId) ?? null;
-    const priorityLabel = context.task?.leadershipPriority?.label ?? null;
-    context.leadershipPriority =
-      (detail.leadership?.queue ?? []).find((i) => String(i.title).toLowerCase() === String(priorityLabel).toLowerCase()) ?? null;
+    context.rock = rockForTask(context.task, queue)?.id ?? null;
   }
 
   if (flag.subject?.type === "test") {
     const testId = String(flag.subject.id).split(":")[0];
     context.test = (detail.intelligems?.tests ?? []).find((t) => t.id === testId) ?? null;
+    context.rock = queue.find((r) => r.intelligemsExperienceId && String(r.intelligemsExperienceId) === testId)?.id ?? null;
     // The stored reference values, so long term value can be weighed against immediate
     // conversion rather than ignored.
-    context.ltvReferences = config.references?.ltv ?? null;
+    context.ltvReferences = settings ? Object.fromEntries(LTV_KEYS.map((k) => [k, settings[k] ?? null])) : null;
     context.readinessGate = config.intelligems.readinessGate;
     context.verdictMap = config.intelligems.verdictMap;
   }
@@ -40,13 +86,11 @@ export function gatherContext({ flag, report, config }) {
   if (flag.subject?.type === "person") {
     const personId = String(flag.subject.id).split(":")[0];
     context.person = (detail.crossLayer?.people ?? []).find((p) => p.id === personId) ?? null;
-    context.leadershipQueue = detail.leadership?.queue ?? [];
   }
 
   if (flag.subject?.type === "priority" || flag.subject?.type === "queue") {
-    context.leadershipQueue = detail.leadership?.queue ?? [];
     context.leadershipBacklog = detail.leadership?.backlog ?? [];
-    context.item = (detail.leadership?.queue ?? []).find((i) => i.id === flag.subject.id) ?? null;
+    context.rock = queue.find((i) => i.id === flag.subject.id)?.id ?? null;
   }
 
   context.otherFlagsOnSameSubject = (report.flags ?? []).filter(
@@ -71,7 +115,14 @@ export async function advise({ flagId, store, config, env = process.env, logger,
     return { error: `Flag ${flagId} is not in the latest readout. It may have resolved itself, or the readout has moved on.` };
   }
 
-  const context = gatherContext({ flag, report, config });
+  const settings = await new SettingsStore(store.backend, logger)
+    .read()
+    .then((d) => d.settings)
+    .catch((err) => {
+      logger?.warn?.("advisor.settings_unreadable", { err });
+      return null;
+    });
+  const { rocks, ...context } = gatherContext({ flag, report, config, settings });
   const system = readSkill("strategic-advisor");
 
   const result = await ask({
@@ -85,8 +136,16 @@ export async function advise({ flagId, store, config, env = process.env, logger,
         content: [
           "Alex clicked the button on this flagged item and wants a recommendation.",
           "",
+          "THE ROCKS",
+          "This quarter's biggest goals. Weigh the call by what it does for them. When context.rock is set, it names the rock this item serves.",
+          JSON.stringify(rocks, null, 2),
+          "",
           "THE FLAG",
-          JSON.stringify({ rule: flag.rule, layer: flag.layer, severity: flag.severity, message: flag.message, values: flag.values }, null, 2),
+          JSON.stringify(
+            { rule: flag.rule, layer: flag.layer, severity: flag.severity, message: flag.message, values: flag.values },
+            null,
+            2,
+          ),
           "",
           "STORED CONTEXT",
           JSON.stringify(context, null, 2),

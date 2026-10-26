@@ -205,10 +205,16 @@ function renderIntelligems(delta, section, lines, config) {
       lines.push(
         `    TRADE OFF on ${trade.groupName}: wins ${trade.wins.map((w) => w.metric).join(", ")} against losses ${trade.losses.map((l) => l.metric).join(", ")}.`,
       );
-      if (trade.futureValue?.configured === false) {
-        lines.push("      Six month value: not configured. Populate config/references.json to weigh lifetime against first order.");
-      } else if (trade.futureValue) {
-        lines.push(`      Six month value spread, subscription over one time: ${fmtNum(trade.futureValue.spread, { money: true })}.`);
+      const fv = trade.futureValue;
+      if (fv?.configured === false) {
+        lines.push("      Lifetime value: not configured. Set the LTV multipliers in Settings to weigh lifetime against first order.");
+      } else if (fv?.upliftPct != null) {
+        const signed = (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
+        lines.push(
+          `      ${fv.horizonMonths} month value per visitor vs control: ${signed(fv.upliftPct)}` +
+            (fv.immediateUpliftPct != null ? `, against ${signed(fv.immediateUpliftPct)} on this order.` : ".") +
+            (fv.disagreesWithImmediate ? " Lifetime and immediate disagree." : ""),
+        );
       }
     }
 

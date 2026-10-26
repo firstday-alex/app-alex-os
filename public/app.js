@@ -1918,7 +1918,7 @@ function renderFutureValue(testId, fv) {
   const key = `fv:${testId}`;
   if (!state.openTests.has(key)) {
     return `<div class="fv-ask">
-        <button class="ghost" data-node="${esc(key)}">Project ${esc(fv?.horizonMonths ?? 6)} month value</button>
+        <button class="ghost" data-node="${esc(key)}">Project ${esc(fv?.horizonMonths ?? 12)} month value</button>
         <span class="meta">Values each variant on the customer mix it produces, not on this order alone.</span>
       </div>`;
   }
@@ -1943,7 +1943,9 @@ function renderFutureValue(testId, fv) {
   return `<div class="fv">
       <div class="bar">
         <strong>${esc(fv.horizonMonths)} month value</strong>
-        <span class="meta">subscriber ${esc(money(fv.subscriptionLtv))} · one-time ${esc(money(fv.oneTimeLtv))}</span>
+        <span class="meta">${fv.method === "multiplier"
+          ? `subscriber ${esc(fv.subscriptionMultiplier)}x · one-time ${esc(fv.oneTimeMultiplier)}x first order`
+          : `subscriber ${esc(money(fv.subscriptionLtv))} · one-time ${esc(money(fv.oneTimeLtv))}`}</span>
         <span class="grow"></span>
         <button class="ghost" data-node="${esc(key)}">Hide</button>
       </div>
@@ -3076,7 +3078,7 @@ function renderSettings() {
     .map(([key, spec]) => {
       const value = d.settings[key];
       const type = spec.type === "date" ? "date" : "number";
-      const step = spec.type === "money" ? "0.01" : spec.type === "probability" ? "0.01" : "1";
+      const step = spec.type === "money" || spec.type === "probability" || spec.type === "multiplier" ? "0.01" : "1";
       const stepAttr = type === "number" ? `step="${step}"` : "";
       return `<label class="wide">${esc(spec.label)}
         <input class="st" data-k="${esc(key)}" type="${type}" ${stepAttr} value="${esc(value ?? "")}" placeholder="not set">

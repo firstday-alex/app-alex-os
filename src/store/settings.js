@@ -27,6 +27,30 @@ export class SettingsValidationError extends Error {
  * value every subscriber at nothing and make every test look neutral.
  */
 export const SCHEMA = {
+  subscriptionLtvMultiplier: {
+    label: "Subscription LTV multiplier",
+    help: "What a customer acquired on a subscription is worth over the multiplier horizon, as a multiple of their first order. When both multipliers are set they are used instead of the dollar figures below.",
+    type: "multiplier",
+    default: 3.95,
+  },
+  oneTimeLtvMultiplier: {
+    label: "One-time LTV multiplier",
+    help: "What a customer acquired on a one-time purchase is worth over the multiplier horizon, as a multiple of their first order.",
+    type: "multiplier",
+    default: 1.78,
+  },
+  ltvMultiplierHorizonMonths: {
+    label: "Multiplier horizon (months)",
+    help: "The window both multipliers are measured over. Only used for labelling; changing it does not rescale the multipliers.",
+    type: "integer",
+    default: 12,
+  },
+  ltvMultipliersAsOf: {
+    label: "Multipliers as of",
+    help: "When the multipliers were last computed. Past staleAfterDays the projection is still shown, but flagged as old.",
+    type: "date",
+    default: "2026-10-26",
+  },
   subscriptionLtv6mo: {
     label: "Subscription LTV, 6 month",
     help: "Revenue a customer acquired on a subscription is worth over six months, including the first order.",
@@ -85,6 +109,8 @@ function coerce(key, raw) {
   const value = Number(raw);
   if (!Number.isFinite(value)) throw new SettingsValidationError(`${spec.label} must be a number.`, key);
   if (spec.type === "money" && value < 0) throw new SettingsValidationError(`${spec.label} cannot be negative.`, key);
+  // Below 1 would mean a customer is worth less over a year than their own first order.
+  if (spec.type === "multiplier" && value < 1) throw new SettingsValidationError(`${spec.label} must be 1 or more.`, key);
   if (spec.type === "integer" && (!Number.isInteger(value) || value <= 0)) {
     throw new SettingsValidationError(`${spec.label} must be a whole number above zero.`, key);
   }
@@ -103,7 +129,10 @@ export function normalizeSettings(input, existing = {}) {
 
   // A one-time customer worth more than a subscriber is possible, but it is almost always
   // a transposed pair, and it inverts every projection silently.
-  if (out.subscriptionLtv6mo != null && out.oneTimeLtv6mo != null && out.oneTimeLtv6mo > out.subscriptionLtv6mo) {
+  if (out.subscriptionLtvMultiplier != null && out.oneTimeLtvMultiplier != null && out.oneTimeLtvMultiplier > out.subscriptionLtvMultiplier) {
+    out._warning =
+      "The one-time multiplier is higher than the subscription multiplier. That is possible, but it is usually the two values transposed, and it reverses the sign of every future-value projection.";
+  } else if (out.subscriptionLtv6mo != null && out.oneTimeLtv6mo != null && out.oneTimeLtv6mo > out.subscriptionLtv6mo) {
     out._warning =
       "One-time LTV is higher than subscription LTV. That is possible, but it is usually the two values transposed, and it reverses the sign of every future-value projection.";
   }

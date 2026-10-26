@@ -151,11 +151,6 @@ export function validateConfig(config = loadConfig()) {
     warn("intelligems.metrics.p0 is empty. No P0 metric will be reported. Still an open item for Alex.");
   }
 
-  const ltv = config.references?.ltv ?? {};
-  if (ltv.subscription6MonthLtv?.value == null || ltv.oneTime6MonthLtv?.value == null) {
-    warn("references.ltv is not populated. Future-value projection renders as 'not configured', never as zero.");
-  }
-
   const repo = config.system?.github?.repo;
   if (!repo || !/^[^/\s]+\/[^/\s]+$/.test(repo)) {
     warn("system.github.repo should be owner/name. The learning skill cannot open a pull request without it.");

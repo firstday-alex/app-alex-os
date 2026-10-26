@@ -159,13 +159,16 @@ token alone still produces a readout.
 
 4. ~~The verdict mapping~~ and ~~the mini readout window~~: decided 2026-10-22 (strong
    win Ship, strong loss Kill, directional and mixed Iterate, only past the gate with a
-   clear result; shipped rocks 14 days, active rocks 7). Still open on the Setup page: the
-   metric lists and the LTV references.
+   clear result; shipped rocks 14 days, active rocks 7). LTV references decided 2026-10-26:
+   12 month multipliers of first-order revenue, 3.95 subscription and 1.78 one-time, in
+   Settings. Still open on the Setup page: the metric lists.
 6. **The real leadership queue**, replacing the example item.
 7. **Central or Pacific.** The store reports in Pacific; the readout is specified for 8 AM
    Central. Two hours apart, so "yesterday" differs between them.
-8. **Business context** for `skills/strategic-advisor/SKILL.md`. It currently holds
-   scaffolding from the spec, not Alex's actual priorities and constraints.
+8. **Business context** for `skills/strategic-advisor/SKILL.md`. The advisor now reads
+   every rock as the quarter's goals on each call (decided 2026-10-26), so priorities stay
+   current on their own. Still to add: what is deliberately not a priority, constraints,
+   past decisions, and risk appetite on a test call.
 9. **A Netlify plan check** for Background Functions.
 
 ### Answered by reading the accounts, no longer owed
