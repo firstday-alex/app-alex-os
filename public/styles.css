@@ -575,6 +575,8 @@ ul.plain { margin: 0; padding-left: 18px; }
 .sp-wait.sp-wait-warn { color: var(--amber-ink); }
 .sp-said { color: var(--muted); overflow-wrap: anywhere; }
 .sp-said strong { color: var(--ink); font-weight: 600; }
+.sp-chips .sp-due-warn { color: var(--amber-ink); border-color: currentColor; font-weight: 600; }
+.sp-chips .sp-due-bad { color: var(--red); border-color: currentColor; font-weight: 600; }
 
 /* By person: one swimlane row per person, a column per status. Scrolls sideways on a
    phone rather than stacking, so the columns still line up. */

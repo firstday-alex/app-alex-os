@@ -1640,6 +1640,21 @@ function waitingOn(task) {
   return { text: stage.label, why: task.status, tone: STAGE_TONE[stage.id] ?? "" };
 }
 
+/** The ClickUp due date as a chip: red once it has passed, amber within two days. */
+function dueChip(task) {
+  if (!task.dueDate || task.bucket === "done") return "";
+  const due = new Date(task.dueDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDay = new Date(due);
+  dueDay.setHours(0, 0, 0, 0);
+  const days = Math.round((dueDay - today) / DAY_MS);
+  const label = due.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const text = days < 0 ? `overdue ${-days}d (${label})` : days === 0 ? "due today" : days === 1 ? "due tomorrow" : `due ${label}`;
+  const tone = days < 0 ? " sp-due-bad" : days <= 2 ? " sp-due-warn" : "";
+  return `<span class="chip sp-due${tone}" title="ClickUp due date: ${esc(due.toLocaleString())}">${esc(text)}</span>`;
+}
+
 function agoText(ms) {
   if (!ms) return "";
   const days = Math.floor((Date.now() - ms) / DAY_MS);
@@ -1669,6 +1684,7 @@ function ticketRow(task, { showOwner = true, lane = false } = {}) {
         <span class="sp-chips">
           ${showStatus ? `<span class="chip">${esc(task.status ?? "")}</span>` : ""}
           ${task.bucket === "done" || stage.id === "start" ? "" : stalenessLabel(task)}
+          ${dueChip(task)}
           ${rock ? `<a class="chip owner" href="#rocks/${encodeURIComponent(rock.id)}">${esc(rock.title)}</a>` : task.bigSwing?.label ? `<span class="chip">${esc(task.bigSwing.label)}</span>` : ""}
         </span>
       </div>
@@ -1734,7 +1750,9 @@ function renderLayer2(report) {
   }
 
   const lanes = LANES.filter((l) => l.id !== "blocked" || open.some((t) => stageOf(t).id === "blocked"));
-  const worstFirst = (list) => [...list].sort((a, b) => (waitingOn(b).tone === "bad") - (waitingOn(a).tone === "bad"));
+  // Worst first, then soonest due; tickets with no due date last.
+  const worstFirst = (list) =>
+    [...list].sort((a, b) => (waitingOn(b).tone === "bad") - (waitingOn(a).tone === "bad") || (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity));
   const laneHtml = (tasks) =>
     `<div class="sp-lanes" style="--sp-cols:${lanes.length}">${lanes
       .map((l) => {
@@ -3212,6 +3230,10 @@ function talkingPoints(person, data) {
   if (data.cross && data.cross.totalTickets > 0 && data.cross.distinctBigSwings === 0) points.push("No big swing in their sprint: none of their tickets is on a live rock.");
   const stalled = data.open.filter((t) => t.signal === "stalled");
   if (stalled.length) points.push(`${plural(stalled.length, "ticket has", "tickets have")} stalled: ${stalled.slice(0, 3).map((t) => `"${t.name}" (${t.idleDays}d)`).join(", ")}.`);
+  const startOfToday = new Date().setHours(0, 0, 0, 0);
+  for (const t of data.open.filter((t) => t.dueDate && t.dueDate < startOfToday)) {
+    points.push(`"${t.name}" was due ${new Date(t.dueDate).toLocaleDateString()} and is still ${t.status}. New date, or cut it?`);
+  }
   for (const t of data.open.filter((t) => ["review", "deploy", "blocked"].includes(stageOf(t).id))) points.push(`"${t.name}": ${waitingOn(t).text.toLowerCase()}, ${t.statusAge ? `${t.statusAge.exact ? "" : "at least "}${t.statusAge.days} days` : "time unknown"}.`);
   if (!data.queued.some((t) => t.ready) && data.rocks.some((r) => r.state === "active")) points.push("Nothing of theirs is marked Ready in the backlog for next sprint.");
   for (const f of data.waiting) points.push(`Waiting on them: ${f.message}`);
