@@ -1592,6 +1592,10 @@ const LANES = [
 ];
 
 let sprintGroup = "person";
+// The Big Swing the board is narrowed to: "" for every ticket, NO_SWING for tickets without one.
+let sprintSwing = "";
+const NO_SWING = "__none__";
+const swingKey = (t) => (t.bigSwing?.label ? String(t.bigSwing.label) : NO_SWING);
 
 /** The rock a ticket serves, through its Big Swing option, else by Big Swing label. */
 function rockForTask(task) {
@@ -1709,7 +1713,21 @@ function renderLayer2(report) {
     $("layer2").innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
     return;
   }
-  const tasks = delta.tasks ?? [];
+  const allTasks = delta.tasks ?? [];
+  // The Big Swings on the sprint, by how many open tickets carry each.
+  const swingCounts = new Map();
+  for (const t of allTasks.filter((t) => t.bucket !== "done")) swingCounts.set(swingKey(t), (swingCounts.get(swingKey(t)) ?? 0) + 1);
+  if (sprintSwing && !swingCounts.has(sprintSwing)) sprintSwing = "";
+  const swingOptions = [...swingCounts.entries()]
+    .filter(([k]) => k !== NO_SWING)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([k, n]) => `<option value="${esc(k)}"${k === sprintSwing ? " selected" : ""}>${esc(k)} (${esc(n)})</option>`)
+    .join("");
+  const swingSelect = `<select id="sprint-swing" aria-label="Big Swing">
+      <option value="">All Big Swings</option>${swingOptions}
+      ${swingCounts.has(NO_SWING) ? `<option value="${NO_SWING}"${sprintSwing === NO_SWING ? " selected" : ""}>No Big Swing (${esc(swingCounts.get(NO_SWING))})</option>` : ""}
+    </select>`;
+  const tasks = sprintSwing ? allTasks.filter((t) => swingKey(t) === sprintSwing) : allTasks;
   const open = tasks.filter((t) => t.bucket !== "done").sort((a, b) => stageRank(a) - stageRank(b));
   const weekAgo = Date.now() - 7 * DAY_MS;
   const doneThisWeek = tasks.filter((t) => t.bucket === "done" && t.dateClosed && t.dateClosed >= weekAgo);
@@ -1783,7 +1801,8 @@ function renderLayer2(report) {
       <div class="dod-windows" role="group" aria-label="Group by">
         ${[["person", "By person"], ["stage", "By what it waits on"]].map(([id, label]) => `<button type="button" class="ghost dod-window${id === sprintGroup ? " on" : ""}" data-sprint-group="${id}" aria-pressed="${id === sprintGroup}">${esc(label)}</button>`).join("")}
       </div>
-      <span class="meta">${esc(plural(open.length, "open ticket", "open tickets"))}, worst first</span>
+      ${swingSelect}
+      <span class="meta">${esc(plural(open.length, "open ticket", "open tickets"))}${sprintSwing ? ` on ${esc(sprintSwing === NO_SWING ? "no Big Swing" : sprintSwing)}` : ""}, worst first</span>
     </div>
     ${groupHtml || `<p class="sub">Nothing open on the sprint.</p>`}
     <details class="section">
@@ -1802,6 +1821,12 @@ function renderLayer2(report) {
   // Always fetched, even for the readout window: it is what brings the rock changes.
   loadDodWindow(dodWindow);
 }
+
+$("layer2")?.addEventListener("change", (event) => {
+  if (event.target.id !== "sprint-swing") return;
+  sprintSwing = event.target.value;
+  if (state.report) renderLayer2(state.report);
+});
 
 $("layer2")?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-sprint-group]");

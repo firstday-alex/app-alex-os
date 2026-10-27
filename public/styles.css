@@ -557,6 +557,7 @@ ul.plain { margin: 0; padding-left: 18px; }
 /* ------------------------------ sprint board ------------------------------ */
 .sp-bar { margin: 14px 0 6px; }
 .sp-bar .dod-windows { margin: 0; }
+.sp-bar select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; max-width: 100%; }
 .sp-group { margin-top: 18px; }
 .sp-group-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 6px; }
 .sp-group-head h3 { margin: 0; }
