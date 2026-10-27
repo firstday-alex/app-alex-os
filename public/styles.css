@@ -576,6 +576,19 @@ ul.plain { margin: 0; padding-left: 18px; }
 .sp-said { color: var(--muted); overflow-wrap: anywhere; }
 .sp-said strong { color: var(--ink); font-weight: 600; }
 
+/* By person: one swimlane row per person, a column per status. Scrolls sideways on a
+   phone rather than stacking, so the columns still line up. */
+.sp-lanes {
+  display: grid; grid-template-columns: repeat(var(--sp-cols), minmax(210px, 1fr));
+  gap: 8px; overflow-x: auto; padding-bottom: 4px;
+}
+.sp-lane { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px; min-width: 0; }
+.sp-lane-head { margin: 0 0 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.sp-lane-start .sp-card { opacity: .8; }
+.sp-card { padding: 6px 8px; }
+.sp-card .sp-name { flex-basis: 100%; }
+.sp-card .sp-said { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
 /* ------------------------------- rocks plan ------------------------------- */
 .rk-month-group { margin-top: 22px; }
 .rk-item { margin-bottom: 10px; }

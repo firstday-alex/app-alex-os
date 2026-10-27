@@ -1581,6 +1581,15 @@ const STAGES = [
 ];
 const STAGE_BY_STATUS = new Map(STAGES.flatMap((st) => st.statuses.map((x) => [x, st])));
 const STAGE_TONE = { blocked: "bad", deploy: "warn", review: "warn", work: "", start: "" };
+// The person view's swimlanes, left to right in the order a ticket moves. Blocked only
+// gets a lane when something is blocked.
+const LANES = [
+  { id: "start", label: "To do" },
+  { id: "work", label: "In progress" },
+  { id: "review", label: "QA / review" },
+  { id: "deploy", label: "Ready for deploy" },
+  { id: "blocked", label: "Blocked" },
+];
 
 let sprintGroup = "person";
 
@@ -1617,7 +1626,9 @@ function waitingOn(task) {
   const c = task.lastComment;
   const asked = (c?.mentions ?? []).filter((m) => m.id !== c.userId).map((m) => m.username);
   if (asked.length && task.bucket !== "done") {
-    return { text: `Waiting on ${asked.join(", ")}`, why: `${c.user ?? "someone"} asked ${agoText(c.date)}`, tone: Date.now() - c.date > 2 * DAY_MS ? "bad" : "warn" };
+    // A ticket nobody has started is not alarming until its status moves.
+    const tone = stage.id === "start" ? "" : Date.now() - c.date > 2 * DAY_MS ? "bad" : "warn";
+    return { text: `Waiting on ${asked.join(", ")}`, why: `${c.user ?? "someone"} asked ${agoText(c.date)}`, tone };
   }
   if (stage.id === "work" && task.signal === "stalled") {
     return { text: "Stalled: needs a question", why: `untouched ${task.idleDays ?? "?"}d`, tone: "bad" };
@@ -1636,8 +1647,13 @@ function agoText(ms) {
 }
 
 /** One ticket: name, where it is, what it waits on, and the last thing said on it. */
-function ticketRow(task, { showOwner = true } = {}) {
+function ticketRow(task, { showOwner = true, lane = false } = {}) {
   const wait = waitingOn(task);
+  const stage = stageOf(task);
+  // In a lane the column already says the status, unless the lane holds several.
+  const showStatus = !lane || stage.id === "review" || !STAGE_BY_STATUS.has(String(task.status ?? "").toLowerCase());
+  // "Waiting to start" under a To do column says nothing; only a question put to someone does.
+  const quietStart = lane && stage.id === "start" && wait.text === stage.label;
   const rock = rockForTask(task);
   const owners = accountable(task).map((p) => p.name).join(", ");
   const c = task.lastComment;
@@ -1647,19 +1663,19 @@ function ticketRow(task, { showOwner = true } = {}) {
       : c
         ? `<span class="sp-said"><strong>${esc(c.user ?? "someone")}</strong>, ${esc(agoText(c.date))}: ${esc(c.text || "(no text)")}</span>`
         : `<span class="meta">No comments.</span>`;
-  return `<div class="sp-row${wait.tone === "bad" ? " sp-row-bad" : ""}">
+  return `<div class="sp-row${wait.tone === "bad" ? " sp-row-bad" : ""}${lane ? " sp-card" : ""}">
       <div class="sp-line">
         <span class="sp-name">${task.url ? `<a href="${esc(task.url)}" target="_blank" rel="noreferrer">${esc(task.name)}</a>` : esc(task.name)}</span>
         <span class="sp-chips">
-          <span class="chip">${esc(task.status ?? "")}</span>
-          ${task.bucket === "done" ? "" : stalenessLabel(task)}
+          ${showStatus ? `<span class="chip">${esc(task.status ?? "")}</span>` : ""}
+          ${task.bucket === "done" || stage.id === "start" ? "" : stalenessLabel(task)}
           ${rock ? `<a class="chip owner" href="#rocks/${encodeURIComponent(rock.id)}">${esc(rock.title)}</a>` : task.bigSwing?.label ? `<span class="chip">${esc(task.bigSwing.label)}</span>` : ""}
         </span>
       </div>
-      <div class="sp-line sp-sub">
+      ${quietStart ? "" : `<div class="sp-line sp-sub">
         <span class="sp-wait${wait.tone ? ` sp-wait-${wait.tone}` : ""}">${esc(wait.text)}</span>
         <span class="meta">${esc(wait.why ?? "")}${showOwner ? ` · ${esc(owners || "unassigned")}` : ""}</span>
-      </div>
+      </div>`}
       <div class="sp-line sp-sub">${said}</div>
     </div>`;
 }
@@ -1717,6 +1733,19 @@ function renderLayer2(report) {
     groups = [...byId.entries()].sort((a, b) => order(a[0]) - order(b[0])).map(([id, g]) => ({ ...g, personId: id }));
   }
 
+  const lanes = LANES.filter((l) => l.id !== "blocked" || open.some((t) => stageOf(t).id === "blocked"));
+  const worstFirst = (list) => [...list].sort((a, b) => (waitingOn(b).tone === "bad") - (waitingOn(a).tone === "bad"));
+  const laneHtml = (tasks) =>
+    `<div class="sp-lanes" style="--sp-cols:${lanes.length}">${lanes
+      .map((l) => {
+        const inLane = worstFirst(tasks.filter((t) => stageOf(t).id === l.id));
+        return `<div class="sp-lane sp-lane-${l.id}">
+          <p class="sp-lane-head">${esc(l.label)} <span class="meta">${esc(inLane.length)}</span></p>
+          ${inLane.map((t) => ticketRow(t, { showOwner: false, lane: true })).join("")}
+        </div>`;
+      })
+      .join("")}</div>`;
+
   const groupHtml = groups
     .filter((g) => g.tasks.length)
     .map((g) => {
@@ -1724,7 +1753,7 @@ function renderLayer2(report) {
       return `<section class="sp-group">
         <div class="sp-group-head"><h3>${esc(g.title)}</h3><span class="meta">${esc(plural(g.tasks.length, "ticket", "tickets"))}${urgent ? ` · <span class="bad">${esc(urgent)} need a question</span>` : ""}</span>
           ${g.personId ? `<span class="grow"></span><a class="meta" href="#people/${encodeURIComponent(g.personId)}">1:1 prep →</a>` : ""}</div>
-        ${g.tasks.map((t) => ticketRow(t, { showOwner: sprintGroup !== "person" })).join("")}
+        ${sprintGroup === "person" ? laneHtml(g.tasks) : g.tasks.map((t) => ticketRow(t)).join("")}
       </section>`;
     })
     .join("");
