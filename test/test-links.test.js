@@ -62,8 +62,11 @@ test("a bare view hash and a deep link both parse", () => {
   const parse = parseHash();
   assert.deepEqual(parse("#tests"), { name: "tests", target: null });
   assert.deepEqual(parse("#tests/ea60bd2d-bbc3"), { name: "tests", target: "ea60bd2d-bbc3" });
-  assert.deepEqual(parse(""), { name: "readout", target: null });
-  assert.deepEqual(parse("#"), { name: "readout", target: null });
+  // Sprint is the first tab, so a bare address opens it.
+  assert.deepEqual(parse(""), { name: "sprint", target: null });
+  assert.deepEqual(parse("#"), { name: "sprint", target: null });
+  // Staleness folded into Sprint; an old link still lands on it.
+  assert.deepEqual(parse("#staleness"), { name: "sprint", target: null });
 });
 
 test("an encoded id round-trips, so an id with a slash still resolves", () => {

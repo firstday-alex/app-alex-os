@@ -45,6 +45,7 @@ export async function collectLeadership({ config, clickupSnapshot = null, rocksS
     status: item.status ?? "on_track",
     kpi: item.kpi ?? null,
     startDate: item.startDate ?? null,
+    targetMonth: item.targetMonth ?? null,
     clickupFieldId: item.clickupFieldId ?? null,
     clickupBigSwingOptionId: item.clickupBigSwingOptionId == null ? null : String(item.clickupBigSwingOptionId),
     intelligemsExperienceId: item.intelligemsExperienceId == null ? null : String(item.intelligemsExperienceId),

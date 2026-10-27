@@ -39,6 +39,7 @@ export function rocksForAdvice(queue = []) {
     status: rock.status ?? null,
     owner: rock.owner?.name ?? null,
     kpi: rock.kpi ?? null,
+    targetMonth: rock.targetMonth ?? null,
     checkInDate: rock.checkInDate ?? null,
     shippedAt: rock.shippedAt || null,
     intelligemsExperienceId: rock.intelligemsExperienceId ?? null,

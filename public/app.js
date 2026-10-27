@@ -145,7 +145,6 @@ function render() {
   part("Layer 1", () => renderLayer1(report));
   part("the cross layer", () => renderCross(report));
   part("the sprint", () => renderLayer2(report));
-  part("staleness", () => renderStaleness(report));
   part("the tests", () => renderTests());
   part("the open decisions", () => renderOpenItems());
   $("report-text").textContent = report.text ?? "";
@@ -1519,46 +1518,6 @@ function stalenessLabel(task) {
   return `<span class="age ${tone}" title="${esc(title)}">${esc(qualifier)}${esc(age.days)}d</span>`;
 }
 
-function renderStaleness(report) {
-  const section = report.sections.clickup;
-  const delta = report.detail?.clickup;
-  const host = $("staleness");
-  if (!section?.present) {
-    host.innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
-    return;
-  }
-
-  const rows = delta.byStaleness ?? [];
-  if (!rows.length) {
-    host.innerHTML = '<p class="sub">Nothing in flight.</p>';
-    return;
-  }
-
-  const anySeeded = rows.some((t) => t.statusAge && !t.statusAge.exact);
-  const stale = rows.filter((t) => t.stale);
-
-  host.innerHTML = `
-    <p class="sub">${plural(rows.length, "ticket", "tickets")} in flight · ${
-      stale.length ? `<strong>${plural(stale.length, "past its limit", "past their limit")}</strong>` : "none past its limit"
-    }</p>
-    ${anySeeded ? '<div class="note"><strong>Some of these are floors, not measurements.</strong> ClickUp does not expose time in status on this plan, so the clock is kept from this system\'s own daily snapshots. A ticket already in flight when tracking started shows <strong>≥</strong> and is dated from its last activity, which is a true lower bound. Once this system watches a status change itself, the number becomes exact and the ≥ goes away.</div>' : ""}
-    <div class="scroll"><table>
-      <thead><tr><th>In status</th><th>Status</th><th>Task</th><th>Assignees</th><th>Signal</th><th>Limit</th></tr></thead>
-      <tbody>${rows
-        .map(
-          (task) => `<tr class="${task.stale ? "stale-row" : ""}">
-            <td>${stalenessLabel(task)}</td>
-            <td>${esc(task.status)}</td>
-            <td class="wrap">${task.url ? `<a href="${esc(task.url)}" target="_blank" rel="noreferrer">${esc(task.name)}</a>` : esc(task.name)}</td>
-            <td>${esc(task.assignees.map((u) => u.username).join(", ") || "unassigned")}</td>
-            <td><span class="sig ${esc(task.signal)}">${esc(task.signal)}</span></td>
-            <td>${task.stale ? `${esc(task.stale.threshold)}d, over by ${esc(task.stale.over)}` : task.staleThresholdDays ? `${esc(task.staleThresholdDays)}d` : "—"}</td>
-          </tr>`,
-        )
-        .join("")}</tbody>
-    </table></div>`;
-}
-
 /**
  * Before sprint planning: the backlog tickets marked Ready, checked against the rocks.
  * What needs fixing is listed first and open; what is fine is a collapsed table.
@@ -1603,6 +1562,114 @@ function preSprintHtml(p) {
   </details>`;
 }
 
+/* ------------------------------- sprint board -------------------------------
+   The week's commitment: every open ticket on the sprint, where it is, and what it is
+   waiting on. Built from what the readout already holds, so it costs no extra request.
+
+   "Waiting on" is worked out, never guessed. In order: a flag Alex marked as waiting on
+   someone, then the ticket's status read as a stage (QA, deploy, to start), then whether
+   it has stalled. The latest ClickUp comment sits under it, with who said it and when,
+   because that is usually where the actual answer is. */
+
+// Each stage, in the order a ticket worth asking about comes first.
+const STAGES = [
+  { id: "blocked", label: "Blocked", statuses: ["blocked"] },
+  { id: "deploy", label: "Waiting on deploy", statuses: ["ready for deploy"] },
+  { id: "review", label: "Waiting on QA or review", statuses: ["qa", "vqa", "in review"] },
+  { id: "work", label: "Being worked", statuses: ["in-progress", "in progress"] },
+  { id: "start", label: "Waiting to start", statuses: ["to do", "open", "not started", "backlog"] },
+];
+const STAGE_BY_STATUS = new Map(STAGES.flatMap((st) => st.statuses.map((x) => [x, st])));
+const STAGE_TONE = { blocked: "bad", deploy: "warn", review: "warn", work: "", start: "" };
+
+let sprintGroup = "person";
+
+/** The rock a ticket serves, through its Big Swing option, else by Big Swing label. */
+function rockForTask(task) {
+  const swing = task?.bigSwing;
+  if (!swing?.optionId && !swing?.label) return null;
+  const rocks = (state.rocks?.rocks ?? []).filter((r) => r.state !== "shipped" || r.clickupBigSwingOptionId);
+  return (
+    rocks.find((r) => swing.optionId && r.clickupBigSwingOptionId && String(r.clickupBigSwingOptionId) === String(swing.optionId)) ??
+    rocks.find((r) => swing.label && String(r.title).trim().toLowerCase() === String(swing.label).trim().toLowerCase()) ??
+    null
+  );
+}
+
+/** Who a ticket belongs to: its Task Owner, else its assignees. Same rule as the cross layer. */
+function accountable(task) {
+  const owners = task.taskOwners?.length ? task.taskOwners : task.assignees ?? [];
+  return owners.map((u) => ({ id: String(u.id), name: u.username ?? String(u.id) }));
+}
+
+function stageOf(task) {
+  return STAGE_BY_STATUS.get(String(task.status ?? "").toLowerCase()) ?? { id: "work", label: task.status ?? "Unknown status" };
+}
+
+/** What a ticket is waiting on, and why we think so. */
+function waitingOn(task) {
+  const marked = (state.report?.flags ?? []).find(
+    (f) => viewOf(f) === "waiting" && baseId(f.subject?.id) === String(task.id) && triageOf(f)?.waitingOn,
+  );
+  if (marked) return { text: `Waiting on ${triageOf(marked).waitingOn}`, why: "you marked it", tone: "warn" };
+  const stage = stageOf(task);
+  // The last comment put a question to someone by name: that is who it waits on.
+  const c = task.lastComment;
+  const asked = (c?.mentions ?? []).filter((m) => m.id !== c.userId).map((m) => m.username);
+  if (asked.length && task.bucket !== "done") {
+    return { text: `Waiting on ${asked.join(", ")}`, why: `${c.user ?? "someone"} asked ${agoText(c.date)}`, tone: Date.now() - c.date > 2 * DAY_MS ? "bad" : "warn" };
+  }
+  if (stage.id === "work" && task.signal === "stalled") {
+    return { text: "Stalled: needs a question", why: `untouched ${task.idleDays ?? "?"}d`, tone: "bad" };
+  }
+  if (stage.id === "work") {
+    const who = accountable(task).map((p) => p.name.split(/\s+/)[0]).join(", ");
+    return { text: who ? `With ${who}` : "Nobody on it", why: task.status, tone: who ? "" : "bad" };
+  }
+  return { text: stage.label, why: task.status, tone: STAGE_TONE[stage.id] ?? "" };
+}
+
+function agoText(ms) {
+  if (!ms) return "";
+  const days = Math.floor((Date.now() - ms) / DAY_MS);
+  return days <= 0 ? "today" : days === 1 ? "yesterday" : `${days}d ago`;
+}
+
+/** One ticket: name, where it is, what it waits on, and the last thing said on it. */
+function ticketRow(task, { showOwner = true } = {}) {
+  const wait = waitingOn(task);
+  const rock = rockForTask(task);
+  const owners = accountable(task).map((p) => p.name).join(", ");
+  const c = task.lastComment;
+  const said =
+    c === undefined
+      ? `<span class="meta">Comments not read yet. They are read on the next refresh.</span>`
+      : c
+        ? `<span class="sp-said"><strong>${esc(c.user ?? "someone")}</strong>, ${esc(agoText(c.date))}: ${esc(c.text || "(no text)")}</span>`
+        : `<span class="meta">No comments.</span>`;
+  return `<div class="sp-row${wait.tone === "bad" ? " sp-row-bad" : ""}">
+      <div class="sp-line">
+        <span class="sp-name">${task.url ? `<a href="${esc(task.url)}" target="_blank" rel="noreferrer">${esc(task.name)}</a>` : esc(task.name)}</span>
+        <span class="sp-chips">
+          <span class="chip">${esc(task.status ?? "")}</span>
+          ${task.bucket === "done" ? "" : stalenessLabel(task)}
+          ${rock ? `<a class="chip owner" href="#rocks/${encodeURIComponent(rock.id)}">${esc(rock.title)}</a>` : task.bigSwing?.label ? `<span class="chip">${esc(task.bigSwing.label)}</span>` : ""}
+        </span>
+      </div>
+      <div class="sp-line sp-sub">
+        <span class="sp-wait${wait.tone ? ` sp-wait-${wait.tone}` : ""}">${esc(wait.text)}</span>
+        <span class="meta">${esc(wait.why ?? "")}${showOwner ? ` · ${esc(owners || "unassigned")}` : ""}</span>
+      </div>
+      <div class="sp-line sp-sub">${said}</div>
+    </div>`;
+}
+
+const stageRank = (task) => {
+  if (task.signal === "stalled") return -1;
+  const i = STAGES.findIndex((st) => st.id === stageOf(task).id);
+  return i < 0 ? STAGES.length : i;
+};
+
 function renderLayer2(report) {
   const section = report.sections.clickup;
   const delta = report.detail?.clickup;
@@ -1610,43 +1677,91 @@ function renderLayer2(report) {
     $("layer2").innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
     return;
   }
-  const c = delta.counts;
-  const taskRows = (tasks) =>
-    tasks
-      .map(
-        (task) => `<tr>
-          <td><span class="sig ${esc(task.signal)}">${esc(task.signal)}</span></td>
-          <td class="wrap">${task.url ? `<a href="${esc(task.url)}" target="_blank" rel="noreferrer">${esc(task.name)}</a>` : esc(task.name)}</td>
-          <td>${esc(task.status)}</td>
-          <td>${esc(task.taskOwners.map((u) => u.username).join(", ") || "no owner")}</td>
-          <td>${esc(task.assignees.map((u) => u.username).join(", ") || "unassigned")}</td>
-          <td>${esc(task.bigSwing?.label ?? "none")}</td>
-          <td>${task.idleDays == null ? "—" : `${esc(task.idleDays)}d`}</td>
-          <td>${stalenessLabel(task)}</td>
-        </tr>`,
-      )
-      .join("");
+  const tasks = delta.tasks ?? [];
+  const open = tasks.filter((t) => t.bucket !== "done").sort((a, b) => stageRank(a) - stageRank(b));
+  const weekAgo = Date.now() - 7 * DAY_MS;
+  const doneThisWeek = tasks.filter((t) => t.bucket === "done" && t.dateClosed && t.dateClosed >= weekAgo);
 
-  const head = `<thead><tr><th>Signal</th><th>Task</th><th>Status</th><th>Owner</th><th>Assignees</th><th>Big Swing</th><th>Untouched</th><th>In status</th></tr></thead>`;
+  const count = (fn) => open.filter(fn).length;
+  const tiles = [
+    tile(count((t) => t.signal === "stalled" || stageOf(t).id === "blocked"), "Stalled or blocked"),
+    tile(count((t) => stageOf(t).id === "review"), "Waiting on QA"),
+    tile(count((t) => stageOf(t).id === "deploy"), "Waiting on deploy"),
+    tile(count((t) => stageOf(t).id === "work" && t.signal !== "stalled"), "Being worked"),
+    tile(count((t) => stageOf(t).id === "start"), "Not started"),
+    tile(doneThisWeek.length, "Done this week"),
+  ].join("");
+
+  let groups;
+  if (sprintGroup === "stage") {
+    const stalled = open.filter((t) => t.signal === "stalled" && stageOf(t).id === "work");
+    groups = [
+      { title: "Stalled: needs a question", tasks: stalled },
+      ...STAGES.map((st) => ({ title: st.label, tasks: open.filter((t) => stageOf(t).id === st.id && !stalled.includes(t)) })),
+    ];
+  } else {
+    const roster = (state.people ?? []).filter((p) => p.clickupUserId);
+    const byId = new Map();
+    for (const t of open) {
+      const who = accountable(t);
+      if (!who.length) who.push({ id: "", name: "Unassigned" });
+      for (const p of who) {
+        if (!byId.has(p.id)) byId.set(p.id, { title: p.name, tasks: [] });
+        byId.get(p.id).tasks.push(t);
+      }
+    }
+    const order = (id) => {
+      const i = roster.findIndex((p) => String(p.clickupUserId) === id);
+      return id === "" ? 1e6 : i < 0 ? 1e5 : i;
+    };
+    groups = [...byId.entries()].sort((a, b) => order(a[0]) - order(b[0])).map(([id, g]) => ({ ...g, personId: id }));
+  }
+
+  const groupHtml = groups
+    .filter((g) => g.tasks.length)
+    .map((g) => {
+      const urgent = g.tasks.filter((t) => waitingOn(t).tone === "bad").length;
+      return `<section class="sp-group">
+        <div class="sp-group-head"><h3>${esc(g.title)}</h3><span class="meta">${esc(plural(g.tasks.length, "ticket", "tickets"))}${urgent ? ` · <span class="bad">${esc(urgent)} need a question</span>` : ""}</span>
+          ${g.personId ? `<span class="grow"></span><a class="meta" href="#people/${encodeURIComponent(g.personId)}">1:1 prep →</a>` : ""}</div>
+        ${g.tasks.map((t) => ticketRow(t, { showOwner: sprintGroup !== "person" })).join("")}
+      </section>`;
+    })
+    .join("");
 
   $("layer2").innerHTML = `
-    ${preSprintHtml(report.detail?.preSprint)}
-    <p class="sub">${c.total} tasks. ${c.notStarted} not started, ${c.inProgress} in progress, ${c.done} done. ${c.stalled} stalled, ${c.changed} changed since the baseline.</p>
+    <div class="tiles">${tiles}</div>
     ${delta.hasBaseline ? "" : `<div class="note"><strong>First run.</strong> There is no previous snapshot, so there is no day over day comparison yet.</div>`}
-    <h3>In progress</h3>
-    <div class="scroll"><table>${head}<tbody>${taskRows(delta.boards.inProgress) || '<tr><td colspan="7">Nothing in progress.</td></tr>'}</tbody></table></div>
-    <h3>Not started</h3>
-    <div class="scroll"><table>${head}<tbody>${taskRows(delta.boards.notStarted) || '<tr><td colspan="7">Nothing not started.</td></tr>'}</tbody></table></div>
-    <h3>Day over day</h3>
-    <div class="dod-windows" role="group" aria-label="Compare against">
-      ${Object.entries(DOD_WINDOWS).map(([id, w]) => `<button type="button" class="ghost dod-window${id === dodWindow ? " on" : ""}" data-window="${id}" aria-pressed="${id === dodWindow}">${esc(w.label)}</button>`).join("")}
+    <div class="bar sp-bar">
+      <div class="dod-windows" role="group" aria-label="Group by">
+        ${[["person", "By person"], ["stage", "By what it waits on"]].map(([id, label]) => `<button type="button" class="ghost dod-window${id === sprintGroup ? " on" : ""}" data-sprint-group="${id}" aria-pressed="${id === sprintGroup}">${esc(label)}</button>`).join("")}
+      </div>
+      <span class="meta">${esc(plural(open.length, "open ticket", "open tickets"))}, worst first</span>
     </div>
-    <p class="meta" id="dod-basis">${delta.baselineDate ? `Against the readout baseline from ${esc(fmtWhen(delta.baselineDate))}.` : ""}</p>
-    <div id="dod">${renderDayOverDay(delta)}</div>
-    <div id="dod-rocks"></div>`;
+    ${groupHtml || `<p class="sub">Nothing open on the sprint.</p>`}
+    <details class="section">
+      <summary><h2>Done this week</h2><span class="sec-count">${esc(doneThisWeek.length)}</span></summary>
+      ${doneThisWeek.length ? doneThisWeek.map((t) => ticketRow(t)).join("") : `<p class="sub">Nothing closed in the last 7 days.</p>`}
+    </details>
+    <details class="section">
+      <summary><h2>What changed</h2><span class="sec-count">${esc(delta.counts?.changed ?? 0)}</span></summary>
+      <div class="dod-windows" role="group" aria-label="Compare against">
+        ${Object.entries(DOD_WINDOWS).map(([id, w]) => `<button type="button" class="ghost dod-window${id === dodWindow ? " on" : ""}" data-window="${id}" aria-pressed="${id === dodWindow}">${esc(w.label)}</button>`).join("")}
+      </div>
+      <p class="meta" id="dod-basis">${delta.baselineDate ? `Against the readout baseline from ${esc(fmtWhen(delta.baselineDate))}.` : ""}</p>
+      <div id="dod">${renderDayOverDay(delta)}</div>
+      <div id="dod-rocks"></div>
+    </details>`;
   // Always fetched, even for the readout window: it is what brings the rock changes.
   loadDodWindow(dodWindow);
 }
+
+$("layer2")?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-sprint-group]");
+  if (!button) return;
+  sprintGroup = button.dataset.sprintGroup;
+  if (state.report) renderLayer2(state.report);
+});
 
 /* -------------------------- day over day: windows --------------------------
    The 8 AM readout always compares against the previous working day's 8 AM snapshot.
@@ -2391,8 +2506,13 @@ async function loadRocks() {
     state.rocks = await res.json();
     rocksError(null);
     renderRocks();
-    // The flags' quick fixes are drawn from the rocks, so they wait for them.
-    if (state.report) renderAllFlags();
+    // The flags' quick fixes and the sprint's rock links are drawn from the rocks, so
+    // they wait for them.
+    if (state.report) {
+      renderAllFlags();
+      renderLayer2(state.report);
+      renderPeople();
+    }
   } catch (err) {
     rocksError(`Could not load the rocks: ${err.message}`);
   }
@@ -2471,11 +2591,106 @@ function renderRocks() {
       <span class="rock-row-gaps">${gaps(r).map((g) => `<span class="chip warn">${esc(g)}</span>`).join("")}</span>
     </button>`;
 
+  // Planning: what is already on the sprint and what is queued in the backlog under each
+  // rock, joined through the Big Swing field, the same link the cross layer uses.
+  const sprintOpen = (state.report?.detail?.clickup?.tasks ?? []).filter((t) => t.bucket !== "done");
+  const backlogInfo = state.report?.detail?.backlog;
+  const backlog = backlogInfo?.available ? backlogInfo.items.filter((t) => t.bucket !== "done") : [];
+  const ticketsFor = (r) => {
+    const mine = (t) => rockForTask(t)?.id === r.id;
+    return { sprint: sprintOpen.filter(mine), backlog: backlog.filter(mine).sort((a, b) => Number(b.ready) - Number(a.ready)) };
+  };
+  const backlogLine = (t) => {
+    const who = accountable(t).map((p) => p.name).join(", ");
+    return `<li>${t.ready ? '<span class="chip good">Ready</span> ' : ""}${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)} <span class="meta">${esc(who || "nobody on it")}</span></li>`;
+  };
+
+  const item = (r) => {
+    const t = ticketsFor(r);
+    const ready = t.backlog.filter((x) => x.ready).length;
+    const planned = r.state === "shipped"
+      ? ""
+      : `<div class="rk-plan">
+          <label class="meta rk-month">Target month <input type="month" data-rock-month="${esc(r.id)}" value="${esc(r.targetMonth ?? "")}"></label>
+          <details>
+            <summary class="meta">${esc(plural(t.sprint.length, "ticket", "tickets"))} on the sprint · ${esc(plural(t.backlog.length, "in the backlog", "in the backlog"))}${ready ? `, ${esc(ready)} Ready` : ""}${
+              r.state === "active" && !t.sprint.length && !t.backlog.length ? ' · <span class="bad">nothing planned</span>' : ""
+            }</summary>
+            ${t.sprint.length ? `<p class="meta rk-head">On the sprint</p>${t.sprint.map((x) => ticketRow(x)).join("")}` : ""}
+            ${t.backlog.length ? `<p class="meta rk-head">In the backlog</p><ul class="plain">${t.backlog.map(backlogLine).join("")}</ul>` : ""}
+            ${!t.sprint.length && !t.backlog.length ? `<p class="sub">${r.clickupBigSwingOptionId ? "No open ticket on its Big Swing, in the sprint or the backlog." : "Not linked to a Big Swing, so no ticket can reach it. Set one in the editor."}</p>` : ""}
+          </details>
+        </div>`;
+    return `<div class="rk-item">${card(r)}${planned}</div>`;
+  };
+
+  // Months, earliest first. A month already past with a rock still active is overdue.
+  const thisMonth = todayKey().slice(0, 7);
+  const monthName = (m) => new Date(`${m}-01T12:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const live = rocks.filter((r) => r.state !== "shipped");
+  const months = [...new Set(live.map((r) => r.targetMonth).filter(Boolean))].sort();
+  const groups = [
+    ...months.map((m) => ({ title: monthName(m), late: m < thisMonth, current: m === thisMonth, rocks: live.filter((r) => r.targetMonth === m) })),
+    { title: "No month set", rocks: live.filter((r) => !r.targetMonth), unset: true },
+  ].filter((g) => g.rocks.length);
+  const shipped = rocks.filter((r) => r.state === "shipped");
+
+  const swingOf = (t) => t.bigSwing?.label ?? null;
+  const offRock = backlog.filter((t) => !rockForTask(t));
+  const offRockBySwing = new Map();
+  for (const t of offRock) {
+    const key = swingOf(t) ?? "No Big Swing";
+    if (!offRockBySwing.has(key)) offRockBySwing.set(key, []);
+    offRockBySwing.get(key).push(t);
+  }
+
   $("rocks-list").innerHTML = `
     ${data.clickupOptions?.available === false ? `<div class="note"><strong>ClickUp link unavailable.</strong> ${esc(data.clickupOptions.reason ?? "")}</div>` : ""}
-    ${rocks.map(card).join("") || `<p class="sub">${(data.rocks ?? []).length ? "No rocks match that filter." : "No rocks yet. Use New rock to add the first."}</p>`}
+    ${backlogInfo && !backlogInfo.available ? `<div class="note"><strong>Backlog not loaded.</strong> ${esc(backlogInfo.reason ?? "")} Rocks show their sprint tickets only.</div>` : ""}
+    ${preSprintHtml(state.report?.detail?.preSprint)}
+    ${groups
+      .map(
+        (g) => `<section class="rk-month-group">
+          <div class="sp-group-head"><h3>${esc(g.title)}</h3><span class="meta">${esc(plural(g.rocks.length, "rock", "rocks"))}${g.current ? " · this month" : ""}${
+            g.late ? ' · <span class="bad">past its month</span>' : ""
+          }${g.unset ? " · set a target month on each to plan it" : ""}</span></div>
+          ${g.rocks.map(item).join("")}
+        </section>`,
+      )
+      .join("") || `<p class="sub">${(data.rocks ?? []).length ? "No rocks match that filter." : "No rocks yet. Use New rock to add the first."}</p>`}
+    ${shipped.length ? `<details class="section"><summary><h2>Shipped</h2><span class="sec-count">${esc(shipped.length)}</span></summary>${shipped.map(item).join("")}</details>` : ""}
+    ${offRock.length
+      ? `<details class="section"><summary><h2>Backlog on no rock</h2><span class="sec-count">${esc(offRock.length)}</span></summary>
+          <p class="sub">Open backlog tickets whose Big Swing no rock claims, or that have none. Either they belong under a rock, or they are BAU.</p>
+          ${[...offRockBySwing.entries()].map(([swing, list]) => `<p class="meta rk-head">${esc(swing)}</p><ul class="plain">${list.map(backlogLine).join("")}</ul>`).join("")}
+        </details>`
+      : ""}
     <p class="sub">${rocks.length} of ${(data.rocks ?? []).length} shown · version ${esc(data.version)}${data.updatedAt ? ` · last changed ${new Date(data.updatedAt).toLocaleString()}` : ""}</p>`;
 }
+
+/** Sets a rock's target month straight from the Rocks view. */
+$("rocks-list").addEventListener("change", async (event) => {
+  const input = event.target.closest("[data-rock-month]");
+  if (!input) return;
+  input.disabled = true;
+  try {
+    const res = await fetch(`${FN}/rocks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rock: { id: input.dataset.rockMonth, targetMonth: input.value || null }, version: state.rocks?.version }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (res.status === 409) await loadRocks();
+      throw new Error(body.error ?? `HTTP ${res.status}`);
+    }
+    state.rocks = { ...state.rocks, version: body.version, rocks: body.rocks };
+    renderRocks();
+  } catch (err) {
+    rocksError(`Target month not saved: ${err.message}`);
+    input.disabled = false;
+  }
+});
 
 /* ------------------------------- rock editor ------------------------------- */
 
@@ -2521,6 +2736,7 @@ function openRock(id) {
       <label>Owner<select class="rk" data-f="owner">${opts(people, r?.owner, "no owner")}</select></label>
       <label>KPI<input class="rk" data-f="kpi" value="${esc(r?.kpi ?? "")}" placeholder="the number this moves"></label>
       <label>Start date<input class="rk" type="date" data-f="startDate" value="${esc(r?.startDate ?? "")}"></label>
+      <label>Target month <span class="meta">when it is delivered</span><input class="rk" type="month" data-f="targetMonth" value="${esc(r?.targetMonth ?? "")}"></label>
       <label>Check-in date<input class="rk" type="date" data-f="checkInDate" value="${esc(r?.checkInDate ?? "")}"></label>
       <label>Shipped<input class="rk" type="date" data-f="shippedAt" value="${esc(r?.shippedAt ?? "")}"></label>
       <label>Big Swing <span class="meta">how tickets reach this rock</span>${
@@ -2909,7 +3125,10 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 
 /* ----------------------------------- nav ----------------------------------- */
 
-const VIEW_TITLES = { readout: "Readout", rocks: "Rocks", sprint: "Sprint", people: "1:1 prep", staleness: "Staleness", tests: "Tests", setup: "Setup" };
+// Sprint, Rocks and 1:1 are the tabs. The rest live in the menu and name themselves in
+// the top bar when open.
+const TAB_VIEWS = new Set(["sprint", "rocks", "people"]);
+const VIEW_TITLES = { readout: "Daily readout", tests: "Tests", setup: "Setup" };
 
 /* --------------------------------- 1:1 prep ---------------------------------
    One person at a time, built entirely from what the dashboard already holds: the
@@ -2945,7 +3164,11 @@ function personData(person) {
     const assignee = state.testNotes?.notes?.[t.id]?.assignee ?? t.owner?.clickupUserId;
     return assignee != null && String(assignee) === id;
   });
-  return { tasks, open, doneThisWeek, rocks, cross, openFlags, waiting, tests };
+  const backlogInfo = d.backlog;
+  const queued = (backlogInfo?.available ? backlogInfo.items : [])
+    .filter((t) => t.bucket !== "done" && accountable(t).some((u) => u.id === id || isPerson(u.name, person)))
+    .sort((a, b) => Number(b.ready) - Number(a.ready));
+  return { tasks, open, doneThisWeek, rocks, cross, openFlags, waiting, tests, queued };
 }
 
 /** Deterministic talking points: what to raise, in the order it matters. */
@@ -2954,11 +3177,14 @@ function talkingPoints(person, data) {
   const labels = state.rocks?.statusLabels ?? {};
   for (const r of data.rocks.filter((r) => r.state === "active")) {
     const since = r.checkInDate ? Math.floor((Date.now() - Date.parse(r.checkInDate)) / DAY_MS) : null;
-    points.push(`${r.title}: ${labels[r.status] ?? r.status}${since == null ? ", never checked in" : `, last check-in ${since} days ago`}${r.kpi ? `. KPI ${r.kpi}` : ", no KPI set"}.`);
+    const checkIn = since == null ? ", never checked in" : since < 0 ? `, next check-in ${r.checkInDate}` : `, last check-in ${since} days ago`;
+    points.push(`${r.title}: ${labels[r.status] ?? r.status}${checkIn}${r.targetMonth ? `, due ${r.targetMonth}` : ", no target month"}${r.kpi ? `. KPI ${r.kpi}` : ", no KPI set"}.`);
   }
   if (data.cross && data.cross.totalTickets > 0 && data.cross.distinctBigSwings === 0) points.push("No big swing in their sprint: none of their tickets is on a live rock.");
   const stalled = data.open.filter((t) => t.signal === "stalled");
   if (stalled.length) points.push(`${plural(stalled.length, "ticket has", "tickets have")} stalled: ${stalled.slice(0, 3).map((t) => `"${t.name}" (${t.idleDays}d)`).join(", ")}.`);
+  for (const t of data.open.filter((t) => ["review", "deploy", "blocked"].includes(stageOf(t).id))) points.push(`"${t.name}": ${waitingOn(t).text.toLowerCase()}, ${t.statusAge ? `${t.statusAge.exact ? "" : "at least "}${t.statusAge.days} days` : "time unknown"}.`);
+  if (!data.queued.some((t) => t.ready) && data.rocks.some((r) => r.state === "active")) points.push("Nothing of theirs is marked Ready in the backlog for next sprint.");
   for (const f of data.waiting) points.push(`Waiting on them: ${f.message}`);
   for (const f of data.openFlags.filter((f) => f.severity === "p1").slice(0, 3)) points.push(`P1: ${f.message}`);
   for (const t of data.tests) points.push(`Test "${t.name}": ${t.recommendation?.recommendation ?? "running"}, ${t.daysRunning ?? "?"} days in.`);
@@ -2989,13 +3215,6 @@ function renderPeople() {
   const data = personData(selected);
   const points = talkingPoints(selected, data);
   const labels = state.rocks?.statusLabels ?? {};
-  const taskRow = (t) => `<tr>
-      <td><span class="sig ${esc(t.signal)}">${esc(t.signal)}</span></td>
-      <td class="wrap">${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)}</td>
-      <td>${esc(t.status)}</td>
-      <td class="wrap">${esc(t.bigSwing?.label ?? "—")}</td>
-      <td>${t.idleDays == null ? "—" : `${esc(t.idleDays)}d`}</td>
-    </tr>`;
   const chip = (n, one, many, bad = false) => `<span class="chip${bad && n ? " bad" : ""}">${esc(plural(n, one, many))}</span>`;
 
   host.innerHTML = `
@@ -3012,14 +3231,19 @@ function renderPeople() {
 
     <h3>Rocks</h3>
     ${data.rocks.length
-      ? `<div class="flag-links">${data.rocks.map((r) => `<a href="#rocks/${encodeURIComponent(r.id)}">${esc(r.title)} · ${esc(labels[r.status] ?? r.status)} · ${esc(r.state)}</a>`).join("")}</div>`
+      ? `<div class="flag-links">${data.rocks.map((r) => `<a href="#rocks/${encodeURIComponent(r.id)}">${esc(r.title)} · ${esc(labels[r.status] ?? r.status)} · ${esc(r.state === "shipped" ? "shipped" : r.targetMonth ? `due ${r.targetMonth}` : "no month set")}</a>`).join("")}</div>`
       : `<p class="sub">No rocks.</p>`}
 
-    <h3>Open sprint tickets</h3>
+    <h3>This sprint, and what each is waiting on</h3>
     ${data.open.length
-      ? `<div class="scroll"><table><thead><tr><th>Signal</th><th>Ticket</th><th>Status</th><th>Big Swing</th><th>Untouched</th></tr></thead><tbody>${data.open.map(taskRow).join("")}</tbody></table></div>`
+      ? [...data.open].sort((a, b) => stageRank(a) - stageRank(b)).map((t) => ticketRow(t, { showOwner: false })).join("")
       : `<p class="sub">Nothing open in the current sprint.</p>`}
     ${data.cross ? `<p class="meta">${esc(plural(data.cross.bauTickets?.length ?? 0, "BAU ticket", "BAU tickets"))}, ${esc(plural(data.cross.unrelatedTickets?.length ?? 0, "ticket", "tickets"))} on no rock.</p>` : ""}
+
+    <h3>Queued for them in the backlog</h3>
+    ${data.queued.length
+      ? `<ul class="plain">${data.queued.map((t) => { const rock = rockForTask(t); return `<li>${t.ready ? '<span class="chip good">Ready</span> ' : ""}${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)} <span class="meta">${esc(rock ? rock.title : t.bigSwing?.label ?? "no Big Swing")}</span></li>`; }).join("")}</ul>`
+      : `<p class="sub">${state.report?.detail?.backlog?.available ? "Nothing in the backlog with their name on it." : "The backlog was not loaded."}</p>`}
 
     ${data.doneThisWeek.length ? `<h3>Done this week</h3><ul class="plain">${data.doneThisWeek.map((t) => `<li>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)}</li>`).join("")}</ul>` : ""}
 
@@ -3213,8 +3437,10 @@ $("settings-audit-wrap")?.addEventListener("toggle", async (event) => {
    as tests start and end. */
 
 function parseHash(hash) {
-  const [name, ...rest] = (hash || "#readout").slice(1).split("/");
-  return { name: name || "readout", target: rest.join("/") ? decodeURIComponent(rest.join("/")) : null };
+  const [raw, ...rest] = (hash || "#sprint").slice(1).split("/");
+  // Staleness folded into the Sprint view; an old link to it still lands somewhere useful.
+  const name = raw === "staleness" ? "sprint" : raw || "sprint";
+  return { name, target: rest.join("/") ? decodeURIComponent(rest.join("/")) : null };
 }
 
 /** Expands the named test and brings it into view. Safe to call before it has rendered. */
@@ -3247,10 +3473,12 @@ function showView(name) {
   for (const section of document.querySelectorAll(".view")) {
     section.classList.toggle("hidden", section.id !== `view-${name}`);
   }
-  for (const button of document.querySelectorAll(".nav")) {
+  for (const button of document.querySelectorAll(".nav, .tab")) {
     button.classList.toggle("active", button.dataset.view === name);
+    if (button.classList.contains("tab")) button.setAttribute("aria-selected", String(button.dataset.view === name));
   }
-  $("view-title").textContent = VIEW_TITLES[name] ?? name;
+  $("view-title").textContent = TAB_VIEWS.has(name) ? "" : VIEW_TITLES[name] ?? name;
+  $("view-title").hidden = TAB_VIEWS.has(name);
   // Keep an existing deep-link target: showView is also called on boot from the hash,
   // and overwriting it there would drop the very test we were asked to open.
   if (parseHash(location.hash).name !== name) location.hash = name;
@@ -3278,7 +3506,7 @@ $("menu-toggle").addEventListener("click", () =>
   $("drawer").classList.contains("open") ? closeDrawer() : openDrawer(),
 );
 $("scrim").addEventListener("click", closeDrawer);
-for (const button of document.querySelectorAll(".nav")) {
+for (const button of document.querySelectorAll(".nav, .tab")) {
   button.addEventListener("click", () => showView(button.dataset.view));
 }
 /**

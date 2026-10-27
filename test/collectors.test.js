@@ -84,7 +84,7 @@ test("comments are fetched only for tasks whose date_updated moved", async () =>
     config,
     token: "pk_x",
     tasks: [task({ id: "moved", dateUpdated: 2000 }), task({ id: "still", dateUpdated: 1000 })],
-    baselineTasks: [task({ id: "moved", dateUpdated: 1000 }), task({ id: "still", dateUpdated: 1000 })],
+    baselineTasks: [task({ id: "moved", dateUpdated: 1000, lastComment: null }), task({ id: "still", dateUpdated: 1000, lastComment: null })],
     fetchImpl,
     sleep: async () => {},
   });
@@ -92,6 +92,25 @@ test("comments are fetched only for tasks whose date_updated moved", async () =>
   assert.equal(requested.length, 1, "only the task that moved costs a request");
   assert.ok(requested[0].includes("/task/moved/comment"));
   assert.equal(result.comments.moved.count, 1);
+  assert.equal(result.comments.moved.latest.user, "dana");
+  assert.deepEqual(result.comments.moved.latest.mentions, []);
+});
+
+test("an open ticket whose latest comment was never read is read once, even if it has not moved", async () => {
+  const requested = [];
+  const fetchImpl = async (url) => {
+    requested.push(String(url));
+    return { status: 200, headers: new Headers(), text: async () => JSON.stringify({ comments: [] }) };
+  };
+  await fetchCommentsForChanged({
+    config,
+    token: "pk_x",
+    tasks: [task({ id: "unread", dateUpdated: 1000 }), task({ id: "read", dateUpdated: 1000 })],
+    baselineTasks: [task({ id: "unread", dateUpdated: 1000 }), task({ id: "read", dateUpdated: 1000, lastComment: null })],
+    fetchImpl,
+    sleep: async () => {},
+  });
+  assert.deepEqual(requested.map((u) => u.match(/task\/([^/]+)\/comment/)[1]), ["unread"]);
 });
 
 test("one task's comment fetch failing does not sink the collector", async () => {

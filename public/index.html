@@ -25,7 +25,12 @@
     <button id="menu-toggle" aria-label="Menu" aria-expanded="false">
       <span></span><span></span><span></span>
     </button>
-    <strong id="view-title">Readout</strong>
+    <nav id="tabs" role="tablist" aria-label="Views">
+      <button class="tab" role="tab" data-view="sprint">Sprint</button>
+      <button class="tab" role="tab" data-view="rocks">Rocks</button>
+      <button class="tab" role="tab" data-view="people">1:1</button>
+    </nav>
+    <strong id="view-title" hidden></strong>
     <span class="grow"></span>
     <span class="chip" id="chip-mode">—</span>
     <button id="refresh">Refresh</button>
@@ -33,11 +38,11 @@
 
   <nav id="drawer" aria-hidden="true">
     <p class="drawer-brand">Turnpups MOS</p>
-    <button class="nav" data-view="readout">Daily readout</button>
-    <button class="nav" data-view="rocks">Rocks</button>
     <button class="nav" data-view="sprint">Sprint</button>
-    <button class="nav" data-view="people">1:1 prep</button>
-    <button class="nav" data-view="staleness">Staleness</button>
+    <button class="nav" data-view="rocks">Rocks</button>
+    <button class="nav" data-view="people">1:1</button>
+    <p class="drawer-label nav-label">More</p>
+    <button class="nav" data-view="readout">Daily readout</button>
     <button class="nav" data-view="tests">Tests</button>
     <button class="nav" data-view="setup">Setup &amp; open decisions</button>
 
@@ -56,7 +61,7 @@
 
   <main>
     <!-- ---------------------------------- readout --------------------------------- -->
-    <section class="view" id="view-readout">
+    <section class="view hidden" id="view-readout">
       <div id="banners"></div>
 
       <!-- The counts, then the three things to do first, then everything else collapsed. -->
@@ -130,7 +135,7 @@
         <button class="ghost" id="import-rocks-btn">Paste from standup</button>
         <button id="new-rock-btn">New rock</button>
       </div>
-      <p class="sub">The leadership queue. Every change is recorded with what it was before.</p>
+      <p class="sub">Planning by month: each rock with the sprint and backlog tickets that ladder up to it through its Big Swing. Set a target month on each rock to place it. Every change is recorded with what it was before.</p>
       <div id="rocks-error" class="missing hidden"></div>
       <div id="rocks-list"></div>
       <details id="rocks-audit-wrap">
@@ -141,22 +146,16 @@
 
     <!-- ----------------------------------- sprint --------------------------------- -->
     <section class="view hidden" id="view-people">
-      <h2>1:1 prep</h2>
-      <p class="sub">One person at a time: their rocks, their sprint, what is open about them and what is waiting on them, with talking points to copy into your notes.</p>
+      <h2>1:1</h2>
+      <p class="sub">Everything about the person you are meeting: their rocks, their sprint and what each ticket waits on, what is queued for them, open flags, and talking points to copy into your notes.</p>
       <div class="dod-windows people-pick" id="people-pick" role="group" aria-label="Person"></div>
       <div id="people-view"></div>
     </section>
 
-    <section class="view hidden" id="view-sprint">
-      <h2>Layer 2. ClickUp sprint</h2>
+    <section class="view" id="view-sprint">
+      <h2>Sprint</h2>
+      <p class="sub">The week's commitment: every open ticket, how long it has sat in its status, what it is waiting on, and the last thing said on it in ClickUp.</p>
       <div id="layer2"></div>
-    </section>
-
-    <!-- ---------------------------------- staleness -------------------------------- -->
-    <section class="view hidden" id="view-staleness">
-      <h2>Staleness</h2>
-      <p class="sub">How long each ticket has sat in the status it is in, worst first. This is a different question from whether anything touched it: a ticket can be commented on every day for three weeks and never leave QA. Not Started is left out, because a backlog is supposed to sit.</p>
-      <div id="staleness"></div>
     </section>
 
     <!-- ------------------------------------ tests --------------------------------- -->

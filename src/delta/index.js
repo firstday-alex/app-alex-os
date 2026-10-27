@@ -518,6 +518,10 @@ export function computeFlags({ snapshots, baselines, config, settings = null, st
             config,
           })
         : { available: false, reason: "the ClickUp pull did not run" },
+      // The open backlog, for planning under each rock on the Rocks view.
+      backlog: Array.isArray(snapshots.clickup?.backlog)
+        ? { available: true, items: snapshots.clickup.backlog }
+        : { available: false, reason: snapshots.clickup?.backlogReadyError ?? "the backlog was not collected" },
     },
   };
 }

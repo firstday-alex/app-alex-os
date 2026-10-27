@@ -215,16 +215,21 @@ in a list to act on.
 
 ## Using the dashboard
 
+Three tabs across the top. Sprint opens by default.
+
+| Tab | What it is for |
+|---|---|
+| **Sprint** | The week's commitment: every open ticket, grouped by person or by what it waits on, worst first. Each shows its status, how long it has sat there, its rock, what it is waiting on, and the last ClickUp comment with who said it and when. "Waiting on" is worked out in order: someone you marked waiting on, then someone the last comment @mentions, then a stall, then the status read as a stage (QA, deploy, to start). Done this week and what changed sit collapsed below. |
+| **Rocks** | Planning by month. Each rock sits under its target month, set right on the card, with the sprint and backlog tickets that reach it through its Big Swing, Ready ones first. A rock with nothing planned says so. Opens with *Before sprint planning*, and ends with the backlog that ladders up to no rock. `#rocks/<id>` opens one. |
+| **1:1** | One person: talking points to copy, their rocks and target months, each sprint ticket with what it waits on, what is queued for them in the backlog, done this week, tests they own, and open flags. `#people/<clickup id>` links to a person. |
+
+The menu (☰) holds the rest:
+
 | Where | What it is for |
 |---|---|
-| **Today's 3** (top of the readout) | The three open flags to do first: severity, then how long each has been open, then whether it touches a rock. Re-ranks as you handle them. |
-| **This week** | The roll-up Friday's readout opens with: rocks shipped and slipping, tickets closed by person, alignment against a week ago, flags handled. Copy button for a leadership summary. |
-| **Store** | Month to date, yesterday, last 7 or 30 days, all complete days ending yesterday. Site-wide moves sit here, above the tiles. Every number links to its query in Shopify. |
-| **Needs your attention** | Open, Waiting and Parked; filter by severity, area, owner; group by age, area, owner, issue or item. Each flag has Done, Snooze, Waiting on, Not a problem and Draft a nudge, and rock flags carry the fix itself. |
-| **Rocks** | The leadership queue and its change history. `#rocks/<id>` opens one. |
-| **Sprint** | Opens with *Before sprint planning*: the backlog's Ready tickets checked against the rocks. |
-| **1:1 prep** | One person: rocks, sprint, open flags, what is waiting on them, and talking points to copy. `#people/<clickup id>` links to a person. |
-| **Tests** | Each test's readout. `#tests/<experience id>` opens one. |
+| **Daily readout** | Today's 3, the week in review, store numbers, and every flag to triage: Done, Snooze, Waiting on, Not a problem, Draft a nudge, and quick fixes on rock flags. |
+| **Tests** | Each test's readout, with the 12 month value projection. `#tests/<experience id>` opens one. |
+| **Setup** | The LTV multipliers and the decisions still open. |
 
 The system only ever communicates with Alex. Nudges are drafts to copy; nothing is sent
 to the team, and the team roster holds no contact details.

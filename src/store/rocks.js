@@ -159,6 +159,13 @@ export function normalizeRock(input, existing = null) {
     "checkInDate",
   );
 
+  // The month this rock is to be delivered in, as YYYY-MM. The Rocks view plans by it.
+  const rawMonth = input.targetMonth !== undefined ? input.targetMonth : existing?.targetMonth;
+  const targetMonth = rawMonth == null || rawMonth === "" ? null : String(rawMonth).trim().slice(0, 7);
+  if (targetMonth && !/^\d{4}-(0[1-9]|1[0-2])$/.test(targetMonth)) {
+    throw new RockValidationError("targetMonth must be a month, as YYYY-MM.", "targetMonth");
+  }
+
   if (startDate && shippedAt && startDate > shippedAt) {
     throw new RockValidationError("startDate is after shippedAt.", "startDate");
   }
@@ -175,6 +182,7 @@ export function normalizeRock(input, existing = null) {
     // metric key here lets a recommendation talk about the right number.
     kpi: str(input.kpi ?? existing?.kpi),
     startDate,
+    targetMonth,
     checkInDate,
     shippedAt,
     notes: str(input.notes ?? existing?.notes),

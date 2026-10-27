@@ -239,32 +239,29 @@ export async function fetchTaskPages({ config, token, logger, fetchImpl, sleep }
   return result;
 }
 
-/**
- * The planning pool for the next sprint: backlog tickets with Ready to Start = Ready.
- * Filtered by ClickUp, so the whole backlog is never pulled. Open tickets only.
- */
-export async function fetchBacklogReady({ config, token, logger, fetchImpl, sleep }) {
-  const cu = config.clickup;
-  const ready = cu.customFields?.readyToStart;
-  if (!cu.backlogListId || !ready?.id || !ready.readyOptionId) return null;
-  const http = config.system.http;
+/** Whether a backlog ticket has Ready to Start = Ready. A dropdown value comes back as the option id or as its orderindex, so either counts. */
+export function isReadyTask(task, ready) {
+  const value = (task.custom_fields ?? []).find((f) => f.id === ready?.id)?.value;
+  if (value == null) return false;
+  return String(value) === String(ready.readyOptionId) || (ready.readyOrderindex != null && Number(value) === Number(ready.readyOrderindex));
+}
 
-  const result = await paginate({
-    label: "clickup.backlog.task",
+/** Open backlog tickets, optionally filtered by ClickUp to Ready only. */
+async function fetchBacklogPages({ config, token, logger, fetchImpl, sleep, label, filter = null }) {
+  const cu = config.clickup;
+  const http = config.system.http;
+  return paginate({
+    label,
     maxPages: Math.min(http.maxPages ?? 10, 10),
     logger,
     fetchPage: async (page) => {
-      const params = new URLSearchParams({
-        page: String(page),
-        include_closed: "false",
-        subtasks: "false",
-        custom_fields: JSON.stringify([{ field_id: ready.id, operator: "=", value: ready.readyOptionId }]),
-      });
+      const params = new URLSearchParams({ page: String(page), include_closed: "false", subtasks: "false" });
+      if (filter) params.set("custom_fields", JSON.stringify(filter));
       const url = `${cu.apiBase}/list/${cu.backlogListId}/task?${params}`;
       const { body } = await httpJson(url, {
         headers: authHeaders(token),
         logger,
-        label: "clickup.backlog.task",
+        label,
         fetchImpl,
         timeoutMs: http.timeoutMs,
         maxAttempts: http.maxAttempts,
@@ -276,20 +273,44 @@ export async function fetchBacklogReady({ config, token, logger, fetchImpl, slee
     extract: (body) => body.tasks ?? [],
     isLastPage: (body) => body.last_page === true,
   });
+}
+
+/**
+ * The planning pool for the next sprint: backlog tickets with Ready to Start = Ready.
+ * Filtered by ClickUp, so the whole backlog is never pulled. Open tickets only.
+ */
+export async function fetchBacklogReady({ config, token, logger, fetchImpl, sleep }) {
+  const cu = config.clickup;
+  const ready = cu.customFields?.readyToStart;
+  if (!cu.backlogListId || !ready?.id || !ready.readyOptionId) return null;
+
+  const result = await fetchBacklogPages({
+    config,
+    token,
+    logger,
+    fetchImpl,
+    sleep,
+    label: "clickup.backlog.task",
+    filter: [{ field_id: ready.id, operator: "=", value: ready.readyOptionId }],
+  });
 
   // Checked again here, not trusted to the filter: if ClickUp ever ignored it, the pool
-  // would silently become the whole backlog. A dropdown value comes back as the option id
-  // or as its orderindex, so either counts.
-  const isReady = (task) => {
-    const value = (task.custom_fields ?? []).find((f) => f.id === ready.id)?.value;
-    if (value == null) return false;
-    return String(value) === String(ready.readyOptionId) || (ready.readyOrderindex != null && Number(value) === Number(ready.readyOrderindex));
-  };
-  const items = result.items.filter(isReady);
+  // would silently become the whole backlog.
+  const items = result.items.filter((task) => isReadyTask(task, ready));
   if (items.length !== result.items.length) {
     logger?.warn?.("clickup.backlog_filter_not_applied", { returned: result.items.length, ready: items.length });
   }
   return { ...result, items };
+}
+
+/**
+ * Every open backlog ticket, for the Rocks view's planning: what is queued under each
+ * rock, Ready or not. The backlog is small (48 open on 2026-10-27), so it is pulled
+ * whole, a page or two. Ready is marked per ticket rather than asked of ClickUp.
+ */
+export async function fetchBacklogOpen({ config, token, logger, fetchImpl, sleep }) {
+  if (!config.clickup.backlogListId) return null;
+  return fetchBacklogPages({ config, token, logger, fetchImpl, sleep, label: "clickup.backlog.open" });
 }
 
 /**
@@ -307,6 +328,9 @@ export async function fetchCommentsForChanged({ config, token, tasks, baselineTa
   const moved = tasks.filter((task) => {
     const before = baselineById.get(task.id);
     if (!before) return true; // brand new task, fetch once
+    // An open ticket whose latest comment was never read, once, so the Sprint view can
+    // say what was last said on it without waiting for the ticket to move.
+    if (task.bucket !== "done" && before.lastComment === undefined) return true;
     return (task.dateUpdated ?? 0) > (before.dateUpdated ?? 0);
   });
 
@@ -337,8 +361,14 @@ export async function fetchCommentsForChanged({ config, token, tasks, baselineTa
           ? {
               id: String(list[0].id),
               user: list[0].user?.username ?? null,
+              userId: list[0].user?.id == null ? null : String(list[0].user.id),
               date: list[0].date ? Number(list[0].date) : null,
               text: String(list[0].comment_text ?? "").slice(0, 280),
+              // Who the comment @mentions. A question put to someone by name is the
+              // clearest record of who a ticket is waiting on.
+              mentions: (list[0].comment ?? [])
+                .filter((part) => part?.type === "tag" && part.user?.username)
+                .map((part) => ({ id: String(part.user.id), username: part.user.username })),
             }
           : null,
       };
@@ -413,21 +443,36 @@ export async function collectClickUp({ config, token, store, logger, fetchImpl, 
   const baselineById = new Map((baseline?.items ?? []).map((t) => [t.id, t]));
   for (const task of tasks) {
     const fresh = comments[task.id];
-    if (fresh) task.commentCount = fresh.count;
-    // A task we did not re-fetch has not moved, so its comment count is unchanged.
-    else task.commentCount = baselineById.get(task.id)?.commentCount ?? null;
+    // A task we did not re-fetch has not moved, so its comments are unchanged. null means
+    // read and none; undefined means never read.
+    if (fresh && !fresh.error) {
+      task.commentCount = fresh.count;
+      task.lastComment = fresh.latest;
+    } else {
+      task.commentCount = baselineById.get(task.id)?.commentCount ?? null;
+      task.lastComment = baselineById.get(task.id)?.lastComment;
+    }
   }
 
-  // The next sprint's pool. A failure here costs the pre-sprint panel, never the readout.
+  // The whole open backlog, and the next sprint's pool within it. A failure here costs
+  // the planning panels, never the readout.
+  let backlog = null;
   let backlogReady = null;
   let backlogReadyError = null;
   if (config.clickup.preSprint?.enabled) {
     try {
-      const pulled = await fetchBacklogReady({ config, token, logger, fetchImpl, sleep });
-      backlogReady = pulled ? pulled.items.map((task) => normalizeTask(task, { fieldMap, statusMap: config.clickup.statusMap, logger })) : null;
+      const pulled = await fetchBacklogOpen({ config, token, logger, fetchImpl, sleep });
+      const ready = config.clickup.customFields?.readyToStart;
+      backlog = pulled
+        ? pulled.items.map((task) => ({
+            ...normalizeTask(task, { fieldMap, statusMap: config.clickup.statusMap, logger }),
+            ready: isReadyTask(task, ready),
+          }))
+        : null;
+      backlogReady = backlog && ready?.id && ready.readyOptionId ? backlog.filter((t) => t.ready) : null;
     } catch (err) {
       backlogReadyError = err.message;
-      logger?.warn?.("clickup.backlog_ready_failed", { err });
+      logger?.warn?.("clickup.backlog_failed", { err });
     }
   }
 
@@ -443,6 +488,7 @@ export async function collectClickUp({ config, token, store, logger, fetchImpl, 
     items: tasks,
     comments,
     members,
+    backlog,
     backlogReady,
     backlogReadyError,
     meta: { pages, truncated, commentsFetched: fetched, taskCount: tasks.length },

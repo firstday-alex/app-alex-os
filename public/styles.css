@@ -538,3 +538,51 @@ ul.plain { margin: 0; padding-left: 18px; }
 /* This week */
 .week-lines { margin: 0; padding-left: 18px; }
 .week-lines li { margin: 4px 0; }
+
+/* ---------------------------------- tabs ---------------------------------- */
+#tabs { display: flex; gap: 2px; }
+#tabs .tab {
+  background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  color: var(--muted); padding: 6px 10px; font-weight: 600;
+}
+#tabs .tab:hover { color: var(--ink); }
+#tabs .tab.active { color: var(--green); border-bottom-color: var(--green); }
+.nav-label { margin-top: 14px; }
+@media (max-width: 560px) {
+  #topbar { gap: 6px; padding: 8px 10px; }
+  #topbar #chip-mode { display: none; }
+  #tabs .tab { padding: 6px 7px; }
+}
+
+/* ------------------------------ sprint board ------------------------------ */
+.sp-bar { margin: 14px 0 6px; }
+.sp-bar .dod-windows { margin: 0; }
+.sp-group { margin-top: 18px; }
+.sp-group-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.sp-group-head h3 { margin: 0; }
+.sp-row {
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line);
+  border-radius: 4px; padding: 8px 12px; margin-bottom: 6px;
+}
+.sp-row.sp-row-bad { border-left-color: var(--red); }
+.sp-line { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+.sp-name { font-weight: 600; flex: 1 1 260px; }
+.sp-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.sp-chips .chip { font-size: 12px; padding: 1px 7px; }
+.sp-sub { font-size: 13px; margin-top: 3px; }
+.sp-wait { font-weight: 600; }
+.sp-wait.sp-wait-bad { color: var(--red); }
+.sp-wait.sp-wait-warn { color: var(--amber-ink); }
+.sp-said { color: var(--muted); overflow-wrap: anywhere; }
+.sp-said strong { color: var(--ink); font-weight: 600; }
+
+/* ------------------------------- rocks plan ------------------------------- */
+.rk-month-group { margin-top: 22px; }
+.rk-item { margin-bottom: 10px; }
+.rk-item .rock-row { margin-bottom: 0; }
+.rk-plan { padding: 6px 12px 4px 14px; border-left: 3px solid var(--line); margin-left: 2px; }
+.rk-plan summary { cursor: pointer; }
+.rk-month { display: inline-flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+.rk-month input { font: inherit; font-size: 12px; padding: 1px 4px; }
+.rk-head { margin: 8px 0 4px; font-weight: 600; }
+.sp-group-head .bad, .rk-plan .bad, .rk-month-group .bad { color: var(--red); font-weight: 600; }
