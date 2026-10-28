@@ -80,6 +80,7 @@ async function load() {
   state.today = body.today ?? null;
   state.flagEntries = body.flagEntries ?? null;
   state.people = body.people ?? [];
+  state.me = body.me ?? null;
 
   if (body.empty) {
     $("banners").innerHTML = `<div class="note"><strong>Nothing yet.</strong> ${esc(body.message)}</div>`;
@@ -1618,6 +1619,66 @@ function accountable(task) {
   return owners.map((u) => ({ id: String(u.id), name: u.username ?? String(u.id) }));
 }
 
+// Two roles on a ticket. The Task Owner is who you go to with questions and who keeps it
+// moving. The assignee does the work in the current stage.
+const toPeople = (list) => (list ?? []).map((u) => ({ id: String(u.id), name: u.username ?? String(u.id) }));
+const ownersOf = (task) => toPeople(task.taskOwners);
+const doersOf = (task) => toPeople(task.assignees);
+const firstName = (p) => String(p.name).split(/\s+/)[0];
+const isMe = (p) => state.me != null && p.id === String(state.me);
+const nameList = (list) => list.map(firstName).join(", ");
+
+/** Whose turn it is on a ticket, by what ClickUp says: owner, else assignee. */
+function doing(task) {
+  const doers = doersOf(task);
+  return doers.length ? doers : ownersOf(task);
+}
+
+/**
+ * Who Alex should reach out to about a ticket, and why. In order: someone the ticket is
+ * waiting on by name; someone who asked Alex a question in the last comment; the owner,
+ * whose job it is to keep it moving; and, when Alex owns it or nobody does, whoever is
+ * doing the work.
+ */
+function reachOut(task) {
+  const marked = (state.report?.flags ?? []).find(
+    (f) => viewOf(f) === "waiting" && baseId(f.subject?.id) === String(task.id) && triageOf(f)?.waitingOn,
+  );
+  if (marked) return { verb: "Ask", who: triageOf(marked).waitingOn, why: "you marked it waiting on them" };
+
+  const first = (name) => String(name ?? "someone").split(/\s+/)[0];
+  const c = task.lastComment;
+  if (c && task.bucket !== "done") {
+    const mentions = (c.mentions ?? []).filter((m) => String(m.id) !== String(c.userId));
+    if (mentions.some((m) => isMe({ id: String(m.id) }))) return { verb: "Reply to", who: first(c.user), why: `asked you ${agoText(c.date)}`, tone: "warn" };
+    const others = mentions.filter((m) => !isMe({ id: String(m.id) }));
+    if (others.length) {
+      const asker = isMe({ id: String(c.userId) }) ? "you asked" : `${first(c.user)} asked`;
+      return { verb: "Ask", who: others.map((m) => first(m.username)).join(", "), why: `${asker} ${agoText(c.date)}` };
+    }
+  }
+
+  const owners = ownersOf(task).filter((p) => !isMe(p));
+  const doers = doersOf(task).filter((p) => !isMe(p));
+  if (owners.length) return { verb: "Ask", who: nameList(owners), why: "", isOwner: true };
+  if (doers.length) return { verb: "Ask", who: nameList(doers), why: "", tone: ownersOf(task).length ? "" : "warn" };
+  if (ownersOf(task).length || doersOf(task).length) return { verb: "On you", who: "", why: "" };
+  return { verb: "Nobody to ask", who: "", why: "no owner or assignee", tone: "bad" };
+}
+
+/**
+ * "owner Robson · Cristobal doing it", or one name when it is the same person. When the
+ * Ask line already names the owner, only who is doing the work is left to say.
+ */
+function rolesText(task, ask = null) {
+  const owners = ownersOf(task);
+  const doers = doersOf(task);
+  const same = owners.length && doers.length && owners.map((p) => p.id).sort().join() === doers.map((p) => p.id).sort().join();
+  if (ask?.isOwner) return same ? "owner, doing it" : doers.length ? `${nameList(doers)} doing it` : "nobody assigned";
+  if (same) return `${nameList(owners)} owns it and is doing it`;
+  return [owners.length ? `owner ${nameList(owners)}` : "no owner", doers.length ? `${nameList(doers)} doing it` : "nobody assigned"].join(" · ");
+}
+
 function stageOf(task) {
   return STAGE_BY_STATUS.get(String(task.status ?? "").toLowerCase()) ?? { id: "work", label: task.status ?? "Unknown status" };
 }
@@ -1641,7 +1702,7 @@ function waitingOn(task) {
     return { text: "Stalled: needs a question", why: `untouched ${task.idleDays ?? "?"}d`, tone: "bad" };
   }
   if (stage.id === "work") {
-    const who = accountable(task).map((p) => p.name.split(/\s+/)[0]).join(", ");
+    const who = nameList(doing(task));
     return { text: who ? `With ${who}` : "Nobody on it", why: task.status, tone: who ? "" : "bad" };
   }
   return { text: stage.label, why: task.status, tone: STAGE_TONE[stage.id] ?? "" };
@@ -1669,15 +1730,21 @@ function agoText(ms) {
 }
 
 /** One ticket: name, where it is, what it waits on, and the last thing said on it. */
-function ticketRow(task, { showOwner = true, lane = false } = {}) {
+function ticketRow(task, { lane = false } = {}) {
   const wait = waitingOn(task);
   const stage = stageOf(task);
   // In a lane the column already says the status, unless the lane holds several.
   const showStatus = !lane || stage.id === "review" || !STAGE_BY_STATUS.has(String(task.status ?? "").toLowerCase());
   // "Waiting to start" under a To do column says nothing; only a question put to someone does.
   const quietStart = lane && stage.id === "start" && wait.text === stage.label;
+  // "With Cristobal" says nothing the who line has not; only a stall or a wait does.
+  const ask = task.bucket === "done" ? null : reachOut(task);
+  const quietWork = stage.id === "work" && !wait.tone && wait.text.startsWith("With ");
+  // A wait read off a comment or marked by hand is what the Ask line already says. Fold it
+  // in, keeping its colour, rather than saying it twice.
+  const askCarriesWait = Boolean(ask) && /asked|you marked it/.test(wait.why ?? "");
+  if (askCarriesWait && wait.tone && (!ask.tone || wait.tone === "bad")) ask.tone = wait.tone;
   const rock = rockForTask(task);
-  const owners = accountable(task).map((p) => p.name).join(", ");
   const c = task.lastComment;
   const said =
     c === undefined
@@ -1695,9 +1762,13 @@ function ticketRow(task, { showOwner = true, lane = false } = {}) {
           ${rock ? `<a class="chip owner" href="#rocks/${encodeURIComponent(rock.id)}">${esc(rock.title)}</a>` : task.bigSwing?.label ? `<span class="chip">${esc(task.bigSwing.label)}</span>` : ""}
         </span>
       </div>
-      ${quietStart ? "" : `<div class="sp-line sp-sub">
+      <div class="sp-line sp-sub sp-who">
+        ${ask ? `<span class="sp-ask${ask.tone ? ` sp-wait-${ask.tone}` : ""}">${esc([ask.verb, ask.who].filter(Boolean).join(" "))}</span>${ask.why ? `<span class="meta">${esc(ask.why)}</span>` : ""}` : ""}
+        <span class="meta">${esc(rolesText(task, ask))}</span>
+      </div>
+      ${quietStart || quietWork || askCarriesWait ? "" : `<div class="sp-line sp-sub">
         <span class="sp-wait${wait.tone ? ` sp-wait-${wait.tone}` : ""}">${esc(wait.text)}</span>
-        <span class="meta">${esc(wait.why ?? "")}${showOwner ? ` · ${esc(owners || "unassigned")}` : ""}</span>
+        <span class="meta">${esc(wait.why ?? "")}</span>
       </div>`}
       <div class="sp-line sp-sub">${said}</div>
     </div>`;
@@ -1756,7 +1827,8 @@ function renderLayer2(report) {
     const roster = (state.people ?? []).filter((p) => p.clickupUserId);
     const byId = new Map();
     for (const t of open) {
-      const who = accountable(t);
+      // By owner: who keeps it moving. By assignee: who is doing the work right now.
+      const who = sprintGroup === "assignee" ? doing(t) : accountable(t);
       if (!who.length) who.push({ id: "", name: "Unassigned" });
       for (const p of who) {
         if (!byId.has(p.id)) byId.set(p.id, { title: p.name, tasks: [] });
@@ -1780,7 +1852,7 @@ function renderLayer2(report) {
         const inLane = worstFirst(tasks.filter((t) => stageOf(t).id === l.id));
         return `<div class="sp-lane sp-lane-${l.id}">
           <p class="sp-lane-head">${esc(l.label)} <span class="meta">${esc(inLane.length)}</span></p>
-          ${inLane.map((t) => ticketRow(t, { showOwner: false, lane: true })).join("")}
+          ${inLane.map((t) => ticketRow(t, { lane: true })).join("")}
         </div>`;
       })
       .join("")}</div>`;
@@ -1792,7 +1864,7 @@ function renderLayer2(report) {
       return `<section class="sp-group">
         <div class="sp-group-head"><h3>${esc(g.title)}</h3><span class="meta">${esc(plural(g.tasks.length, "ticket", "tickets"))}${urgent ? ` · <span class="bad">${esc(urgent)} need a question</span>` : ""}</span>
           ${g.personId ? `<span class="grow"></span><a class="meta" href="#people/${encodeURIComponent(g.personId)}">1:1 prep →</a>` : ""}</div>
-        ${sprintGroup === "person" ? laneHtml(g.tasks) : g.tasks.map((t) => ticketRow(t)).join("")}
+        ${sprintGroup !== "stage" ? laneHtml(g.tasks) : g.tasks.map((t) => ticketRow(t)).join("")}
       </section>`;
     })
     .join("");
@@ -1802,7 +1874,7 @@ function renderLayer2(report) {
     ${delta.hasBaseline ? "" : `<div class="note"><strong>First run.</strong> There is no previous snapshot, so there is no day over day comparison yet.</div>`}
     <div class="bar sp-bar">
       <div class="dod-windows" role="group" aria-label="Group by">
-        ${[["person", "By person"], ["stage", "By what it waits on"]].map(([id, label]) => `<button type="button" class="ghost dod-window${id === sprintGroup ? " on" : ""}" data-sprint-group="${id}" aria-pressed="${id === sprintGroup}">${esc(label)}</button>`).join("")}
+        ${[["person", "By owner"], ["assignee", "By assignee"], ["stage", "By what it waits on"]].map(([id, label]) => `<button type="button" class="ghost dod-window${id === sprintGroup ? " on" : ""}" data-sprint-group="${id}" aria-pressed="${id === sprintGroup}">${esc(label)}</button>`).join("")}
       </div>
       ${swingSelect}
       <span class="meta">${esc(plural(open.length, "open ticket", "open tickets"))}${sprintSwing ? ` on ${esc(sprintSwing === NO_SWING ? "no Big Swing" : sprintSwing)}` : ""}, worst first</span>
@@ -3408,7 +3480,7 @@ function renderPeople() {
 
     <h3>This sprint, and what each is waiting on</h3>
     ${data.open.length
-      ? [...data.open].sort((a, b) => stageRank(a) - stageRank(b)).map((t) => ticketRow(t, { showOwner: false })).join("")
+      ? [...data.open].sort((a, b) => stageRank(a) - stageRank(b)).map((t) => ticketRow(t)).join("")
       : `<p class="sub">Nothing open in the current sprint.</p>`}
     ${data.cross ? `<p class="meta">${esc(plural(data.cross.bauTickets?.length ?? 0, "BAU ticket", "BAU tickets"))}, ${esc(plural(data.cross.unrelatedTickets?.length ?? 0, "ticket", "tickets"))} on no rock.</p>` : ""}
 

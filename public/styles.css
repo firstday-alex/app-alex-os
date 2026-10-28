@@ -572,6 +572,10 @@ ul.plain { margin: 0; padding-left: 18px; }
 .sp-chips .chip { font-size: 12px; padding: 1px 7px; }
 .sp-sub { font-size: 13px; margin-top: 3px; }
 .sp-wait { font-weight: 600; }
+.sp-ask { font-weight: 600; color: var(--green); }
+.sp-ask.sp-wait-warn { color: var(--amber-ink); }
+.sp-ask.sp-wait-bad { color: var(--red); }
+.sp-who { gap: 4px 8px; }
 .sp-wait.sp-wait-bad { color: var(--red); }
 .sp-wait.sp-wait-warn { color: var(--amber-ink); }
 .sp-said { color: var(--muted); overflow-wrap: anywhere; }
