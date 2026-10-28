@@ -58,7 +58,7 @@
     "model": "claude-opus-5",
     "effort": "high",
     "maxTokens": 16000,
-    "_comment": "Only the Strategic Advisor and the Learning Skill spend tokens. The daily pipeline spends none."
+    "_comment": "Only the Strategic Advisor, the Learning Skill and Ideation spend tokens, each on Alex's click or reply. The daily pipeline spends none."
   },
   "github": {
     "repo": "firstday-alex/app-alex-os",

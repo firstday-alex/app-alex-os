@@ -35,6 +35,7 @@ reports the delta. The **dashboard** reads the same storage and can re-pull on d
 | Every API pull, snapshot, delta, cross layer check, readiness gate, P1 band, the report, the dashboard, the 8 AM send | **plain code** | The readout has to be trustworthy and cheap. A model summarizing numbers can drift, hallucinate a metric, or phrase the same fact three ways on three days. Code cannot. |
 | The **Strategic Advisor**, when Alex clicks the button on a flagged item | **one Anthropic call** | Judgement is the product. |
 | The **Learning Skill**, when Alex replies with feedback in Slack | **one Anthropic call** | Same. |
+| **Ideation**, when Alex presses the button on the Ideation tab | **one Anthropic call** over the whole sprint | Same. |
 
 **Expected token spend on a normal day: zero.** Tokens are spent only when Alex asks a
 question or gives feedback.
@@ -49,7 +50,7 @@ skill file, it is agentic.
 
 ```
 config/            single source of truth. every threshold, list, field id and rule.
-skills/            five skill files. plain-language specs the code implements.
+skills/            the skill files. plain-language specs the code implements.
 src/
   config.js        loads and validates config, and collects the open questions
   lib/             time and baseline rules, logger with redaction, HTTP with retries, storage, auth
@@ -57,7 +58,7 @@ src/
   delta/           the rules. snapshots in, flags out.
   render/           flags plus snapshots in, a report out.
   send/            Slack, and inbound signature verification
-  agents/          the only two places an Anthropic call happens
+  agents/          the only places an Anthropic call happens: advisor, learning, ideation
   pipeline.js      collector -> delta -> render -> send
 netlify/functions/ the 8 AM trigger, the pipeline, the dashboard API, the Slack endpoints
 public/            the dashboard
@@ -226,6 +227,7 @@ Three tabs across the top. Sprint opens by default.
 | **1:1** | One person: talking points to copy, their rocks and target months, each sprint ticket with what it waits on, what is queued for them in the backlog, done this week, tests they own, and open flags. `#people/<clickup id>` links to a person. |
 | **Update** | The daily update, ready to paste: every sprint ticket touched since the start of the previous working day (updated, closed or commented on) in to do, in progress, QA, VQA, ready for deploy or done (this sprint). Complete tickets are left out. Grouped under `**Big Swing**`, one ticket per line: `@Name – Status – Title – last update: MM/DD`, or `✅ @Name – Title – done MM/DD` for done (this sprint). The @name is whoever is doing it (assignee, else owner): their `handle` in `config/people.json`, else their first name. Untick a ticket to leave it out. |
 | **Accomplishments** | Every sprint ticket in complete or done (this sprint) over the last 30 days (or 7), by the date it was done, in the same format, newest first. |
+| **Ideation** | Every sprint ticket except complete: successful, unsuccessful or too early to call, the root cause of why with the evidence it rests on, and three other ways to approach it. On a button press it reads each ticket's description and comment thread from ClickUp (read only), the Intelligems tests and the rocks, and makes one Claude call (`skills/ideation/SKILL.md`). The answer is stored and shown until the next run. |
 
 The menu (☰) holds the rest:
 

@@ -11,6 +11,7 @@ one that learns from Alex's feedback and rewrites the others.
 | 4 | Learning Skill | — | agentic | Alex replying to a readout in Slack |
 | 5 | Strategic Advisor | — | agentic | Alex clicking the button on a flagged item |
 | 6 | Store Metrics Manager | 0 | deterministic code | the 8 AM scheduler, and the dashboard refresh |
+| 7 | Ideation | 2 | agentic | Alex pressing the button on the Ideation tab |
 
 **Six, not the spec's five.** The requirements document specifies five and Layer 0 was not
 in it: the store-wide metrics overview was asked for later. Adding the skill file rather

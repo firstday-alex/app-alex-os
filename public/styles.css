@@ -614,6 +614,16 @@ ul.plain { margin: 0; padding-left: 18px; }
 .up-item { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; font-size: 14px; }
 .up-item span { flex: 1; }
 
+/* --------------------------------- ideation --------------------------------- */
+.ix-card { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 4px; background: var(--panel); padding: 10px 12px; margin-top: 10px; }
+.ix-card p { margin: 6px 0; }
+.ix-card.ix-successful { border-left-color: var(--green); }
+.ix-card.ix-unsuccessful { border-left-color: var(--red); }
+.ix-head { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.ix-name { font-weight: 600; flex: 1 1 260px; }
+.ix-ideas { margin: 6px 0 0; padding-left: 20px; }
+.ix-ideas li { margin: 4px 0; }
+
 /* -------------------------------- next steps -------------------------------- */
 /* Compact cards: the message already names the ticket and the person. */
 .ns .flag { padding: 8px 12px; margin-bottom: 6px; }

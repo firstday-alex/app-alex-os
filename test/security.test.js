@@ -180,7 +180,7 @@ test("every dashboard function gates on isAuthorized before doing anything", asy
   const dir = path.join(repoRoot, "netlify", "functions");
   // Background functions are invoked by the other functions, so they check a shared
   // internal secret rather than a browser cookie.
-  const internal = new Set(["run-pipeline-background.mjs", "advisor-background.mjs", "learning-background.mjs", "snapshot-hourly-background.mjs"]);
+  const internal = new Set(["run-pipeline-background.mjs", "advisor-background.mjs", "learning-background.mjs", "snapshot-hourly-background.mjs", "ideation-background.mjs"]);
   // Slack's own endpoints verify an HMAC signature; login is the thing that issues the
   // cookie. The scheduled function reads no request at all: it is cron-invoked, and
   // shouldRunScheduled means an unsolicited call outside 8 AM Central does nothing. The

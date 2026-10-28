@@ -31,6 +31,7 @@
       <button class="tab" role="tab" data-view="people">1:1</button>
       <button class="tab" role="tab" data-view="update">Update</button>
       <button class="tab" role="tab" data-view="wins">Accomplishments</button>
+      <button class="tab" role="tab" data-view="ideation">Ideation</button>
     </nav>
     <strong id="view-title" hidden></strong>
     <span class="grow"></span>
@@ -45,6 +46,7 @@
     <button class="nav" data-view="people">1:1</button>
     <button class="nav" data-view="update">Update</button>
     <button class="nav" data-view="wins">Accomplishments</button>
+    <button class="nav" data-view="ideation">Ideation</button>
     <p class="drawer-label nav-label">More</p>
     <button class="nav" data-view="readout">Daily readout</button>
     <button class="nav" data-view="tests">Tests</button>
@@ -174,6 +176,13 @@
       <h2>Accomplishments</h2>
       <p class="sub">Every sprint ticket in complete or done (this sprint), by the date it was done, grouped by Big Swing, newest first. Untick anything that should not go in.</p>
       <div id="wins"></div>
+    </section>
+
+    <!-- ---------------------------------- ideation -------------------------------- -->
+    <section class="view hidden" id="view-ideation">
+      <h2>Ideation</h2>
+      <p class="sub">Every ticket in the current sprint (everything but complete): successful, unsuccessful or too early to call, the root cause of why, and three other ways to approach it. Read from each ticket's description and comments in ClickUp, the Intelligems tests and the rocks. Runs only when you press the button, as one call to Claude.</p>
+      <div id="ideation"></div>
     </section>
 
     <!-- ------------------------------------ tests --------------------------------- -->

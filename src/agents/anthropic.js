@@ -1,8 +1,8 @@
 // The only place an Anthropic call is made.
 //
 // Expected token spend on a normal day is zero. This module runs when Alex clicks the
-// button on a flagged item, and when Alex replies to a readout with feedback. Nothing
-// else invokes it.
+// button on a flagged item, when Alex replies to a readout with feedback, and when Alex
+// presses the button on the Ideation tab. Nothing else invokes it.
 
 import Anthropic from "@anthropic-ai/sdk";
 import fs from "node:fs";

@@ -3447,6 +3447,119 @@ $("import-body").addEventListener("change", (event) => {
 $("import-rocks-btn").addEventListener("click", openImport);
 $("import-close").addEventListener("click", closeImport);
 $("import-preview").addEventListener("click", previewImport);
+/* --------------------------------- ideation ---------------------------------
+   Each sprint ticket judged, with the root cause and three other approaches. Worked out
+   by one Claude call on the server, only when the button is pressed; this draws the
+   stored answer and polls while a new one runs. */
+
+const IDEATION_VERDICTS = [
+  { id: "unsuccessful", label: "Unsuccessful", tone: "bad" },
+  { id: "successful", label: "Successful", tone: "good" },
+  { id: "too_early", label: "Too early to call", tone: "" },
+];
+const ideation = { latest: null, status: null, loaded: false, polling: null, error: null };
+
+async function loadIdeation() {
+  const res = await fetch(`${FN}/ideation`).then((r) => r.json()).catch(() => null);
+  ideation.loaded = true;
+  if (res) {
+    ideation.latest = res.latest;
+    ideation.status = res.status;
+  }
+  renderIdeation();
+  if (ideation.status?.running) pollIdeation();
+}
+
+function pollIdeation() {
+  if (ideation.polling) return;
+  ideation.polling = setInterval(async () => {
+    const res = await fetch(`${FN}/ideation`).then((r) => r.json()).catch(() => null);
+    if (!res) return;
+    ideation.latest = res.latest;
+    ideation.status = res.status;
+    if (!res.status?.running) {
+      clearInterval(ideation.polling);
+      ideation.polling = null;
+    }
+    renderIdeation();
+  }, 5000);
+}
+
+function ideationCard(t) {
+  const verdict = IDEATION_VERDICTS.find((v) => v.id === t.verdict);
+  const who = t.assignees?.length ? t.assignees : t.owner ?? [];
+  return `<article class="ix-card ix-${esc(t.verdict)}">
+    <div class="ix-head">
+      ${t.url ? `<a class="ix-name" href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : `<span class="ix-name">${esc(t.name)}</span>`}
+      <span class="chip ${verdict?.tone ?? ""}">${esc(verdict?.label ?? t.verdict)}</span>
+      <span class="chip">${esc(t.status)}</span>
+    </div>
+    <p class="meta">${esc(t.bigSwing ?? "No Big Swing")}${who.length ? ` · ${esc(who.map((n) => String(n).split(/\s+/)[0]).join(", "))}` : ""}</p>
+    <p><strong>Why.</strong> ${esc(t.rootCause)}</p>
+    ${t.evidence ? `<p class="meta"><strong>Evidence.</strong> ${esc(t.evidence)}</p>` : ""}
+    <ol class="ix-ideas">${t.ideas.map((i) => `<li><strong>${esc(i.title)}.</strong> ${esc(i.how)}</li>`).join("")}</ol>
+  </article>`;
+}
+
+function renderIdeation() {
+  const root = $("ideation");
+  if (!root) return;
+  if (!ideation.loaded) {
+    root.innerHTML = `<p class="sub">Loading…</p>`;
+    return;
+  }
+  const { latest, status } = ideation;
+  const running = Boolean(status?.running);
+  const failed = status?.state === "failed" && !running;
+  const tickets = latest?.tickets ?? [];
+  const counts = Object.fromEntries(IDEATION_VERDICTS.map((v) => [v.id, tickets.filter((t) => t.verdict === v.id).length]));
+
+  root.innerHTML = `
+    <div class="bar up-bar">
+      <button type="button" id="ideation-run"${running ? " disabled" : ""}>${running ? "Analyzing…" : latest ? "Run again" : "Analyze the sprint"}</button>
+      <span class="meta">${
+        running
+          ? `Started ${esc(new Date(status.startedAt).toLocaleTimeString())}. Reading every ticket and its comments, then one call to Claude; usually a few minutes.`
+          : latest
+            ? `Last run ${esc(new Date(latest.generatedAt).toLocaleString())}, on the readout pulled ${esc(latest.dateKey ?? "")}.`
+            : "Not run yet."
+      }</span>
+    </div>
+    ${failed ? `<div class="missing">The last run failed. ${esc(status.error ?? "")}</div>` : ""}
+    ${ideation.error ? `<div class="missing">${esc(ideation.error)}</div>` : ""}
+    ${latest && latest.readTicketDetail === false ? `<p class="meta">ClickUp could not be read at the time, so this used only the last comment on each ticket.</p>` : ""}
+    ${
+      tickets.length
+        ? `<p class="meta">${IDEATION_VERDICTS.map((v) => `${esc(counts[v.id])} ${esc(v.label.toLowerCase())}`).join(" · ")}</p>
+      ${IDEATION_VERDICTS.filter((v) => counts[v.id])
+        .map(
+          (v) => `<section class="up-group">
+          <div class="sp-group-head"><h3>${esc(v.label)}</h3><span class="meta">${esc(plural(counts[v.id], "ticket", "tickets"))}</span></div>
+          ${tickets.filter((t) => t.verdict === v.id).map(ideationCard).join("")}
+        </section>`,
+        )
+        .join("")}`
+        : ""
+    }
+    ${latest?.missing?.length ? `<p class="meta">No usable answer came back for: ${esc(latest.missing.map((m) => m.name).join(", "))}. Run again to retry.</p>` : ""}`;
+}
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("#ideation-run");
+  if (!button) return;
+  button.disabled = true;
+  ideation.error = null;
+  const res = await fetch(`${FN}/ideation`, { method: "POST" }).catch((err) => ({ ok: false, json: async () => ({ reason: err.message }) }));
+  const body = await res.json().catch(() => ({}));
+  if (res.ok || res.status === 409) {
+    ideation.status = { state: "running", startedAt: body.startedAt ?? body.status?.startedAt ?? new Date().toISOString(), running: true };
+    pollIdeation();
+  } else {
+    ideation.error = `Could not start the analysis. ${body.reason ?? body.error ?? ""}`;
+  }
+  renderIdeation();
+});
+
 $("import-apply").addEventListener("click", applyImport);
 $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import-modal") closeImport(); });
 
@@ -3454,7 +3567,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 
 // Sprint, Rocks and 1:1 are the tabs. The rest live in the menu and name themselves in
 // the top bar when open.
-const TAB_VIEWS = new Set(["sprint", "rocks", "people", "update", "wins"]);
+const TAB_VIEWS = new Set(["sprint", "rocks", "people", "update", "wins", "ideation"]);
 const VIEW_TITLES = { readout: "Daily readout", tests: "Tests", setup: "Setup" };
 
 /* --------------------------------- 1:1 prep ---------------------------------
@@ -3822,6 +3935,7 @@ function showView(name) {
   if (name === "rocks" && !state.rocks) loadRocks();
   if (name === "setup" && !state.settings) loadSettings();
   if (name === "people") renderPeople();
+  if (name === "ideation" && !ideation.loaded) loadIdeation();
   if (name === "tests" && !state.testNotes) loadTestNotes().then(renderTests);
 }
 
