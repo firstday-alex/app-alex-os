@@ -30,6 +30,7 @@
       <button class="tab" role="tab" data-view="rocks">Rocks</button>
       <button class="tab" role="tab" data-view="people">1:1</button>
       <button class="tab" role="tab" data-view="update">Update</button>
+      <button class="tab" role="tab" data-view="wins">Accomplishments</button>
     </nav>
     <strong id="view-title" hidden></strong>
     <span class="grow"></span>
@@ -43,6 +44,7 @@
     <button class="nav" data-view="rocks">Rocks</button>
     <button class="nav" data-view="people">1:1</button>
     <button class="nav" data-view="update">Update</button>
+    <button class="nav" data-view="wins">Accomplishments</button>
     <p class="drawer-label nav-label">More</p>
     <button class="nav" data-view="readout">Daily readout</button>
     <button class="nav" data-view="tests">Tests</button>
@@ -163,7 +165,15 @@
     <!-- ----------------------------------- update --------------------------------- -->
     <section class="view hidden" id="view-update">
       <h2>Update</h2>
+      <p class="sub">Every sprint ticket touched since the start of the previous working day (updated, closed or commented on) that is to do, in progress, in QA or VQA, ready for deploy, or done (this sprint). Complete tickets are left out. Grouped by Big Swing, one per line. Untick anything that should not go in.</p>
       <div id="update"></div>
+    </section>
+
+    <!-- ------------------------------- accomplishments ------------------------------ -->
+    <section class="view hidden" id="view-wins">
+      <h2>Accomplishments</h2>
+      <p class="sub">Every sprint ticket in complete or done (this sprint), by the date it was done, grouped by Big Swing, newest first. Untick anything that should not go in.</p>
+      <div id="wins"></div>
     </section>
 
     <!-- ------------------------------------ tests --------------------------------- -->

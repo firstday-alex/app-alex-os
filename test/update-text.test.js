@@ -1,9 +1,10 @@
-// The daily update text. It has to pick the right tickets (touched since the previous
-// working day, in one of the statuses that go in the update) and say only what ClickUp says.
+// The daily update and accomplishments text. They have to pick the right tickets (the
+// update: touched since the previous working day, never "complete"; accomplishments: done
+// in the window) and say only what ClickUp says.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildUpdate, updateText, windowStart, cleanName, kindEmoji } from "../public/update-text.js";
+import { buildAccomplishments, buildUpdate, cleanName, groupsText, shortDate, windowStart } from "../public/update-text.js";
 
 const DAY = 86_400_000;
 const handleFor = (u) => u.username.split(" ")[0];
@@ -19,49 +20,49 @@ test("the window opens at the start of the previous working day, Friday on a Mon
   assert.equal(start.getHours(), 0);
 });
 
-test("only tickets touched in the window, in an update status, grouped by Big Swing", () => {
+test("the update: touched in the window, done (this sprint) but never complete, grouped by **Big Swing**, one per line", () => {
   const now = Date.now();
   const since = now - DAY;
   const tasks = [
-    { id: "a", name: "Design -Support Secondary CTA", status: "qa", bucket: "active", assignees: [robson], dateUpdated: now - 3600_000, bigSwing: { label: "Upsells" } },
-    { id: "b", name: "Bundle page build", status: "done", bucket: "done", taskOwners: [robson, akansha], dateClosed: now - 7200_000, bigSwing: { label: "Upsells" } },
-    { id: "c", name: "Old ticket", status: "in-progress", bucket: "active", assignees: [robson], dateUpdated: now - 5 * DAY, bigSwing: { label: "Upsells" } },
-    { id: "d", name: "Commented on", status: "to do", bucket: "active", assignees: [akansha], dateUpdated: now - 5 * DAY, lastComment: { date: now - 600_000 } },
-    { id: "e", name: "Done long ago, edited today", status: "done", bucket: "done", assignees: [akansha], dateClosed: now - 9 * DAY, dateUpdated: now },
-    { id: "f", name: "Parked", status: "blocked", bucket: "active", assignees: [akansha], dateUpdated: now },
+    { id: "a", name: "Design -Support Secondary CTA", status: "qa", assignees: [robson], taskOwners: [akansha], dateUpdated: now - 3600_000, bigSwing: { label: "Upsells" } },
+    { id: "b", name: "Bundle page build", status: "done (this sprint)", assignees: [robson, akansha], dateUpdated: now - 7200_000, bigSwing: { label: "Upsells" } },
+    { id: "c", name: "Old ticket", status: "in-progress", assignees: [robson], dateUpdated: now - 5 * DAY, bigSwing: { label: "Upsells" } },
+    { id: "d", name: "Commented on", status: "to do", assignees: [akansha], dateUpdated: now - 5 * DAY, lastComment: { date: now - 600_000 } },
+    { id: "e", name: "Closed today", status: "complete", bucket: "done", assignees: [akansha], dateClosed: now - 600_000, dateUpdated: now },
+    { id: "f", name: "Parked", status: "blocked", assignees: [akansha], dateUpdated: now },
   ];
   const groups = buildUpdate(tasks, { since, handleFor });
   assert.deepEqual(groups.map((g) => g.label), ["Upsells", "No Big Swing"]);
   assert.deepEqual(groups[0].tasks.map((x) => x.task.id), ["b", "a"]);
-  assert.equal(groups[0].tasks[0].text, "✅ @Robson + @Akansha Bundle page build (done)");
-  assert.equal(groups[0].tasks[1].text, "🎨 @Robson Support Secondary CTA (in qa)");
-  assert.equal(groups[1].tasks[0].text, "@Akansha Commented on (to do)");
+  const today = shortDate(now);
+  assert.equal(groups[0].tasks[0].text, `✅ @Robson + @Akansha – Bundle page build – done ${shortDate(now - 7200_000)}`);
+  assert.equal(groups[0].tasks[1].text, `@Robson – QA – Support Secondary CTA – last update: ${today}`);
+  assert.equal(groups[1].tasks[0].text, `@Akansha – To do – Commented on – last update: ${today}`);
 
-  assert.equal(updateText(groups), "Upsells\nUpdate: ✅ @Robson + @Akansha Bundle page build (done) 🎨 @Robson Support Secondary CTA (in qa)\n\nNo Big Swing\nUpdate: @Akansha Commented on (to do)");
-  assert.equal(updateText(groups, new Set(["d"])), "Upsells\nUpdate: ✅ @Robson + @Akansha Bundle page build (done) 🎨 @Robson Support Secondary CTA (in qa)");
+  assert.equal(
+    groupsText(groups),
+    `**Upsells**\n${groups[0].tasks[0].text}\n${groups[0].tasks[1].text}\n\n**No Big Swing**\n${groups[1].tasks[0].text}`,
+  );
+  assert.equal(groupsText(groups, new Set(["d"])), `**Upsells**\n${groups[0].tasks[0].text}\n${groups[0].tasks[1].text}`);
 });
 
-test("type prefixes come off the name, and the emoji is read off keywords or left out", () => {
+test("accomplishments: complete or done (this sprint) inside the window, newest first", () => {
+  const now = Date.now();
+  const tasks = [
+    { id: "a", name: "Older win", status: "complete", bucket: "done", assignees: [robson], dateClosed: now - 20 * DAY, bigSwing: { label: "Quiz" } },
+    { id: "b", name: "Newer win", status: "complete", bucket: "done", assignees: [akansha], dateClosed: now - 2 * DAY, bigSwing: { label: "Quiz" } },
+    { id: "c", name: "This sprint", status: "done (this sprint)", assignees: [akansha], dateUpdated: now - DAY, bigSwing: { label: "Quiz" } },
+    { id: "d", name: "Too old", status: "complete", bucket: "done", assignees: [akansha], dateClosed: now - 40 * DAY, dateUpdated: now },
+    { id: "e", name: "Still open", status: "qa", assignees: [akansha], dateUpdated: now },
+  ];
+  const groups = buildAccomplishments(tasks, { since: now - 30 * DAY, handleFor });
+  assert.deepEqual(groups[0].tasks.map((x) => x.task.id), ["c", "b", "a"]);
+  assert.equal(groups[0].tasks[2].text, `✅ @Robson – Older win – done ${shortDate(now - 20 * DAY)}`);
+  assert.equal(buildAccomplishments(tasks, { since: now - 7 * DAY, handleFor })[0].tasks.length, 2);
+});
+
+test("type prefixes come off the name, and dates read MM/DD", () => {
   assert.equal(cleanName("DEV - All in 1 Bundle Page"), "All in 1 Bundle Page");
   assert.equal(cleanName("[DEV] Gifts should show value at Checkout"), "Gifts should show value at Checkout");
-  assert.equal(kindEmoji("AB Test - Expedited Shipping Addition"), "🧪");
-  assert.equal(kindEmoji("Preorder ship date missing from checkout"), "");
-});
-
-test("accomplishments are the tickets closed since Monday, grouped by Big Swing, in the order they closed", async () => {
-  const { buildAccomplishments, accomplishmentsText, weekStart } = await import("../public/update-text.js");
-  const thursday = new Date(2026, 9, 29, 15, 0);
-  const monday = weekStart(thursday);
-  assert.equal(new Date(monday).getDay(), 1);
-  assert.equal(new Date(monday).getDate(), 26);
-  assert.equal(weekStart(new Date(2026, 9, 26, 9, 0)), monday);
-
-  const tasks = [
-    { id: "a", name: "Second win", bucket: "done", status: "done", assignees: [robson], dateClosed: monday + 2 * DAY, bigSwing: { label: "Quiz" } },
-    { id: "b", name: "First win", bucket: "done", status: "done", assignees: [akansha], dateClosed: monday + 3600_000, bigSwing: { label: "Quiz" } },
-    { id: "c", name: "Last week", bucket: "done", status: "done", assignees: [akansha], dateClosed: monday - 3600_000 },
-    { id: "d", name: "Still open", bucket: "active", status: "qa", assignees: [akansha], dateUpdated: monday + DAY },
-  ];
-  const groups = buildAccomplishments(tasks, { since: monday, handleFor });
-  assert.equal(accomplishmentsText(groups), "Quiz\n✅ @Akansha First win\n✅ @Robson Second win");
+  assert.equal(shortDate(new Date(2026, 9, 7).getTime()), "10/07");
 });

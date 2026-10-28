@@ -4,7 +4,7 @@
 // The refresh path polls rather than awaits: a background function returns 202 straight
 // away and the caller cannot wait for its result.
 
-import { accomplishmentsText, buildAccomplishments, buildUpdate, updateText, weekStart, windowStart } from "./update-text.js";
+import { buildAccomplishments, buildUpdate, groupsText, windowStart } from "./update-text.js";
 
 const $ = (id) => document.getElementById(id);
 const layerLabel = (layer) => (layer === "cross" ? "CROSS" : layer === 0 ? "STORE" : `L${layer}`);
@@ -1910,16 +1910,19 @@ $("layer2")?.addEventListener("click", (event) => {
   if (state.report) renderLayer2(state.report);
 });
 
-/* --------------------------------- update ---------------------------------
-   The daily update text, grouped by Big Swing. Built in update-text.js from the tickets
-   the report already holds; this only draws it and copies it. */
+/* ------------------------- update and accomplishments -------------------------
+   Two pasteable lists, built in update-text.js from the tickets the report already holds;
+   this only draws them and copies them. Update is what moved since the previous working
+   day; Accomplishments is what got done over a window. */
 
-const updateExcluded = new Set();
-let updateGroups = [];
-// "daily": touched since the previous working day. "wins": done since Monday.
-let updateMode = "daily";
-const UPDATE_MODES = { daily: "Daily update", wins: "Accomplishments this sprint" };
-const currentUpdateText = () => (updateMode === "wins" ? accomplishmentsText : updateText)(updateGroups, updateExcluded);
+const DAY_MS_UPD = 86_400_000;
+// Accomplishments windows, in days. 30 is the default.
+const WIN_WINDOWS = { 30: "Last 30 days", 7: "Last 7 days" };
+
+const pasteViews = {
+  update: { el: "update", excluded: new Set(), groups: [] },
+  wins: { el: "wins", excluded: new Set(), groups: [], days: 30 },
+};
 
 /** The @name for a ClickUp user: their handle from the roster, else their first name. */
 function handleFor(user) {
@@ -1928,42 +1931,50 @@ function handleFor(user) {
 }
 
 function renderUpdate(report) {
+  renderPasteView("update", report);
+  renderPasteView("wins", report);
+}
+
+function renderPasteView(key, report) {
+  const view = pasteViews[key];
+  const root = $(view.el);
+  if (!root) return;
   const section = report.sections.clickup;
   if (!section?.present) {
-    $("update").innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
+    root.innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
     return;
   }
-  const wins = updateMode === "wins";
-  const since = wins ? weekStart() : windowStart();
+  const wins = key === "wins";
+  const since = wins ? Date.now() - view.days * DAY_MS_UPD : windowStart();
   const tasks = report.detail?.clickup?.tasks ?? [];
-  updateGroups = wins ? buildAccomplishments(tasks, { since, handleFor }) : buildUpdate(tasks, { since, handleFor });
+  view.groups = wins ? buildAccomplishments(tasks, { since, handleFor }) : buildUpdate(tasks, { since, handleFor });
   const pulled = new Date(report.generatedAt);
   const stale = Date.now() - pulled.getTime() > 2 * 3600_000;
-  const text = currentUpdateText();
-  const count = updateGroups.reduce((n, g) => n + g.tasks.length, 0);
+  const text = groupsText(view.groups, view.excluded);
+  const count = view.groups.reduce((n, g) => n + g.tasks.length, 0);
+  const sinceText = new Date(since).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 
-  $("update").innerHTML = `
-    <div class="dod-windows" role="group" aria-label="Which update">
-      ${Object.entries(UPDATE_MODES).map(([id, label]) => `<button type="button" class="ghost dod-window${id === updateMode ? " on" : ""}" data-update-mode="${id}" aria-pressed="${id === updateMode}">${esc(label)}</button>`).join("")}
-    </div>
-    <p class="sub">${
+  root.innerHTML = `
+    ${
       wins
-        ? "Every sprint ticket moved to done since Monday, grouped by Big Swing, in the order it closed."
-        : "Every sprint ticket touched since the start of the previous working day (updated, closed or commented on) that is to do, in progress, in QA or VQA, ready for deploy, or done. Grouped by Big Swing."
-    } Untick anything that should not go in.</p>
-    <p class="meta">${wins ? "Closed since" : "Since"} ${esc(new Date(since).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }))}. From ClickUp as pulled ${esc(pulled.toLocaleString())}${stale ? `: press <strong>Refresh</strong> to include today so far` : ""}.</p>
+        ? `<div class="dod-windows" role="group" aria-label="Window">${Object.entries(WIN_WINDOWS)
+            .map(([d, label]) => `<button type="button" class="ghost dod-window${Number(d) === view.days ? " on" : ""}" data-wins-days="${d}" aria-pressed="${Number(d) === view.days}">${esc(label)}</button>`)
+            .join("")}</div>`
+        : ""
+    }
+    <p class="meta">${wins ? "Done since" : "Since"} ${esc(sinceText)}. From ClickUp as pulled ${esc(pulled.toLocaleString())}${stale ? `: press <strong>Refresh</strong> to include today so far` : ""}.</p>
     ${
       count
-        ? `<div class="bar up-bar"><button type="button" id="copy-update">Copy all</button><span class="meta" id="copy-update-note">${esc(plural(count, "ticket", "tickets"))} across ${esc(plural(updateGroups.length, "Big Swing", "Big Swings"))}</span></div>
-      <textarea id="update-text" class="up-text" rows="${Math.min(24, text.split("\n").length + 1)}" readonly>${esc(text)}</textarea>
-      ${updateGroups
+        ? `<div class="bar up-bar"><button type="button" data-copy-paste="${key}">Copy all</button><span class="meta" data-copy-note="${key}">${esc(plural(count, "ticket", "tickets"))} across ${esc(plural(view.groups.length, "Big Swing", "Big Swings"))}</span></div>
+      <textarea class="up-text" data-paste-text="${key}" rows="${Math.min(24, text.split("\n").length + 1)}" readonly>${esc(text)}</textarea>
+      ${view.groups
         .map(
           (g) => `<section class="up-group">
           <div class="sp-group-head"><h3>${esc(g.label)}</h3><span class="meta">${esc(plural(g.tasks.length, "ticket", "tickets"))}</span></div>
           ${g.tasks
             .map(
               ({ task, text: line }) => `<label class="up-item">
-              <input type="checkbox" data-update-task="${esc(task.id)}"${updateExcluded.has(String(task.id)) ? "" : " checked"}>
+              <input type="checkbox" data-paste-task="${esc(task.id)}" data-paste-view="${key}"${view.excluded.has(String(task.id)) ? "" : " checked"}>
               <span>${esc(line)}</span>
               ${task.url ? `<a class="meta" href="${esc(task.url)}" target="_blank" rel="noreferrer">open</a>` : ""}
             </label>`,
@@ -1972,32 +1983,36 @@ function renderUpdate(report) {
         </section>`,
         )
         .join("")}`
-        : `<p class="sub">${wins ? "Nothing on the sprint has been moved to done since Monday." : "Nothing on the sprint has been touched since then."}</p>`
+        : `<p class="sub">${wins ? "Nothing was done in this window." : "Nothing on the sprint has been touched since then."}</p>`
     }`;
 }
 
-$("update")?.addEventListener("change", (event) => {
-  const id = event.target.dataset?.updateTask;
-  if (!id) return;
-  if (event.target.checked) updateExcluded.delete(id);
-  else updateExcluded.add(id);
+document.addEventListener("change", (event) => {
+  const key = event.target.dataset?.pasteView;
+  if (!key) return;
+  const view = pasteViews[key];
+  const id = event.target.dataset.pasteTask;
+  if (event.target.checked) view.excluded.delete(id);
+  else view.excluded.add(id);
   // Only the text changes; redrawing everything would drop the scroll position.
-  $("update-text").value = currentUpdateText();
+  document.querySelector(`[data-paste-text="${key}"]`).value = groupsText(view.groups, view.excluded);
 });
 
-$("update")?.addEventListener("click", async (event) => {
-  const mode = event.target.closest("[data-update-mode]")?.dataset.updateMode;
-  if (mode) {
-    updateMode = mode;
-    if (state.report) renderUpdate(state.report);
+document.addEventListener("click", async (event) => {
+  const days = event.target.closest("[data-wins-days]")?.dataset.winsDays;
+  if (days) {
+    pasteViews.wins.days = Number(days);
+    if (state.report) renderPasteView("wins", state.report);
     return;
   }
-  if (event.target.id !== "copy-update") return;
+  const key = event.target.dataset?.copyPaste;
+  if (!key) return;
+  const note = document.querySelector(`[data-copy-note="${key}"]`);
   try {
-    await navigator.clipboard.writeText($("update-text").value);
-    $("copy-update-note").textContent = "Copied.";
+    await navigator.clipboard.writeText(document.querySelector(`[data-paste-text="${key}"]`).value);
+    note.textContent = "Copied.";
   } catch {
-    $("copy-update-note").textContent = "The browser would not copy. Select the text and copy it by hand.";
+    note.textContent = "The browser would not copy. Select the text and copy it by hand.";
   }
 });
 
@@ -3367,7 +3382,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 
 // Sprint, Rocks and 1:1 are the tabs. The rest live in the menu and name themselves in
 // the top bar when open.
-const TAB_VIEWS = new Set(["sprint", "rocks", "people", "update"]);
+const TAB_VIEWS = new Set(["sprint", "rocks", "people", "update", "wins"]);
 const VIEW_TITLES = { readout: "Daily readout", tests: "Tests", setup: "Setup" };
 
 /* --------------------------------- 1:1 prep ---------------------------------
