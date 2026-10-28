@@ -1804,8 +1804,7 @@ function renderLayer2(report) {
     </select>`;
   const tasks = sprintSwing ? allTasks.filter((t) => swingKey(t) === sprintSwing) : allTasks;
   const open = tasks.filter((t) => t.bucket !== "done").sort((a, b) => stageRank(a) - stageRank(b));
-  const weekAgo = Date.now() - 7 * DAY_MS;
-  const doneThisWeek = tasks.filter((t) => t.bucket === "done" && t.dateClosed && t.dateClosed >= weekAgo);
+  const doneThisWeek = doneThisSprint(tasks);
 
   const count = (fn) => open.filter(fn).length;
   const tiles = [
@@ -1887,7 +1886,7 @@ function renderLayer2(report) {
     ${groupHtml || `<p class="sub">Nothing open on the sprint.</p>`}
     <details class="section">
       <summary><h2>Done this week</h2><span class="sec-count">${esc(doneThisWeek.length)}</span></summary>
-      ${doneThisWeek.length ? doneThisWeek.map((t) => ticketRow(t)).join("") : `<p class="sub">Nothing closed in the last 7 days.</p>`}
+      ${doneThisWeek.length ? doneThisWeek.map((t) => ticketRow(t)).join("") : `<p class="sub">Nothing in done (this sprint) yet.</p>`}
     </details>
     <details class="section">
       <summary><h2>What changed</h2><span class="sec-count">${esc(delta.counts?.changed ?? 0)}</span></summary>
@@ -3465,6 +3464,12 @@ const VIEW_TITLES = { readout: "Daily readout", tests: "Tests", setup: "Setup" }
 
 const DAY_MS = 86_400_000;
 
+// "Done this week" is the tickets in "done (this sprint)". "complete" is last sprint's work,
+// moved there when the sprint rolled over, so it stays out however recently it closed.
+function doneThisSprint(tasks) {
+  return tasks.filter((t) => String(t.status ?? "").toLowerCase() === "done (this sprint)");
+}
+
 /** Whether a name as ClickUp or a rock spells it is this person: exact, or first name. */
 function isPerson(name, person) {
   const a = String(name ?? "").trim().toLowerCase();
@@ -3481,8 +3486,7 @@ function personData(person) {
     [...(t.taskOwners ?? []), ...(t.assignees ?? [])].some((u) => String(u.id) === id || isPerson(u.username, person)),
   );
   const open = tasks.filter((t) => t.bucket !== "done");
-  const weekAgo = Date.now() - 7 * DAY_MS;
-  const doneThisWeek = tasks.filter((t) => t.bucket === "done" && t.dateClosed && t.dateClosed >= weekAgo);
+  const doneThisWeek = doneThisSprint(tasks);
   const rocks = (state.rocks?.rocks ?? []).filter((r) => String(r.owner ?? "") === id);
   const cross = (d.crossLayer?.people ?? []).find((p) => String(p.id) === id) ?? null;
   const flags = (report.flags ?? []).filter((f) => !isContextFlag(f) && flagContext(f).owners.some((o) => isPerson(o, person)));
