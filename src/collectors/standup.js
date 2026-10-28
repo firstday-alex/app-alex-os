@@ -114,6 +114,13 @@ export function rosterOf(config) {
  */
 export function buildStandups(messages, { roster, timeZone, nameOf }) {
   const byDay = new Map();
+  // Posters with no name to go on stay apart from each other, numbered in the order they
+  // first appear. The Slack id is only the key here; it never reaches the output.
+  const unnamed = new Map();
+  const unnamedLabel = (id) => {
+    if (!unnamed.has(id)) unnamed.set(id, `Unnamed poster ${unnamed.size + 1}`);
+    return unnamed.get(id);
+  };
   for (const m of messages) {
     if (m.bot_id || (m.subtype && m.subtype !== "thread_broadcast")) continue;
     const parsed = parseStandup(m.text);
@@ -121,7 +128,7 @@ export function buildStandups(messages, { roster, timeZone, nameOf }) {
     const at = Math.round(Number(m.ts) * 1000);
     const names = nameOf(m);
     const person = matchPerson(names, roster);
-    const name = person?.name ?? names.find(Boolean) ?? "Someone";
+    const name = person?.name ?? names.find(Boolean) ?? unnamedLabel(m.user ?? "?");
     const day = zonedParts(new Date(at), timeZone).dateKey;
     if (!byDay.has(day)) byDay.set(day, new Map());
     const posts = byDay.get(day);
@@ -180,6 +187,7 @@ export async function fetchStandups({ config, token, logger, fetchImpl, now = ne
 
   // Only for posters whose message came without a profile. Held in memory for this call.
   const looked = new Map();
+  let nameScopeMissing = false;
   for (const m of messages) {
     if (m.user_profile || !m.user || looked.has(m.user) || !parseStandup(m.text)) continue;
     try {
@@ -188,6 +196,11 @@ export async function fetchStandups({ config, token, logger, fetchImpl, now = ne
     } catch (err) {
       logger?.warn?.("standup.name_unavailable", { err: err.slackError ?? err.message });
       looked.set(m.user, []);
+      // Without users:read every lookup fails the same way. Stop asking.
+      if (err.slackError === "missing_scope") {
+        nameScopeMissing = true;
+        break;
+      }
     }
   }
   const nameOf = (m) =>
@@ -203,6 +216,9 @@ export async function fetchStandups({ config, token, logger, fetchImpl, now = ne
     lookbackDays: lookback,
     today: zonedParts(now, config.system.timezone).dateKey,
     expected: roster.map((p) => p.name).filter((n) => posters.has(n)),
+    namesNote: nameScopeMissing
+      ? "Slack is not giving the bot posters' names. Add the users:read scope to the Slack app (OAuth & Permissions, Bot Token Scopes) and reinstall it."
+      : null,
     days: standups,
   };
 }

@@ -53,3 +53,14 @@ test("posts group by day in the readout's timezone, latest per person, bots skip
   assert.equal(days[1].posts[0].name, "Robson Lopes");
   assert.ok(!JSON.stringify(days).includes("U1"));
 });
+
+test("posters with no name stay separate, labelled without their id", () => {
+  const ts = String(new Date("2026-10-28T14:00:00Z").getTime() / 1000);
+  const messages = [
+    { user: "UA", ts, text: "`Yesterday:` a\n`Today:` b" },
+    { user: "UB", ts, text: "`Yesterday:` c\n`Today:` d" },
+  ];
+  const [day] = buildStandups(messages, { roster, timeZone: "America/Chicago", nameOf: () => [] });
+  assert.deepEqual(day.posts.map((p) => p.name).sort(), ["Unnamed poster 1", "Unnamed poster 2"]);
+  assert.ok(!JSON.stringify(day).includes("UA"));
+});

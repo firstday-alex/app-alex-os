@@ -3510,6 +3510,7 @@ function renderStandup() {
         .join("")}</div>
       <button type="button" class="ghost" id="standup-reload">${standup.loading ? "Reading…" : "Reload"}</button>
     </div>
+    ${data.namesNote ? `<div class="missing">${esc(data.namesNote)}</div>` : ""}
     <p class="meta">${esc(posted.size)} posted${data.expected.length ? ` of ${esc(data.expected.length)} who usually do` : ""}${
       notPosted.length ? `. Not posted${standup.day === today ? " yet" : ""}: <strong>${esc(notPosted.map(first).join(", "))}</strong>` : ""
     }. Read from Slack ${esc(new Date(data.fetchedAt).toLocaleTimeString())}.</p>
