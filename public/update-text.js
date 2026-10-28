@@ -34,6 +34,14 @@ export function windowStart(now = new Date()) {
   return d.getTime();
 }
 
+/** Monday 00:00 of this week, local time: the start of the sprint. On a Monday, today. */
+export function weekStart(now = new Date()) {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d.getTime();
+}
+
 /** The latest thing that happened to a ticket: an update, a close, or a comment. */
 export function lastActivity(task) {
   return Math.max(task.dateUpdated ?? 0, task.dateClosed ?? 0, task.lastComment?.date ?? 0) || null;
@@ -99,6 +107,35 @@ export function buildUpdate(tasks, { since, handleFor }) {
         .sort((a, b) => rank(a) - rank(b) || String(a.name).localeCompare(String(b.name)))
         .map((t) => ({ task: t, text: updateItem(t, handleFor) })),
     }));
+}
+
+/**
+ * What the sprint has shipped so far: every ticket closed since `since`, grouped by Big
+ * Swing like the update, earliest first inside a group.
+ */
+export function buildAccomplishments(tasks, { since, handleFor }) {
+  const done = (tasks ?? []).filter((t) => !t.archived && t.bucket === "done" && t.dateClosed != null && t.dateClosed >= since);
+  const groups = new Map();
+  for (const t of done) {
+    const label = t.bigSwing?.label || "";
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(t);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => (a === "") - (b === "") || a.localeCompare(b))
+    .map(([label, list]) => ({
+      label: label || "No Big Swing",
+      tasks: list.sort((a, b) => a.dateClosed - b.dateClosed).map((t) => ({ task: t, text: updateItem(t, handleFor).replace(/ \(done\)$/, "") })),
+    }));
+}
+
+/** Accomplishments as text: each Big Swing, then one ticket per line. */
+export function accomplishmentsText(groups, excluded = new Set()) {
+  return groups
+    .map((g) => ({ label: g.label, items: g.tasks.filter((x) => !excluded.has(String(x.task.id))).map((x) => x.text) }))
+    .filter((g) => g.items.length)
+    .map((g) => [g.label, ...g.items].join("\n"))
+    .join("\n\n");
 }
 
 /** The text to paste: the Big Swing, then "Update:" and its items on one line. */

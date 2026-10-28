@@ -47,3 +47,21 @@ test("type prefixes come off the name, and the emoji is read off keywords or lef
   assert.equal(kindEmoji("AB Test - Expedited Shipping Addition"), "🧪");
   assert.equal(kindEmoji("Preorder ship date missing from checkout"), "");
 });
+
+test("accomplishments are the tickets closed since Monday, grouped by Big Swing, in the order they closed", async () => {
+  const { buildAccomplishments, accomplishmentsText, weekStart } = await import("../public/update-text.js");
+  const thursday = new Date(2026, 9, 29, 15, 0);
+  const monday = weekStart(thursday);
+  assert.equal(new Date(monday).getDay(), 1);
+  assert.equal(new Date(monday).getDate(), 26);
+  assert.equal(weekStart(new Date(2026, 9, 26, 9, 0)), monday);
+
+  const tasks = [
+    { id: "a", name: "Second win", bucket: "done", status: "done", assignees: [robson], dateClosed: monday + 2 * DAY, bigSwing: { label: "Quiz" } },
+    { id: "b", name: "First win", bucket: "done", status: "done", assignees: [akansha], dateClosed: monday + 3600_000, bigSwing: { label: "Quiz" } },
+    { id: "c", name: "Last week", bucket: "done", status: "done", assignees: [akansha], dateClosed: monday - 3600_000 },
+    { id: "d", name: "Still open", bucket: "active", status: "qa", assignees: [akansha], dateUpdated: monday + DAY },
+  ];
+  const groups = buildAccomplishments(tasks, { since: monday, handleFor });
+  assert.equal(accomplishmentsText(groups), "Quiz\n✅ @Akansha First win\n✅ @Robson Second win");
+});

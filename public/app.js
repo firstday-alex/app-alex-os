@@ -4,7 +4,7 @@
 // The refresh path polls rather than awaits: a background function returns 202 straight
 // away and the caller cannot wait for its result.
 
-import { buildUpdate, updateText, windowStart } from "./update-text.js";
+import { accomplishmentsText, buildAccomplishments, buildUpdate, updateText, weekStart, windowStart } from "./update-text.js";
 
 const $ = (id) => document.getElementById(id);
 const layerLabel = (layer) => (layer === "cross" ? "CROSS" : layer === 0 ? "STORE" : `L${layer}`);
@@ -1844,6 +1844,10 @@ $("layer2")?.addEventListener("click", (event) => {
 
 const updateExcluded = new Set();
 let updateGroups = [];
+// "daily": touched since the previous working day. "wins": done since Monday.
+let updateMode = "daily";
+const UPDATE_MODES = { daily: "Daily update", wins: "Accomplishments this sprint" };
+const currentUpdateText = () => (updateMode === "wins" ? accomplishmentsText : updateText)(updateGroups, updateExcluded);
 
 /** The @name for a ClickUp user: their handle from the roster, else their first name. */
 function handleFor(user) {
@@ -1857,15 +1861,25 @@ function renderUpdate(report) {
     $("update").innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
     return;
   }
-  const since = windowStart();
-  updateGroups = buildUpdate(report.detail?.clickup?.tasks ?? [], { since, handleFor });
+  const wins = updateMode === "wins";
+  const since = wins ? weekStart() : windowStart();
+  const tasks = report.detail?.clickup?.tasks ?? [];
+  updateGroups = wins ? buildAccomplishments(tasks, { since, handleFor }) : buildUpdate(tasks, { since, handleFor });
   const pulled = new Date(report.generatedAt);
   const stale = Date.now() - pulled.getTime() > 2 * 3600_000;
-  const text = updateText(updateGroups, updateExcluded);
+  const text = currentUpdateText();
   const count = updateGroups.reduce((n, g) => n + g.tasks.length, 0);
 
   $("update").innerHTML = `
-    <p class="meta">Since ${esc(new Date(since).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }))}. From ClickUp as pulled ${esc(pulled.toLocaleString())}${stale ? `: press <strong>Refresh</strong> to include today so far` : ""}.</p>
+    <div class="dod-windows" role="group" aria-label="Which update">
+      ${Object.entries(UPDATE_MODES).map(([id, label]) => `<button type="button" class="ghost dod-window${id === updateMode ? " on" : ""}" data-update-mode="${id}" aria-pressed="${id === updateMode}">${esc(label)}</button>`).join("")}
+    </div>
+    <p class="sub">${
+      wins
+        ? "Every sprint ticket moved to done since Monday, grouped by Big Swing, in the order it closed."
+        : "Every sprint ticket touched since the start of the previous working day (updated, closed or commented on) that is to do, in progress, in QA or VQA, ready for deploy, or done. Grouped by Big Swing."
+    } Untick anything that should not go in.</p>
+    <p class="meta">${wins ? "Closed since" : "Since"} ${esc(new Date(since).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }))}. From ClickUp as pulled ${esc(pulled.toLocaleString())}${stale ? `: press <strong>Refresh</strong> to include today so far` : ""}.</p>
     ${
       count
         ? `<div class="bar up-bar"><button type="button" id="copy-update">Copy all</button><span class="meta" id="copy-update-note">${esc(plural(count, "ticket", "tickets"))} across ${esc(plural(updateGroups.length, "Big Swing", "Big Swings"))}</span></div>
@@ -1886,7 +1900,7 @@ function renderUpdate(report) {
         </section>`,
         )
         .join("")}`
-        : `<p class="sub">Nothing on the sprint has been touched since then.</p>`
+        : `<p class="sub">${wins ? "Nothing on the sprint has been moved to done since Monday." : "Nothing on the sprint has been touched since then."}</p>`
     }`;
 }
 
@@ -1896,11 +1910,16 @@ $("update")?.addEventListener("change", (event) => {
   if (event.target.checked) updateExcluded.delete(id);
   else updateExcluded.add(id);
   // Only the text changes; redrawing everything would drop the scroll position.
-  const text = updateText(updateGroups, updateExcluded);
-  $("update-text").value = text;
+  $("update-text").value = currentUpdateText();
 });
 
 $("update")?.addEventListener("click", async (event) => {
+  const mode = event.target.closest("[data-update-mode]")?.dataset.updateMode;
+  if (mode) {
+    updateMode = mode;
+    if (state.report) renderUpdate(state.report);
+    return;
+  }
   if (event.target.id !== "copy-update") return;
   try {
     await navigator.clipboard.writeText($("update-text").value);
@@ -1990,11 +2009,13 @@ function renderRockChanges(entries) {
 }
 
 document.addEventListener("click", (event) => {
-  const button = event.target.closest(".dod-window");
+  // Only the day over day windows. The same button style is used for other toggles
+  // (sprint grouping, the update mode), and those must not change the window.
+  const button = event.target.closest(".dod-window[data-window]");
   if (!button) return;
   dodWindow = button.dataset.window;
   try { localStorage.setItem("mos.dodWindow", dodWindow); } catch { /* per-viewer nicety only */ }
-  document.querySelectorAll(".dod-window").forEach((b) => {
+  document.querySelectorAll(".dod-window[data-window]").forEach((b) => {
     b.classList.toggle("on", b === button);
     b.setAttribute("aria-pressed", String(b === button));
   });
