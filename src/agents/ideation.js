@@ -11,6 +11,7 @@ import { betaJSONSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/beta/json-
 import { ask, readSkill } from "./anthropic.js";
 import { rocksForAdvice } from "./strategic-advisor.js";
 import { httpJson } from "../lib/http.js";
+import { fetchStandups } from "../collectors/standup.js";
 
 export const IDEATION_KEY = "ideation/latest.json";
 export const VERDICTS = ["successful", "unsuccessful", "too_early"];
@@ -183,6 +184,14 @@ export async function ideate({ store, config, env = process.env, logger, fetchIm
     ? await Promise.all(tasks.map((t) => fetchTicketExtra(t, { config, token, logger, fetchImpl })))
     : tasks.map(() => ({}));
   const tickets = tasks.map((t, i) => ticketForIdeation(t, extras[i]));
+  // What people said in stand-up this past week. Optional: without it the analysis runs
+  // on ClickUp alone, and says so.
+  const standups = await fetchStandups({ config, token: env.SLACK_BOT_TOKEN, logger, days: 7 })
+    .then((s) => s.days.map((d) => ({ date: d.dateKey, posts: d.posts.map(({ name, yesterday, today, blockers }) => ({ name, yesterday, today, blockers })) })))
+    .catch((err) => {
+      logger?.warn?.("ideation.standups_unavailable", { err: err.message });
+      return null;
+    });
   const tests = (detail.intelligems?.tests ?? []).map(testForIdeation);
   const rocks = rocksForAdvice(detail.leadership?.queue ?? []);
 
@@ -204,6 +213,9 @@ export async function ideate({ store, config, env = process.env, logger, fetchIm
           "",
           "THE INTELLIGEMS TESTS",
           JSON.stringify(tests, null, 2),
+          "",
+          "THE STAND-UPS (last 7 days, from Slack, newest day first)",
+          standups ? JSON.stringify(standups, null, 2) : "Not available this run.",
           "",
           `THE SPRINT TICKETS (${tickets.length})`,
           JSON.stringify(tickets, null, 2),
@@ -230,6 +242,7 @@ export async function ideate({ store, config, env = process.env, logger, fetchIm
       outputTokens: result.response?.usage?.output_tokens ?? null,
     },
     readTicketDetail: Boolean(token),
+    readStandups: Boolean(standups),
     tickets: answers.map((a) => {
       const t = byId.get(a.id);
       return { ...a, name: t.name, url: t.url ?? null, status: t.status, bigSwing: t.bigSwing?.label ?? null, owner: people(t.taskOwners), assignees: people(t.assignees) };

@@ -52,7 +52,12 @@
   },
   "slack": {
     "advisorButtonText": "Ask for recommendation",
-    "postPartialReadouts": true
+    "postPartialReadouts": true,
+    "standup": {
+      "channelId": "C09DZE9AVS7",
+      "lookbackDays": 14,
+      "_comment": "#ecomm-team, where the team posts Yesterday / Today / Blockers each morning. Read only, live when the Stand-up tab opens and when Ideation runs. The bot must be a member: it is a private channel. Who is expected to post is everyone on the roster who posted at least once in the lookback."
+    }
   },
   "anthropic": {
     "model": "claude-opus-5",

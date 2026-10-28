@@ -614,6 +614,19 @@ ul.plain { margin: 0; padding-left: 18px; }
 .up-item { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; font-size: 14px; }
 .up-item span { flex: 1; }
 
+/* --------------------------------- stand-up --------------------------------- */
+.su-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; margin-top: 12px; }
+.su-card { border: 1px solid var(--line); border-left: 4px solid var(--green); border-radius: 4px; background: var(--panel); padding: 10px 12px; }
+.su-card.su-blocked { border-left-color: var(--red); }
+.su-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.su-sec { margin-top: 8px; font-size: 14px; }
+.su-sec ul { margin: 2px 0 0; padding-left: 18px; }
+.su-sec li { margin: 2px 0; }
+.su-label { display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.su-sec.su-bad .su-label, .su-sec.su-bad li { color: var(--red); }
+.su-blockers { border: 1px solid var(--red); background: var(--red-bg); color: var(--red); border-radius: 4px; padding: 8px 12px; margin: 10px 0; }
+.su-blockers ul { margin: 4px 0 0; padding-left: 18px; }
+
 /* --------------------------------- ideation --------------------------------- */
 .ix-card { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 4px; background: var(--panel); padding: 10px 12px; margin-top: 10px; }
 .ix-card p { margin: 6px 0; }

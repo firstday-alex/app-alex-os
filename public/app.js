@@ -3447,6 +3447,107 @@ $("import-body").addEventListener("change", (event) => {
 $("import-rocks-btn").addEventListener("click", openImport);
 $("import-close").addEventListener("click", closeImport);
 $("import-preview").addEventListener("click", previewImport);
+/* --------------------------------- stand-up ---------------------------------
+   The team's stand-ups from Slack, read live by /standup. One day at a time, blockers
+   first, then who has not posted. */
+
+const standup = { data: null, error: null, loading: false, day: null };
+
+async function loadStandup() {
+  standup.loading = true;
+  renderStandup();
+  const res = await fetch(`${FN}/standup`).catch(() => null);
+  const body = res ? await res.json().catch(() => null) : null;
+  standup.loading = false;
+  if (res?.ok && body) {
+    standup.data = body;
+    standup.error = null;
+    if (!standup.day || !body.days.some((d) => d.dateKey === standup.day)) standup.day = body.today;
+  } else {
+    standup.error = body?.error ?? "Could not reach Slack.";
+  }
+  renderStandup();
+}
+
+/** "Tue Oct 28" for a YYYY-MM-DD key, without a timezone shift. */
+function dayLabel(key, today) {
+  if (key === today) return "Today";
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+const standupList = (label, list, cls = "") =>
+  `<div class="su-sec ${cls}"><span class="su-label">${esc(label)}</span>${
+    list.length ? `<ul>${list.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : `<span class="meta">nothing</span>`
+  }</div>`;
+
+function renderStandup() {
+  const root = $("standup");
+  if (!root) return;
+  if (standup.loading && !standup.data) {
+    root.innerHTML = `<p class="sub">Reading Slack…</p>`;
+    return;
+  }
+  if (standup.error) {
+    root.innerHTML = `<div class="missing">${esc(standup.error)}</div><div class="bar up-bar"><button type="button" id="standup-reload">Try again</button></div>`;
+    return;
+  }
+  const data = standup.data;
+  if (!data) return;
+  const today = data.today;
+  // Today always shows, posted to or not; then the days that have posts.
+  const days = [today, ...data.days.map((d) => d.dateKey).filter((k) => k !== today)].slice(0, 6);
+  const day = data.days.find((d) => d.dateKey === standup.day) ?? { dateKey: standup.day, posts: [] };
+  const posted = new Set(day.posts.map((p) => p.name));
+  const notPosted = data.expected.filter((n) => !posted.has(n));
+  const blocked = day.posts.filter((p) => p.blockers.length);
+  const first = (n) => String(n).split(/\s+/)[0];
+
+  root.innerHTML = `
+    <div class="bar up-bar">
+      <div class="dod-windows" role="group" aria-label="Day">${days
+        .map((k) => `<button type="button" class="ghost dod-window${k === standup.day ? " on" : ""}" data-standup-day="${esc(k)}" aria-pressed="${k === standup.day}">${esc(dayLabel(k, today))}</button>`)
+        .join("")}</div>
+      <button type="button" class="ghost" id="standup-reload">${standup.loading ? "Reading…" : "Reload"}</button>
+    </div>
+    <p class="meta">${esc(posted.size)} posted${data.expected.length ? ` of ${esc(data.expected.length)} who usually do` : ""}${
+      notPosted.length ? `. Not posted${standup.day === today ? " yet" : ""}: <strong>${esc(notPosted.map(first).join(", "))}</strong>` : ""
+    }. Read from Slack ${esc(new Date(data.fetchedAt).toLocaleTimeString())}.</p>
+    ${
+      blocked.length
+        ? `<div class="su-blockers"><strong>Blockers</strong><ul>${blocked
+            .map((p) => `<li><strong>${esc(first(p.name))}:</strong> ${esc(p.blockers.join("; "))}</li>`)
+            .join("")}</ul></div>`
+        : day.posts.length
+          ? `<p class="meta">No blockers reported.</p>`
+          : ""
+    }
+    ${
+      day.posts.length
+        ? `<div class="su-grid">${day.posts
+            .map(
+              (p) => `<article class="su-card${p.blockers.length ? " su-blocked" : ""}">
+              <div class="su-head"><strong>${esc(p.name)}</strong><span class="meta">${esc(new Date(p.postedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}${p.edited ? " · edited" : ""}</span></div>
+              ${standupList("Yesterday", p.yesterday)}
+              ${standupList("Today", p.today)}
+              ${p.blockers.length ? standupList("Blockers", p.blockers, "su-bad") : ""}
+            </article>`,
+            )
+            .join("")}</div>`
+        : `<p class="sub">No stand-ups posted ${standup.day === today ? "yet today" : "that day"}.</p>`
+    }`;
+}
+
+document.addEventListener("click", (event) => {
+  const day = event.target.closest("[data-standup-day]")?.dataset.standupDay;
+  if (day) {
+    standup.day = day;
+    renderStandup();
+    return;
+  }
+  if (event.target.closest("#standup-reload")) loadStandup();
+});
+
 /* --------------------------------- ideation ---------------------------------
    Each sprint ticket judged, with the root cause and three other approaches. Worked out
    by one Claude call on the server, only when the button is pressed; this draws the
@@ -3527,6 +3628,7 @@ function renderIdeation() {
     </div>
     ${failed ? `<div class="missing">The last run failed. ${esc(status.error ?? "")}</div>` : ""}
     ${ideation.error ? `<div class="missing">${esc(ideation.error)}</div>` : ""}
+    ${latest && latest.readStandups === false ? `<p class="meta">Stand-ups could not be read from Slack at the time, so they were left out.</p>` : ""}
     ${latest && latest.readTicketDetail === false ? `<p class="meta">ClickUp could not be read at the time, so this used only the last comment on each ticket.</p>` : ""}
     ${
       tickets.length
@@ -3567,7 +3669,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 
 // Sprint, Rocks and 1:1 are the tabs. The rest live in the menu and name themselves in
 // the top bar when open.
-const TAB_VIEWS = new Set(["sprint", "rocks", "people", "update", "wins", "ideation"]);
+const TAB_VIEWS = new Set(["sprint", "rocks", "people", "update", "wins", "standup", "ideation"]);
 const VIEW_TITLES = { readout: "Daily readout", tests: "Tests", setup: "Setup" };
 
 /* --------------------------------- 1:1 prep ---------------------------------
@@ -3936,6 +4038,7 @@ function showView(name) {
   if (name === "setup" && !state.settings) loadSettings();
   if (name === "people") renderPeople();
   if (name === "ideation" && !ideation.loaded) loadIdeation();
+  if (name === "standup" && !standup.data && !standup.loading) loadStandup();
   if (name === "tests" && !state.testNotes) loadTestNotes().then(renderTests);
 }
 
