@@ -30,6 +30,7 @@
       <button class="tab" role="tab" data-view="rocks">Rocks</button>
       <button class="tab" role="tab" data-view="people">1:1</button>
       <button class="tab" role="tab" data-view="update">Update</button>
+      <button class="tab" role="tab" data-view="upsu">Update + Stand-up</button>
       <button class="tab" role="tab" data-view="wins">Accomplishments</button>
       <button class="tab" role="tab" data-view="standup">Stand-up</button>
       <button class="tab" role="tab" data-view="ideation">Ideation</button>
@@ -46,6 +47,7 @@
     <button class="nav" data-view="rocks">Rocks</button>
     <button class="nav" data-view="people">1:1</button>
     <button class="nav" data-view="update">Update</button>
+    <button class="nav" data-view="upsu">Update + Stand-up</button>
     <button class="nav" data-view="wins">Accomplishments</button>
     <button class="nav" data-view="standup">Stand-up</button>
     <button class="nav" data-view="ideation">Ideation</button>
@@ -171,6 +173,13 @@
       <h2>Update</h2>
       <p class="sub">Every sprint ticket touched since the start of the previous working day (updated, closed or commented on) that is to do, in progress, in QA or VQA, ready for deploy, or done (this sprint). Complete tickets are left out. Grouped by Big Swing, one per line. Untick anything that should not go in.</p>
       <div id="update"></div>
+    </section>
+
+    <!-- ----------------------------- update + stand-up ----------------------------- -->
+    <section class="view hidden" id="view-upsu">
+      <h2>Update + Stand-up</h2>
+      <p class="sub">The daily update with each person's latest stand-up from #ecomm-team since the start of the previous working day. A stand-up line sits under a ticket when it clearly names one of that person's tickets (shared words, or an acronym like FBB); a ticket someone mentioned is added even if ClickUp was not touched. Everything else is under "Also from stand-up", then blockers. Untick anything that should not go in.</p>
+      <div id="upsu"></div>
     </section>
 
     <!-- ------------------------------- accomplishments ------------------------------ -->

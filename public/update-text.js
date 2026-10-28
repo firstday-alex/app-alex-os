@@ -127,3 +127,172 @@ export function groupsText(groups, excluded = new Set()) {
     .map((g) => [`**${g.label}**`, ...g.items].join("\n"))
     .join("\n\n");
 }
+
+/* ------------------------------ update + stand-up ------------------------------
+   The same update, with what each person said in stand-up. A stand-up line goes under a
+   ticket only when it clearly names that ticket and the ticket is the poster's (assignee
+   or owner, or nobody's); a ticket someone mentions is pulled in even if ClickUp was not touched; the
+   rest goes under "Also from stand-up". No model: word overlap, shown so it can be
+   checked. */
+
+const STOP = new Set(
+  ("the and for with from into onto this that then than now all not our its are was were has have had will " +
+    "fix fixes fixed update updates updated new page test tests testing done live ready deploy today yesterday " +
+    "work working finish finished continue review build ship shipped pass second first feedback ideas iteration " +
+    "add adding more meeting meetings sync monitor check start started wrap wrapped make making get got set via " +
+    "dev design qa vqa per out off can could should need needs")
+    .split(" "),
+);
+
+/** The words of a phrase that can tell one ticket from another. */
+export function matchWords(text) {
+  return String(text ?? "")
+    .toLowerCase()
+    .replace(/['’]s\b/g, "")
+    .split(/[^a-z0-9]+/)
+    .map(singular)
+    .filter((w) => w && !STOP.has(w) && (w.length >= 3 || /\d/.test(w)) && !/^\d+$/.test(w));
+}
+
+/** Good enough plurals for ticket names: boxes, carts, stories, upsells. */
+function singular(w) {
+  if (w.length <= 3) return w;
+  if (/ies$/.test(w)) return w.slice(0, -3) + "y";
+  if (/(xes|ches|shes|sses)$/.test(w)) return w.slice(0, -2);
+  if (/[^s]s$/.test(w)) return w.slice(0, -1);
+  return w;
+}
+
+/** Initials of each run of 3 or 4 words in a ticket name: "Family Bundle Builder V4" gives "fbb", "fbbv", "bbv". */
+function acronyms(name) {
+  const w = String(name ?? "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const out = new Set();
+  for (let n = 3; n <= 4; n++) for (let i = 0; i + n <= w.length; i++) out.add(w.slice(i, i + n).map((x) => x[0]).join(""));
+  return out;
+}
+
+/**
+ * How often each word appears across ticket names. A word on many tickets ("checkout",
+ * "cart") says little about which one a line means.
+ */
+export function wordCounts(tasks) {
+  const counts = new Map();
+  for (const t of tasks) for (const w of new Set(matchWords(cleanName(t.name)))) counts.set(w, (counts.get(w) ?? 0) + 1);
+  return counts;
+}
+
+/**
+ * How strongly a stand-up line names a ticket: a point per shared word (half a point for
+ * a word on 3 or more tickets), two for an acronym of the ticket's name. 1.5 is a match:
+ * one telling word and one common one ("checkout workshop"), never two common ones
+ * ("cart/checkout").
+ */
+export function matchScore(line, task, counts = new Map()) {
+  const words = new Set(matchWords(cleanName(task.name)));
+  const acr = acronyms(cleanName(task.name));
+  let score = 0;
+  for (const w of new Set(matchWords(line))) {
+    if (words.has(w)) score += (counts.get(w) ?? 1) >= 3 ? 0.5 : 1;
+    else if (w.length >= 3 && acr.has(w)) score += 2;
+  }
+  return score;
+}
+
+const MATCH_AT = 1.5;
+
+/** The ticket a phrase names among `tasks`, or null when none clearly does or two tie. */
+function bestTicket(phrase, tasks, counts) {
+  const scored = tasks.map((t) => ({ t, score: matchScore(phrase, t, counts) })).filter((x) => x.score >= MATCH_AT).sort((a, b) => b.score - a.score);
+  return scored.length && (scored.length === 1 || scored[0].score > scored[1].score) ? scored[0].t : null;
+}
+
+const firstOf = (name) => String(name ?? "").trim().split(/\s+/)[0].toLowerCase();
+// A ticket is someone's to talk about when they are on it, or when nobody is.
+const isTheirs = (task, person) => {
+  const on = [...(task.assignees ?? []), ...(task.taskOwners ?? [])];
+  return !on.length || on.some((u) => firstOf(u.username) === firstOf(person));
+};
+
+/** Each person's latest stand-up posted at or after `since`. */
+export function latestPosts(standupDays, since) {
+  const latest = new Map();
+  for (const day of standupDays ?? []) {
+    for (const p of day.posts ?? []) {
+      if (p.postedAt < since) continue;
+      const prior = latest.get(p.name);
+      if (!prior || prior.postedAt < p.postedAt) latest.set(p.name, p);
+    }
+  }
+  return [...latest.values()].sort((a, b) => a.postedAt - b.postedAt);
+}
+
+const SECTIONS = [
+  ["yesterday", "Yesterday"],
+  ["today", "Today"],
+];
+
+/**
+ * The update with stand-up context. Returns the Big Swing groups (each ticket line with
+ * its stand-up notes), the stand-up lines that matched no ticket, and the blockers.
+ */
+export function buildStandupUpdate(tasks, standupDays, { since, handleFor }) {
+  const posts = latestPosts(standupDays, since);
+  const candidates = (tasks ?? []).filter((t) => !t.archived && UPDATE_STATUSES.includes(statusKey(t)));
+  const touched = new Set(buildUpdate(tasks, { since, handleFor }).flatMap((g) => g.tasks.map((x) => String(x.task.id))));
+  const counts = wordCounts(candidates);
+  const notes = new Map();
+  const extra = [];
+  const blockers = [];
+
+  for (const post of posts) {
+    const theirs = candidates.filter((t) => isTheirs(t, post.name));
+    for (const [key, label] of SECTIONS) {
+      for (const line of post[key] ?? []) {
+        // "family box builder + home hero cta + 90d upsell" is three pieces of work. Each
+        // piece is matched on its own, and the line goes under every ticket one names.
+        const hits = new Set(
+          line
+            .split(/\s+\+\s+/)
+            .map((part) => bestTicket(part, theirs, counts))
+            .filter(Boolean)
+            .map((t) => String(t.id)),
+        );
+        if (!hits.size) extra.push({ who: post.name, section: label, text: line });
+        for (const id of hits) {
+          if (!notes.has(id)) notes.set(id, []);
+          notes.get(id).push({ who: post.name, section: label, text: line });
+        }
+      }
+    }
+    for (const line of post.blockers ?? []) blockers.push({ who: post.name, text: line });
+  }
+
+  // The update's tickets, plus any ticket a stand-up named that ClickUp shows untouched.
+  const picked = candidates.filter((t) => touched.has(String(t.id)) || notes.has(String(t.id)));
+  const rank = (t) => UPDATE_STATUSES.indexOf(statusKey(t));
+  const groups = groupBySwing(picked, (a, b) => rank(a) - rank(b) || String(a.name).localeCompare(String(b.name)), handleFor).map((g) => ({
+    ...g,
+    tasks: g.tasks.map((x) => ({ ...x, notes: notes.get(String(x.task.id)) ?? [], fromStandup: !touched.has(String(x.task.id)) })),
+  }));
+  return { groups, extra, blockers, posts };
+}
+
+/** The text to paste. `excluded` holds ticket ids and "extra:i" / "blocker:i" keys. */
+export function standupUpdateText({ groups, extra, blockers }, handleFor, excluded = new Set()) {
+  const at = (name) => `@${handleFor({ username: name })}`;
+  const parts = groups
+    .map((g) => ({
+      label: g.label,
+      lines: g.tasks
+        .filter((x) => !excluded.has(String(x.task.id)))
+        .flatMap((x) => [x.text, ...x.notes.map((n) => `    ↳ ${n.section}: ${n.text}`)]),
+    }))
+    .filter((g) => g.lines.length)
+    .map((g) => [`**${g.label}**`, ...g.lines].join("\n"));
+  const extraLines = extra.map((e, i) => [e, i]).filter(([, i]) => !excluded.has(`extra:${i}`)).map(([e]) => `${at(e.who)} – ${e.section}: ${e.text}`);
+  if (extraLines.length) parts.push(["**Also from stand-up**", ...extraLines].join("\n"));
+  const blockerLines = blockers.map((b, i) => [b, i]).filter(([, i]) => !excluded.has(`blocker:${i}`)).map(([b]) => `${at(b.who)} – ${b.text}`);
+  if (blockerLines.length) parts.push(["**Blockers**", ...blockerLines].join("\n"));
+  return parts.join("\n\n");
+}
+

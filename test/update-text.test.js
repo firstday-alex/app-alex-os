@@ -66,3 +66,40 @@ test("type prefixes come off the name, and dates read MM/DD", () => {
   assert.equal(cleanName("[DEV] Gifts should show value at Checkout"), "Gifts should show value at Checkout");
   assert.equal(shortDate(new Date(2026, 9, 7).getTime()), "10/07");
 });
+
+test("update + stand-up: a line goes under the poster's ticket it names, pulls in an untouched one, and the rest is listed", async () => {
+  const { buildStandupUpdate, standupUpdateText, matchScore, wordCounts } = await import("../public/update-text.js");
+  const now = Date.now();
+  const cris = { id: "3", username: "Cristobal Alanis" };
+  const tasks = [
+    { id: "fbb", name: "Family Bundle Builder V4 + Analysis V3", status: "in-progress", assignees: [cris], dateUpdated: now - 5 * DAY, bigSwing: { label: "FBB" } },
+    { id: "card", name: "Checkout card: wrong offer on box carts", status: "done (this sprint)", assignees: [], dateUpdated: now - 3600_000 },
+    { id: "gwp", name: "GWP Opt-in (cart + checkout)", status: "in-progress", assignees: [robson], dateUpdated: now - 3600_000 },
+    { id: "gift", name: "Gifts should show value at Checkout", status: "qa", assignees: [robson], dateUpdated: now - 3600_000 },
+    { id: "pre", name: "Preorder ship date missing from checkout and cart", status: "qa", assignees: [cris], dateUpdated: now - 3600_000 },
+  ];
+  const days = [
+    {
+      dateKey: "x",
+      posts: [
+        { name: "Cristobal Alanis", postedAt: now - 600_000, yesterday: ["Checkout card fix live, no wrong offer on box carts", "Clarity data"], today: ["FBB V4: match the mock"], blockers: ["need admin"] },
+        { name: "Robson Lopes", postedAt: now - 600_000, yesterday: ["Testing cart/checkout"], today: [], blockers: [] },
+      ],
+    },
+  ];
+  const built = buildStandupUpdate(tasks, days, { since: now - DAY, handleFor });
+  const notesOf = (id) => built.groups.flatMap((g) => g.tasks).find((x) => x.task.id === id)?.notes.map((n) => n.text);
+  assert.deepEqual(notesOf("fbb"), ["FBB V4: match the mock"]);
+  assert.equal(built.groups.flatMap((g) => g.tasks).find((x) => x.task.id === "fbb").fromStandup, true);
+  assert.deepEqual(notesOf("card"), ["Checkout card fix live, no wrong offer on box carts"]);
+  // Two words that are on most tickets are not enough.
+  assert.deepEqual(notesOf("gwp"), []);
+  assert.deepEqual(built.extra.map((e) => e.text), ["Clarity data", "Testing cart/checkout"]);
+  assert.ok(matchScore("checkout cart", tasks[2], wordCounts(tasks)) < 1.5);
+
+  const text = standupUpdateText(built, handleFor);
+  assert.match(text, /\*\*FBB\*\*\n@Cristobal – In progress – Family Bundle Builder V4 \+ Analysis V3 – last update: \d\d\/\d\d\n {4}↳ Today: FBB V4: match the mock/);
+  assert.match(text, /\*\*Also from stand-up\*\*\n@Cristobal – Yesterday: Clarity data\n@Robson – Yesterday: Testing cart\/checkout/);
+  assert.match(text, /\*\*Blockers\*\*\n@Cristobal – need admin$/);
+  assert.doesNotMatch(standupUpdateText(built, handleFor, new Set(["fbb", "blocker:0"])), /Family Bundle|need admin/);
+});

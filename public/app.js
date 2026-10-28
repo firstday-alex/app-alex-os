@@ -4,7 +4,7 @@
 // The refresh path polls rather than awaits: a background function returns 202 straight
 // away and the caller cannot wait for its result.
 
-import { buildAccomplishments, buildUpdate, groupsText, windowStart } from "./update-text.js";
+import { buildAccomplishments, buildStandupUpdate, buildUpdate, groupsText, standupUpdateText, windowStart } from "./update-text.js";
 
 const $ = (id) => document.getElementById(id);
 const layerLabel = (layer) => (layer === "cross" ? "CROSS" : layer === 0 ? "STORE" : `L${layer}`);
@@ -2005,6 +2005,7 @@ function handleFor(user) {
 function renderUpdate(report) {
   renderPasteView("update", report);
   renderPasteView("wins", report);
+  if (standup.data) renderUpsu();
 }
 
 function renderPasteView(key, report) {
@@ -3467,6 +3468,7 @@ async function loadStandup() {
     standup.error = body?.error ?? "Could not reach Slack.";
   }
   renderStandup();
+  renderUpsu();
 }
 
 /** "Tue Oct 28" for a YYYY-MM-DD key, without a timezone shift. */
@@ -3547,6 +3549,95 @@ document.addEventListener("click", (event) => {
     return;
   }
   if (event.target.closest("#standup-reload")) loadStandup();
+});
+
+/* ----------------------------- update + stand-up -----------------------------
+   The update with stand-up lines folded in, built in update-text.js from the report's
+   tickets and the stand-ups /standup reads live. Shares the Stand-up tab's fetch. */
+
+const upsu = { excluded: new Set(), built: null };
+const upsuHandle = (u) => handleFor(u.id ? u : { username: u.username });
+
+function renderUpsu() {
+  const root = $("upsu");
+  if (!root) return;
+  const report = state.report;
+  if (!report?.sections?.clickup?.present) {
+    root.innerHTML = `<div class="missing">Missing. ${esc(report?.sections?.clickup?.reason ?? "not collected")}</div>`;
+    return;
+  }
+  if (!standup.data) {
+    root.innerHTML = standup.error
+      ? `<div class="missing">Stand-ups could not be read. ${esc(standup.error)}</div><div class="bar up-bar"><button type="button" id="standup-reload">Try again</button></div>`
+      : `<p class="sub">Reading Slack…</p>`;
+    return;
+  }
+  const since = windowStart();
+  const tasks = report.detail?.clickup?.tasks ?? [];
+  const built = buildStandupUpdate(tasks, standup.data.days, { since, handleFor: upsuHandle });
+  upsu.built = built;
+  const text = standupUpdateText(built, upsuHandle, upsu.excluded);
+  const sinceText = new Date(since).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  const posted = built.posts.map((p) => String(p.name).split(/\s+/)[0]);
+  const noted = built.groups.reduce((n, g) => n + g.tasks.filter((x) => x.notes.length).length, 0);
+  const check = (key) => `<input type="checkbox" data-upsu-key="${esc(key)}"${upsu.excluded.has(key) ? "" : " checked"}>`;
+
+  root.innerHTML = `
+    <p class="meta">Since ${esc(sinceText)}. Tickets from ClickUp as pulled ${esc(new Date(report.generatedAt).toLocaleString())}; stand-ups from Slack ${esc(new Date(standup.data.fetchedAt).toLocaleTimeString())} (${
+      posted.length ? `${esc(posted.join(", "))}` : "nobody yet"
+    }). <button type="button" class="ghost" id="standup-reload">Reload stand-ups</button></p>
+    ${standup.data.namesNote ? `<div class="missing">${esc(standup.data.namesNote)}</div>` : ""}
+    <div class="bar up-bar"><button type="button" data-copy-upsu>Copy all</button><span class="meta" data-copy-note="upsu">${esc(plural(noted, "ticket has", "tickets have"))} stand-up notes · ${esc(plural(built.extra.length, "other stand-up line", "other stand-up lines"))} · ${esc(plural(built.blockers.length, "blocker", "blockers"))}</span></div>
+    <textarea class="up-text" data-upsu-text rows="${Math.min(28, text.split("\n").length + 1)}" readonly>${esc(text)}</textarea>
+    ${built.groups
+      .map(
+        (g) => `<section class="up-group">
+        <div class="sp-group-head"><h3>${esc(g.label)}</h3><span class="meta">${esc(plural(g.tasks.length, "ticket", "tickets"))}</span></div>
+        ${g.tasks
+          .map(
+            (x) => `<label class="up-item">
+            ${check(String(x.task.id))}
+            <span>${esc(x.text)}${x.fromStandup ? ` <span class="chip">from stand-up</span>` : ""}${
+              x.notes.length ? `<span class="su-notes">${x.notes.map((n) => `<span>↳ ${esc(n.section)}: ${esc(n.text)}</span>`).join("")}</span>` : ""
+            }</span>
+            ${x.task.url ? `<a class="meta" href="${esc(x.task.url)}" target="_blank" rel="noreferrer">open</a>` : ""}
+          </label>`,
+          )
+          .join("")}
+      </section>`,
+      )
+      .join("")}
+    ${
+      built.extra.length
+        ? `<section class="up-group"><div class="sp-group-head"><h3>Also from stand-up</h3><span class="meta">matched no ticket</span></div>
+        ${built.extra.map((e, i) => `<label class="up-item">${check(`extra:${i}`)}<span>@${esc(upsuHandle({ username: e.who }))} – ${esc(e.section)}: ${esc(e.text)}</span></label>`).join("")}</section>`
+        : ""
+    }
+    ${
+      built.blockers.length
+        ? `<section class="up-group"><div class="sp-group-head"><h3>Blockers</h3></div>
+        ${built.blockers.map((b, i) => `<label class="up-item su-bad">${check(`blocker:${i}`)}<span>@${esc(upsuHandle({ username: b.who }))} – ${esc(b.text)}</span></label>`).join("")}</section>`
+        : ""
+    }`;
+}
+
+document.addEventListener("change", (event) => {
+  const key = event.target.dataset?.upsuKey;
+  if (!key || !upsu.built) return;
+  if (event.target.checked) upsu.excluded.delete(key);
+  else upsu.excluded.add(key);
+  document.querySelector("[data-upsu-text]").value = standupUpdateText(upsu.built, upsuHandle, upsu.excluded);
+});
+
+document.addEventListener("click", async (event) => {
+  if (!event.target.closest("[data-copy-upsu]")) return;
+  const note = document.querySelector('[data-copy-note="upsu"]');
+  try {
+    await navigator.clipboard.writeText(document.querySelector("[data-upsu-text]").value);
+    note.textContent = "Copied.";
+  } catch {
+    note.textContent = "The browser would not copy. Select the text and copy it by hand.";
+  }
 });
 
 /* --------------------------------- ideation ---------------------------------
@@ -3670,7 +3761,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 
 // Sprint, Rocks and 1:1 are the tabs. The rest live in the menu and name themselves in
 // the top bar when open.
-const TAB_VIEWS = new Set(["sprint", "rocks", "people", "update", "wins", "standup", "ideation"]);
+const TAB_VIEWS = new Set(["sprint", "rocks", "people", "update", "upsu", "wins", "standup", "ideation"]);
 const VIEW_TITLES = { readout: "Daily readout", tests: "Tests", setup: "Setup" };
 
 /* --------------------------------- 1:1 prep ---------------------------------
@@ -4040,6 +4131,10 @@ function showView(name) {
   if (name === "people") renderPeople();
   if (name === "ideation" && !ideation.loaded) loadIdeation();
   if (name === "standup" && !standup.data && !standup.loading) loadStandup();
+  if (name === "upsu") {
+    if (!standup.data && !standup.loading) loadStandup();
+    else renderUpsu();
+  }
   if (name === "tests" && !state.testNotes) loadTestNotes().then(renderTests);
 }
 

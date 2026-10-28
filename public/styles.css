@@ -625,6 +625,9 @@ ul.plain { margin: 0; padding-left: 18px; }
 .su-label { display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .su-sec.su-bad .su-label, .su-sec.su-bad li { color: var(--red); }
 .su-blockers { border: 1px solid var(--red); background: var(--red-bg); color: var(--red); border-radius: 4px; padding: 8px 12px; margin: 10px 0; }
+.su-notes { display: block; margin-top: 2px; font-size: 13px; color: var(--muted); }
+.su-notes span { display: block; padding-left: 14px; }
+.up-item.su-bad span { color: var(--red); }
 .su-blockers ul { margin: 4px 0 0; padding-left: 18px; }
 
 /* --------------------------------- ideation --------------------------------- */
