@@ -503,6 +503,7 @@ function renderAllFlags({ rebuildTools = false } = {}) {
   if (!$("view-people")?.classList.contains("hidden")) renderPeople();
   if (rebuildTools) renderAttentionTools(flags);
   renderAttention();
+  renderNextSteps();
   const open = flags.filter((f) => viewOf(f) === "open");
   const handled = (sev) => flags.filter((f) => f.severity === sev && !["open", "context"].includes(viewOf(f))).length;
   const note = (n) => (n ? ` ${plural(n, "handled item is", "handled items are")} under Waiting and Parked above.` : "");
@@ -1871,6 +1872,10 @@ function renderLayer2(report) {
 
   $("layer2").innerHTML = `
     <div class="tiles">${tiles}</div>
+    <details class="section ns" id="sec-next" open>
+      <summary><h2>Next steps</h2><span class="sec-count" id="next-steps-count"></span></summary>
+      <div id="next-steps"></div>
+    </details>
     ${delta.hasBaseline ? "" : `<div class="note"><strong>First run.</strong> There is no previous snapshot, so there is no day over day comparison yet.</div>`}
     <div class="bar sp-bar">
       <div class="dod-windows" role="group" aria-label="Group by">
@@ -1895,6 +1900,74 @@ function renderLayer2(report) {
     </details>`;
   // Always fetched, even for the readout window: it is what brings the rock changes.
   loadDodWindow(dodWindow);
+  renderNextSteps();
+}
+
+/* -------------------------------- next steps --------------------------------
+   Every ticket check that ends in something Alex does, filed under the action: reply,
+   nudge, decide, fix. The nextstep.* flags say their own action; the older ticket flags
+   are filed here by rule. A stalled or stuck ticket Alex owns is a reply, not a nudge:
+   nobody else will move it. Same cards and buttons as the readout. */
+
+const NEXT_ACTIONS = [
+  { id: "reply", label: "Reply", sub: "Waiting on you." },
+  { id: "nudge", label: "Nudge", sub: "Ask the owner or whoever is doing it." },
+  { id: "decide", label: "Decide", sub: "A call on the sprint." },
+  { id: "fix", label: "Fix the ticket", sub: "Missing what the other checks read." },
+];
+const RULE_ACTION = {
+  "clickup.stalled": "nudge",
+  "clickup.stale_in_status": "nudge",
+  "clickup.no_task_owner": "fix",
+  "clickup.multiple_task_owners": "fix",
+  "clickup.no_big_swing_set": "fix",
+  "crosslayer.priority_without_work": "decide",
+};
+
+function nextActionOf(flag) {
+  const own = flag.values?.action ?? RULE_ACTION[flag.rule];
+  if (!own) return null;
+  if (own === "nudge" && subjectOf(flag).type === "task") {
+    const task = state.flagCtx?.tasks.get(baseId(subjectOf(flag).id));
+    if (task && ownersOf(task).some(isMe)) return "reply";
+  }
+  return own;
+}
+
+function renderNextSteps() {
+  const root = $("next-steps");
+  if (!root) return;
+  const all = (state.report?.flags ?? []).filter((f) => nextActionOf(f));
+  const open = all.filter((f) => viewOf(f) === "open");
+  const handled = all.length - open.length;
+  const sev = { p1: 0, attention: 1, prompt: 2, info: 3 };
+
+  root.innerHTML = open.length
+    ? NEXT_ACTIONS.map((a) => {
+        const sorted = open.filter((f) => nextActionOf(f) === a.id).sort((x, y) => (sev[x.severity] ?? 9) - (sev[y.severity] ?? 9));
+        // One card per ticket per action: "stalled" and "stuck in its status" are often the
+        // same ticket and the same nudge. The others ride along as a count.
+        const seen = new Map();
+        const list = [];
+        for (const f of sorted) {
+          const sub = subjectOf(f);
+          const k = sub.type === "task" ? `task:${baseId(sub.id)}` : f.key ?? f.id;
+          if (seen.has(k)) seen.get(k).also += 1;
+          else {
+            const entry = { flag: f, also: 0 };
+            seen.set(k, entry);
+            list.push(entry);
+          }
+        }
+        if (!list.length) return "";
+        return `<section class="ns-group">
+          <div class="sp-group-head"><h3>${esc(a.label)}</h3><span class="meta">${esc(list.length)} · ${esc(a.sub)}</span></div>
+          ${list.map(({ flag, also }) => flagCard(flag).replace('<p class="flag-badges">', `<p class="flag-badges">${also ? `<span class="chip">+${also} more on this ticket</span>` : ""}`)).join("")}
+        </section>`;
+      }).join("") + (handled ? `<p class="meta">${esc(plural(handled, "handled item is", "handled items are"))} under Waiting and Parked in the Daily readout.</p>` : "")
+    : `<p class="sub">Nothing to do on the sprint right now.${handled ? ` ${esc(plural(handled, "handled item is", "handled items are"))} under Waiting and Parked in the Daily readout.` : ""}</p>`;
+  const shown = root.querySelectorAll(".flag").length;
+  $("next-steps-count").textContent = shown ? `${shown} open` : "nothing open";
 }
 
 $("layer2")?.addEventListener("change", (event) => {

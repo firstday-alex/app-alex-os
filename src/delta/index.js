@@ -11,6 +11,7 @@ import { clickupDelta } from "./clickup-delta.js";
 import { intelligemsDelta } from "./intelligems-delta.js";
 import { leadershipChecks } from "./leadership-checks.js";
 import { crossLayerCheck } from "./crosslayer.js";
+import { nextStepFlags } from "./next-steps.js";
 
 export { clickupDelta, intelligemsDelta, leadershipChecks, crossLayerCheck };
 
@@ -470,6 +471,13 @@ export function computeFlags({ snapshots, baselines, config, settings = null, st
     sections.leadership = { present: true, summary: leadership.summary };
   } else {
     sections.leadership = { present: false, reason: snapshots.errors?.leadership ?? "collector did not run" };
+  }
+
+  /* ---- Next steps: what Alex does about each ticket. Needs the tickets; the rocks are optional. ---- */
+  if (cuDelta) {
+    flags.push(
+      ...nextStepFlags({ tasks: cuDelta.tasks, statusLedger, leadership: snapshots.leadership ?? null, config, dateKey, nowIso }),
+    );
   }
 
   /* ---- Cross layer. Needs both Layer 1 and Layer 2. ---- */

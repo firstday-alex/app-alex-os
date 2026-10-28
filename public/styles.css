@@ -613,3 +613,13 @@ ul.plain { margin: 0; padding-left: 18px; }
 .up-group { margin-top: 18px; }
 .up-item { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; font-size: 14px; }
 .up-item span { flex: 1; }
+
+/* -------------------------------- next steps -------------------------------- */
+/* Compact cards: the message already names the ticket and the person. */
+.ns .flag { padding: 8px 12px; margin-bottom: 6px; }
+.ns .flag .msg { margin-bottom: 4px; }
+.ns .flag > .row .meta { display: none; }
+.ns .flag .flag-badges:empty { display: none; }
+.ns .flag .flag-badges, .ns .flag .flag-links { display: inline-flex; gap: 4px; margin: 0 6px 4px 0; }
+.ns .flag .advise { font-size: 12px; padding: 3px 8px; }
+.ns-group { margin-top: 12px; }
