@@ -649,3 +649,19 @@ ul.plain { margin: 0; padding-left: 18px; }
 .ns .flag .flag-badges, .ns .flag .flag-links { display: inline-flex; gap: 4px; margin: 0 6px 4px 0; }
 .ns .flag .advise { font-size: 12px; padding: 3px 8px; }
 .ns-group { margin-top: 12px; }
+
+/* Supabase rocks: tactics under each rock, each with its owner and Big Swing. */
+.sb-tactics { list-style: none; margin: 6px 0 4px 12px; padding: 0; }
+.sb-tactic { display: grid; grid-template-columns: auto minmax(0, 1fr) 150px 210px; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line, #e5e5e5); }
+.sb-tactic:first-child { border-top: 0; }
+.sb-tactic select { width: 100%; }
+.sb-tactic-title { min-width: 0; }
+.sb-why { margin: 4px 0 0 12px; }
+.sb-ms, .sb-rock > details { margin-left: 12px; }
+.sb-ms ul { margin: 4px 0; }
+.sb-done { opacity: 0.6; }
+.sb-rock > .meta { margin-left: 12px; }
+@media (max-width: 640px) {
+  .sb-tactic { grid-template-columns: auto minmax(0, 1fr); }
+  .sb-tactic select { grid-column: 1 / -1; }
+}

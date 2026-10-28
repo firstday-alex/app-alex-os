@@ -7,6 +7,52 @@
 //
 // The collector's job is to read the queue, resolve owners against the roster, and hand
 // the ClickUp dropdown options over so the sync check has something to compare.
+//
+// When system.supabase is configured, the rocks come from the marketing standup's
+// Supabase project instead (read only, src/collectors/supabase-rocks.js), with this
+// app's own links laid over them. The store and config path below is what runs without it.
+
+import { fetchSupabaseRocks, rocksFromSupabase } from "./supabase-rocks.js";
+
+const SUPABASE_LAST_KEY = "rocks/supabase-last.json";
+
+/** Every Big Swing option a rock is reached through: its own and its tactics'. */
+export function swingIdsOf(item) {
+  const ids = item?.clickupBigSwingOptionIds ?? (item?.clickupBigSwingOptionId ? [item.clickupBigSwingOptionId] : []);
+  return ids.filter(Boolean).map(String);
+}
+
+/** Whether tickets on this Big Swing option belong to this rock. */
+export function ownsSwing(item, optionId) {
+  return optionId != null && swingIdsOf(item).includes(String(optionId));
+}
+
+/**
+ * The rocks from Supabase, with the links overlaid. A copy of the last good read is kept
+ * in this app's own storage, so a Supabase outage shows yesterday's rocks, labelled as
+ * such, rather than none.
+ */
+export async function supabaseQueue({ config, env, rocksStore, rockLinksStore, logger, fetchImpl, now }) {
+  const backend = rockLinksStore?.backend ?? rocksStore?.backend ?? null;
+  let source;
+  let stale = null;
+  try {
+    source = await fetchSupabaseRocks({ config, env, logger, fetchImpl, now });
+    if (backend) await backend.set(SUPABASE_LAST_KEY, source);
+  } catch (err) {
+    const last = backend ? await backend.get(SUPABASE_LAST_KEY) : null;
+    if (!last) throw err;
+    logger?.warn?.("leadership.supabase_unavailable", { err, fallback: last.takenAt });
+    source = last;
+    stale = { reason: err.message, takenAt: last.takenAt };
+  }
+  let links = { version: 0, links: {} };
+  if (rockLinksStore) {
+    const oldRocks = rocksStore ? (await rocksStore.list().catch(() => ({ rocks: [] }))).rocks : [];
+    links = await rockLinksStore.list({ oldRocks, source });
+  }
+  return { source, links, stale, queue: rocksFromSupabase(source, links.links, config.people ?? {}) };
+}
 
 export function resolveOwner(ownerRef, people) {
   if (ownerRef == null) return null;
@@ -26,7 +72,16 @@ export function resolveOwner(ownerRef, people) {
  *   The live store. When absent (tests, or a store that has never been written), the
  *   config file is used instead, which keeps the old behaviour working.
  */
-export async function collectLeadership({ config, clickupSnapshot = null, rocksStore = null, logger, now = new Date() }) {
+export async function collectLeadership({
+  config,
+  clickupSnapshot = null,
+  rocksStore = null,
+  rockLinksStore = null,
+  env = process.env,
+  fetchImpl,
+  logger,
+  now = new Date(),
+}) {
   const queueConfig = config.leadershipQueue ?? {};
   const people = config.people ?? {};
 
@@ -62,7 +117,15 @@ export async function collectLeadership({ config, clickupSnapshot = null, rocksS
   let source = "config";
   let version = null;
 
-  if (rocksStore) {
+  let supabase = null;
+  if (config.system?.supabase?.url) {
+    const read = await supabaseQueue({ config, env, rocksStore, rockLinksStore, logger, fetchImpl, now });
+    rawQueue = read.queue;
+    rawBacklog = [];
+    source = read.stale ? "supabase-cached" : "supabase";
+    version = read.links.version ?? 0;
+    supabase = { team: read.source.team?.name ?? null, quarter: read.source.quarter, takenAt: read.source.takenAt, stale: read.stale };
+  } else if (rocksStore) {
     try {
       const stored = await rocksStore.list({ seed: [...(queueConfig.queue ?? []), ...(queueConfig.backlog ?? [])] });
       rawQueue = stored.queue;
@@ -74,7 +137,8 @@ export async function collectLeadership({ config, clickupSnapshot = null, rocksS
     }
   }
 
-  const queue = rawQueue.map((item) => mapItem(item, "active"));
+  // Supabase rocks are already in shape, and carry fields mapItem does not know about.
+  const queue = supabase ? rawQueue : rawQueue.map((item) => mapItem(item, "active"));
   const backlog = rawBacklog.map((item) => mapItem(item, "backlog"));
 
   // The dropdown options currently offered in ClickUp, so the sync check can compare them
@@ -123,6 +187,7 @@ export async function collectLeadership({ config, clickupSnapshot = null, rocksS
     meta: {
       source,
       version,
+      supabase,
       queueSize: queue.length,
       backlogSize: backlog.length,
       rosterSize: (roster.length ? roster : rosterFallback).length,

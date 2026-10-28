@@ -11,6 +11,7 @@
 
 import { makeFlag } from "./flags.js";
 import { daysBetween } from "../lib/time.js";
+import { ownsSwing, swingIdsOf } from "../collectors/leadership.js";
 
 /**
  * People exempt from the one-at-a-time rule: anyone on the roster with
@@ -82,7 +83,11 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
   /* --- a rock the owner says is in trouble ---
      At Risk is now the only warning status, so it carries the weight the retired
      off_track used to. A leadership priority its own owner says is at risk is a P1. */
-  for (const item of queue.filter((i) => i.state === "active")) {
+  // Supabase's per-team "Business as usual" bucket is a rock in name only: it has no
+  // status, KPI or owner to hold anyone to, so the rock rules below pass it by.
+  const rocks = queue.filter((i) => i.state === "active" && !i.bau);
+
+  for (const item of rocks) {
     if (item.status === "at_risk") {
       add({
         layer: 1,
@@ -96,7 +101,7 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
   }
 
   /* --- an active rock nobody has checked in on --- */
-  for (const item of queue.filter((i) => i.state === "active")) {
+  for (const item of rocks) {
     // An active rock has its own check-in window, shorter than a shipped rock's readout.
     const tolerance = lc.checkIn?.windowDays ?? toleranceFor(item, lc);
     const since = daysBetween(item.checkInDate ?? item.startDate, nowIso);
@@ -113,7 +118,7 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
   }
 
   /* --- a rock with no KPI cannot be judged --- */
-  for (const item of queue.filter((i) => i.state === "active")) {
+  for (const item of rocks) {
     if (!item.kpi) {
       add({
         layer: 1,
@@ -129,8 +134,8 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
 
   /* --- a rock not linked to a ClickUp Big Swing cannot be laddered up to ---
      Tickets reach a rock through the Big Swing field, so that is the link that matters. */
-  for (const item of queue.filter((i) => i.state === "active")) {
-    if (!item.clickupBigSwingOptionId) {
+  for (const item of rocks) {
+    if (!swingIdsOf(item).length) {
       add({
         layer: 1,
         rule: "leadership.rock_not_linked",
@@ -144,7 +149,7 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
   }
 
   /* --- unassigned P1s need an active owner --- */
-  for (const item of queue.filter((i) => i.state === "active")) {
+  for (const item of rocks) {
     if (!item.owner?.clickupUserId) {
       add({
         layer: 1,
@@ -181,7 +186,7 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
 
   const peopleAtCapacity = [...perPerson.values()].filter((p) => p.items.length >= cap).length;
   const everyoneFull = roster.length > 0 && peopleAtCapacity >= roster.length;
-  const unassignedActive = queue.filter((i) => i.state === "active" && !i.owner?.clickupUserId);
+  const unassignedActive = rocks.filter((i) => !i.owner?.clickupUserId);
 
   if (everyoneFull && unassignedActive.length > 0) {
     add({
@@ -207,9 +212,8 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
     // Swing set at all is leadership.rock_not_linked's to report, not this one's, so the
     // same rock is never flagged twice. With no options read at all there is nothing to
     // compare against, and every rock would look broken, so the check stands down.
-    const missing = swingOptions.length
-      ? queue.filter((i) => i.state === "active" && i.clickupBigSwingOptionId && !optionsById.has(String(i.clickupBigSwingOptionId)))
-      : [];
+    const goneIds = (i) => swingIdsOf(i).filter((id) => !optionsById.has(id));
+    const missing = swingOptions.length ? queue.filter((i) => i.state === "active" && goneIds(i).length) : [];
 
     if (missing.length) {
       const named = missing.map((i) => `"${i.title}"`).join(", ");
@@ -219,14 +223,14 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
         severity: "attention",
         subject: { type: "field", id: "big-swing-field", label: "Big Swing dropdown" },
         message: `${named} ${missing.length === 1 ? "is" : "are"} linked to a Big Swing option that is no longer in the ClickUp dropdown, so no ticket can ladder up to ${missing.length === 1 ? "it" : "them"}. Relink ${missing.length === 1 ? "it" : "each"} to a current Big Swing.`,
-        values: { missing: missing.map((i) => ({ id: i.id, title: i.title, optionId: String(i.clickupBigSwingOptionId) })) },
+        values: { missing: missing.map((i) => ({ id: i.id, title: i.title, optionId: goneIds(i)[0] })) },
       });
     }
 
     // An option is claimed by an active or shipped rock, by its id or, for a rock with no
     // Big Swing set, by name. BAU is expected work, never a rock.
     const live = queue.filter((i) => i.state === "active" || i.state === "shipped");
-    const liveIds = new Set(live.map((i) => i.clickupBigSwingOptionId).filter(Boolean).map(String));
+    const liveIds = new Set(live.flatMap(swingIdsOf));
     const liveTitles = new Set(live.map((i) => String(i.title).trim().toLowerCase()));
     const parked = [...backlog, ...queue.filter((i) => i.state === "backlog")];
     const orphaned = swingOptions.filter(
@@ -241,7 +245,7 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
     for (const option of orphaned) {
       const rock = parked.find(
         (i) =>
-          (i.clickupBigSwingOptionId && String(i.clickupBigSwingOptionId) === String(option.id)) ||
+          ownsSwing(i, option.id) ||
           String(i.title).trim().toLowerCase() === String(option.label).trim().toLowerCase(),
       );
       add({

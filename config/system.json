@@ -74,5 +74,10 @@
     "_comment": "How long a flag can sit before it is treated as more urgent, and how long a wait lasts by default. Working days, so a weekend does not age a flag.",
     "escalateAfterWorkingDays": 5,
     "waitingCheckBackWorkingDays": 2
+  },
+  "supabase": {
+    "url": "https://rghlagmhkmsejhzkkggo.supabase.co",
+    "team": "Web",
+    "_comment": "Layer 1's rocks and tactics are read from the marketing standup's Supabase project, for this team, this quarter. READ ONLY: the app only ever sends GET requests there (src/collectors/supabase-rocks.js, enforced by test/supabase-rocks.test.js). The key is SUPABASE_SERVICE_KEY, a Netlify secret. What only this app knows (ClickUp owner, Big Swing link, experiment and report links) is kept in its own storage, keyed by the Supabase id. Remove this block to go back to the dashboard's own rocks store."
   }
 }

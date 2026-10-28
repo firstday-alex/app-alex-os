@@ -80,7 +80,7 @@ export function experienceIdFromUrl(url) {
   return match ? match[0].toLowerCase() : null;
 }
 
-function cleanUrl(value, field) {
+export function cleanUrl(value, field) {
   if (value == null || value === "") return null;
   const raw = String(value).trim();
   // Accept a bare domain; a link nobody can click is worse than a pedantic error.
@@ -98,7 +98,7 @@ function cleanUrl(value, field) {
 }
 
 /** A list of {url,label}, capped, with blanks dropped rather than stored as empties. */
-function linkList(value, { max, field, deriveExperienceId = false }) {
+export function linkList(value, { max, field, deriveExperienceId = false }) {
   const raw = Array.isArray(value) ? value : value == null ? [] : [value];
   const out = [];
   for (const entry of raw) {

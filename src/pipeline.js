@@ -10,6 +10,7 @@ import { loadConfig, validateConfig } from "./config.js";
 import { createLogger, newRunId } from "./lib/logger.js";
 import { Store } from "./lib/storage.js";
 import { RocksStore } from "./store/rocks.js";
+import { RockLinksStore } from "./store/rock-links.js";
 import { SettingsStore } from "./store/settings.js";
 import { StatusLedger } from "./store/status-ledger.js";
 import { FlagLedger, annotateFlags } from "./store/flag-ledger.js";
@@ -152,11 +153,15 @@ export async function runPipeline(opts = {}) {
   // Layer 1 reads the ClickUp dropdown options out of the snapshot we just took, so it
   // runs after the other two rather than alongside them. No extra API call.
   const rocksStore = opts.rocksStore ?? new RocksStore(store.backend, logger);
+  const rockLinksStore = opts.rockLinksStore ?? new RockLinksStore(store.backend, logger);
 
   await runCollector("leadership", () =>
     collectLeadership({
       config,
       rocksStore,
+      rockLinksStore,
+      env,
+      fetchImpl,
       clickupSnapshot: snapshots.clickup ?? baselines.clickup.snapshot,
       logger: logger.child({ collector: "leadership" }),
       now,

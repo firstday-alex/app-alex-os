@@ -13,6 +13,7 @@
 
 import { ask, readSkill } from "./anthropic.js";
 import { SettingsStore } from "../store/settings.js";
+import { ownsSwing } from "../collectors/leadership.js";
 
 const LTV_KEYS = [
   "subscriptionLtvMultiplier",
@@ -44,6 +45,16 @@ export function rocksForAdvice(queue = []) {
     shippedAt: rock.shippedAt || null,
     intelligemsExperienceId: rock.intelligemsExperienceId ?? null,
     notes: rock.notes ?? null,
+    // From Supabase, when that is the source: why the owner rated it as they did, the
+    // monthly deliverables, and the tactics under it.
+    ...(rock.source === "supabase"
+      ? {
+          statusReason: rock.statusReason ?? null,
+          actionPlan: rock.actionPlan ?? null,
+          milestones: (rock.milestones ?? []).map((m) => ({ month: m.month, deliverable: m.deliverable, done: m.done, blocker: m.blocker })),
+          tactics: (rock.tactics ?? []).map((t) => ({ title: t.title, status: t.status, kpi: t.kpi, checkInDate: t.checkInDate, owner: t.owner?.name ?? null })),
+        }
+      : {}),
   }));
 }
 
@@ -52,7 +63,7 @@ function rockForTask(task, queue) {
   const swing = task?.bigSwing;
   if (!swing?.optionId && !swing?.label) return null;
   return (
-    queue.find((r) => swing.optionId && r.clickupBigSwingOptionId && String(r.clickupBigSwingOptionId) === String(swing.optionId)) ??
+    queue.find((r) => ownsSwing(r, swing.optionId)) ??
     queue.find((r) => swing.label && String(r.title).trim().toLowerCase() === String(swing.label).trim().toLowerCase()) ??
     null
   );

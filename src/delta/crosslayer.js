@@ -17,6 +17,7 @@
 // Leadership Priority field is read for one thing only, the BAU marker.
 
 import { makeFlag } from "./flags.js";
+import { ownsSwing, swingIdsOf } from "../collectors/leadership.js";
 
 /** The person accountable for a ticket: the Task Owner field, falling back to assignees. */
 export function accountableFor(task) {
@@ -78,7 +79,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   // The Big Swing option id is the real link. Matching on title is a fallback for a rock
   // that has not been linked yet, and it breaks the moment somebody renames the option.
   const activeTitles = new Set(claimingItems.map((i) => String(i.title).trim().toLowerCase()));
-  const activeBigSwingIds = new Set(claimingItems.map((i) => i.clickupBigSwingOptionId).filter(Boolean).map(String));
+  const activeBigSwingIds = new Set(claimingItems.flatMap(swingIdsOf));
 
   // For an unclaimed big swing, the rock it would have matched if that rock were live, so
   // the readout can say "its rock is in the backlog" rather than "nothing tracks this".
@@ -86,7 +87,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   const parkedRockFor = (ref) =>
     parked.find(
       (i) =>
-        (ref.swingId && i.clickupBigSwingOptionId && String(i.clickupBigSwingOptionId) === String(ref.swingId)) ||
+        ownsSwing(i, ref.swingId) ||
         String(i.title).trim().toLowerCase() === String(ref.swing ?? "").trim().toLowerCase(),
     ) ?? null;
 
@@ -237,7 +238,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   for (const item of activeItems) {
     const tickets = openTasks.filter((t) => {
       if (!t.bigSwing?.optionId) return false;
-      if (item.clickupBigSwingOptionId) return String(t.bigSwing.optionId) === String(item.clickupBigSwingOptionId);
+      if (swingIdsOf(item).length) return ownsSwing(item, t.bigSwing.optionId);
       return String(t.bigSwing.label ?? "").trim().toLowerCase() === String(item.title).trim().toLowerCase();
     });
     const known = tickets.filter((t) => t.idleDays != null);
@@ -271,7 +272,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
     // Big Swing set yet, names a Big Swing with the rock's title.
     const hit =
       laddered.has(String(item.title).toLowerCase()) ||
-      openTasks.some((t) => t.bigSwing?.optionId && item.clickupBigSwingOptionId && String(t.bigSwing.optionId) === String(item.clickupBigSwingOptionId));
+      openTasks.some((t) => ownsSwing(item, t.bigSwing?.optionId));
     if (!hit) {
       add({
         layer: "cross",

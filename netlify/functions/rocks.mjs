@@ -10,6 +10,12 @@
 //
 // Every write carries the version it was based on. A stale version is rejected rather
 // than silently overwriting someone else's change.
+//
+// When system.supabase is configured, the rocks and tactics are read from Supabase and
+// are not editable here: create, update, delete and the standup import all refuse. What
+// this app holds about each one is edited instead:
+//
+//   POST   /rocks?links=1     { id, title, links: {owner, clickupBigSwingOptionId, ...}, version }
 
 import { loadConfig } from "../../src/config.js";
 import { createLogger } from "../../src/lib/logger.js";
@@ -20,6 +26,17 @@ import { isAuthorized, unauthorized, json } from "../../src/lib/dashboard-auth.j
 import { buildRockReadout } from "../../src/store/rock-readout.js";
 import { parseStandupRocks, planRockImport } from "../../src/store/rock-import.js";
 import { parseStandupTactics, matchTacticsToTickets } from "../../src/store/tactic-match.js";
+import { RockLinksStore } from "../../src/store/rock-links.js";
+import { supabaseQueue } from "../../src/collectors/leadership.js";
+
+const FROM_SUPABASE = "Rocks and tactics come from Supabase now. Change them in the standup app; this app only reads them.";
+
+/** A Supabase rock as the dashboard draws it: owners as ClickUp ids, like the store's. */
+const forDashboard = (rock) => ({
+  ...rock,
+  owner: rock.owner?.clickupUserId ?? null,
+  tactics: (rock.tactics ?? []).map((t) => ({ ...t, owner: t.owner?.clickupUserId ?? null })),
+});
 
 /**
  * The options on the ClickUp dropdowns a rock can be linked to.
@@ -80,8 +97,53 @@ export default async (req) => {
   const store = await Store.open({ config, logger });
   const rocks = new RocksStore(store.backend, logger);
   const url = new URL(req.url);
+  const supabase = Boolean(config.system.supabase?.url);
+  const links = new RockLinksStore(store.backend, logger);
+
+  // The parts of the GET answer that do not depend on where the rocks come from.
+  const common = async () => {
+    const { leadershipPriority, bigSwing } = await clickupDropdowns({ config, store, logger });
+    return {
+      states: STATES,
+      statuses: STATUSES,
+      statusLabels: STATUS_LABELS,
+      // Real choices instead of free text: the roster for owners, and the live Rock
+      // Reference options for the ClickUp link.
+      people: (config.people?.team ?? []).filter((p) => p.clickupUserId).map((p) => ({ id: String(p.clickupUserId), name: p.name })),
+      clickupOptions: leadershipPriority,
+      bigSwingOptions: bigSwing,
+    };
+  };
 
   try {
+    if (supabase && req.method === "GET" && url.searchParams.get("audit") !== "true") {
+      const read = await supabaseQueue({ config, env: process.env, rocksStore: rocks, rockLinksStore: links, logger, now: new Date() });
+      const { snapshot: intelligems } = await store.getLatestSnapshot("intelligems");
+      const withReadouts = read.queue.map((rock) => ({ ...forDashboard(rock), readout: buildRockReadout(rock, intelligems, config) }));
+      return json({
+        source: "supabase",
+        supabase: { team: read.source.team?.name ?? null, quarter: read.source.quarter, takenAt: read.source.takenAt, stale: read.stale },
+        version: read.links.version,
+        updatedAt: read.links.updatedAt,
+        seed: read.links.seed ?? null,
+        rocks: withReadouts,
+        queue: withReadouts,
+        backlog: [],
+        intelligemsSnapshotAt: intelligems?.takenAt ?? null,
+        ...(await common()),
+      });
+    }
+
+    if (supabase && req.method === "POST" && url.searchParams.get("links")) {
+      const body = await req.json().catch(() => ({}));
+      const doc = await links.set(body.id, body.links ?? {}, { expectedVersion: body.version, actor: "dashboard", title: body.title ?? null });
+      return json({ ok: true, version: doc.version });
+    }
+
+    if (supabase && (req.method === "POST" || req.method === "DELETE")) {
+      return json({ error: FROM_SUPABASE }, 409);
+    }
+
     if (req.method === "GET") {
       if (url.searchParams.get("audit") === "true") {
         return json({ audit: await rocks.auditTrail({ limit: 30 }) });
@@ -98,21 +160,13 @@ export default async (req) => {
       }));
 
       return json({
+        source: "store",
         ...listed,
         rocks: withReadouts,
         queue: withReadouts.filter((r) => r.state === "active" || r.state === "shipped"),
         backlog: withReadouts.filter((r) => r.state === "backlog"),
         intelligemsSnapshotAt: intelligems?.takenAt ?? null,
-        states: STATES,
-        statuses: STATUSES,
-        statusLabels: STATUS_LABELS,
-        // Real choices instead of free text: the roster for owners, and the live Rock
-        // Reference options for the ClickUp link.
-        people: (config.people?.team ?? []).filter((p) => p.clickupUserId).map((p) => ({ id: String(p.clickupUserId), name: p.name })),
-        ...(await (async () => {
-          const { leadershipPriority, bigSwing } = await clickupDropdowns({ config, store, logger });
-          return { clickupOptions: leadershipPriority, bigSwingOptions: bigSwing };
-        })()),
+        ...(await common()),
       });
     }
 

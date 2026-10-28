@@ -12,6 +12,7 @@
 // roll-up, not raised in the daily readout. Read only.
 
 import { accountableFor } from "./crosslayer.js";
+import { ownsSwing } from "../collectors/leadership.js";
 
 export function preSprintCheck({ backlogReady, sprintTasks = [], leadership, config, error = null }) {
   if (!Array.isArray(backlogReady)) {
@@ -26,7 +27,7 @@ export function preSprintCheck({ backlogReady, sprintTasks = [], leadership, con
     const swing = task.bigSwing;
     if (!swing?.optionId) return null;
     return (
-      activeRocks.find((r) => r.clickupBigSwingOptionId && String(r.clickupBigSwingOptionId) === String(swing.optionId)) ??
+      activeRocks.find((r) => ownsSwing(r, swing.optionId)) ??
       activeRocks.find((r) => String(r.title).trim().toLowerCase() === String(swing.label ?? "").trim().toLowerCase()) ??
       null
     );

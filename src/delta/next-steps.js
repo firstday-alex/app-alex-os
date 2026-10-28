@@ -20,6 +20,7 @@
 
 import { makeFlag } from "./flags.js";
 import { zonedParts, shiftDateKey } from "../lib/time.js";
+import { ownsSwing, swingIdsOf } from "../collectors/leadership.js";
 
 const DAY_MS = 86_400_000;
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -281,7 +282,7 @@ export function nextStepFlags({ tasks = [], statusLedger = null, leadership = nu
     const linked = open.filter((t) => {
       const swing = t.bigSwing;
       if (!swing) return false;
-      if (rock.clickupBigSwingOptionId && swing.optionId) return String(swing.optionId) === String(rock.clickupBigSwingOptionId);
+      if (swingIdsOf(rock).length && swing.optionId) return ownsSwing(rock, swing.optionId);
       return String(swing.label ?? "").trim().toLowerCase() === String(rock.title).trim().toLowerCase();
     });
     if (linked.some((t) => !TODO.has(statusOf(t)))) continue;

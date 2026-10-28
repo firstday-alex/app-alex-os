@@ -965,6 +965,23 @@ $("attention").addEventListener("click", (event) => {
 const todayKey = () => state.today ?? new Date().toISOString().slice(0, 10);
 const rockById = (id) => (state.rocks?.rocks ?? []).find((r) => String(r.id) === String(id)) ?? null;
 
+/* When the rocks come from Supabase they are read only here. What can still be set is
+   what only this app holds, per rock and per tactic: the ClickUp owner, the Big Swing,
+   and the links. */
+const fromSupabase = () => state.rocks?.source === "supabase";
+const SB_NOTE = "This rock comes from Supabase. Change it in the standup app; the dashboard reads it from there.";
+/** Every Big Swing option a rock is reached through: its own and, from Supabase, its tactics'. */
+const swingIdsOf = (r) => (r?.clickupBigSwingOptionIds ?? (r?.clickupBigSwingOptionId ? [r.clickupBigSwingOptionId] : [])).map(String);
+const ownsSwing = (r, optionId) => optionId != null && swingIdsOf(r).includes(String(optionId));
+/** A rock, or a Supabase tactic, by id: anything a Big Swing or an owner can be set on. */
+function linkTargetById(id) {
+  for (const r of state.rocks?.rocks ?? []) {
+    if (String(r.id) === String(id)) return { ...r, kind: "rock" };
+    for (const t of r.tactics ?? []) if (String(t.id) === String(id)) return { ...t, kind: "tactic", rock: r };
+  }
+  return null;
+}
+
 /** Rules whose fix is one field on one rock: what to show and what it writes. */
 const ROCK_FIXES = {
   "leadership.mini_readout_overdue": "checkin",
@@ -989,6 +1006,14 @@ function quickFix(flag) {
     if (!rock) return "";
     const id = esc(rock.id);
     const field = (inner) => `<div class="quick-fix" data-rock="${id}">${inner}</div>`;
+    // Status, check-ins, KPI and dates live in Supabase. The owner and the Big Swing are
+    // still this app's, so those two fixes stay.
+    if (fromSupabase() && !["owner", "link"].includes(kind)) {
+      const tickets = (flag.values?.tickets ?? [])
+        .map((t) => `<a href="${esc(t.url ?? "#")}" target="_blank" rel="noreferrer">${esc(t.name)} · ${esc(t.idleDays)}d ↗</a>`)
+        .join("");
+      return field(`<span class="meta">${esc(SB_NOTE)}</span>${tickets ? `<span class="flag-links">${tickets}</span>` : ""}`);
+    }
     switch (kind) {
       case "checkin":
         return field(`
@@ -1025,7 +1050,7 @@ function quickFix(flag) {
         return field(`
           <label>Owner <select class="sm" data-qf-input="owner"><option value="">Choose…</option>${people.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")}</select></label>
           <button type="button" class="sm" data-qf="save" data-field="owner">Assign</button>
-          <button type="button" class="ghost sm" data-qf="set" data-field="state" data-value="backlog">Move to backlog</button>`);
+          ${fromSupabase() ? "" : `<button type="button" class="ghost sm" data-qf="set" data-field="state" data-value="backlog">Move to backlog</button>`}`);
       }
       case "link": {
         // Tickets reach a rock through the Big Swing field, so that is the link to set.
@@ -1047,7 +1072,11 @@ function quickFix(flag) {
     if (!refs.length) return "";
     return `<div class="quick-fix quick-fix-rows" data-multi="${esc(flag.rule)}">
       ${refs.map((ref) => swingRow(ref, { ownerId: flag.values?.ownerId ?? "" })).join("")}
-      <span class="meta">A new rock is active, on track, owned by ${esc(subjectOf(flag).label ?? "them")} and linked to the Big Swing. Edit it afterwards for the KPI and dates.</span>
+      <span class="meta">${
+        fromSupabase()
+          ? "Link it to the rock or tactic it serves. If it is new work, add the tactic in the standup app first."
+          : `A new rock is active, on track, owned by ${esc(subjectOf(flag).label ?? "them")} and linked to the Big Swing. Edit it afterwards for the KPI and dates.`
+      }</span>
     </div>`;
   }
 
@@ -1060,13 +1089,19 @@ function quickFix(flag) {
     if (!ref.optionId || swingClaimed(ref)) return "";
     return `<div class="quick-fix quick-fix-rows">
       ${swingRow(ref, { chooseOwner: true, notARock: true })}
-      <span class="meta">A new rock is active and on track, linked to this Big Swing. Edit it afterwards for the KPI and dates.</span>
+      <span class="meta">${
+        fromSupabase()
+          ? "Link it to the rock or tactic it serves, or set it aside as not a rock."
+          : "A new rock is active and on track, linked to this Big Swing. Edit it afterwards for the KPI and dates."
+      }</span>
     </div>`;
   }
 
   // Rocks linked to a Big Swing option that is no longer in the dropdown: relink each.
   // Reports from before the flag carried rock ids name rocks by title only.
   if (flag.rule === "leadership.dropdown_missing_option") {
+    // A Supabase rock can hold several Big Swings through its tactics; relink in the editor.
+    if (fromSupabase()) return `<div class="quick-fix"><span class="meta">Open the rock on the Rocks tab and relink the rock or tactic whose Big Swing is gone.</span></div>`;
     const swings = state.rocks.bigSwingOptions ?? { available: false, options: [] };
     const current = new Set((swings.options ?? []).map((o) => String(o.id)));
     const rocks = (flag.values?.missing ?? [])
@@ -1097,6 +1132,7 @@ function quickFix(flag) {
         ? (state.rocks.rocks ?? []).filter((r) => r.state === "active" && !r.owner)
         : [];
   if (!backloggable.length) return "";
+  if (fromSupabase()) return `<div class="quick-fix"><span class="meta">Rocks come from Supabase, so there is no backlog here. Reassign owners on the Rocks tab, or change the rocks in the standup app.</span></div>`;
   return `<div class="quick-fix quick-fix-list" data-multi="${esc(flag.rule)}">
     <span class="meta">Move to the backlog:</span>
     ${backloggable
@@ -1111,7 +1147,7 @@ function swingClaimed(ref) {
   return (state.rocks?.rocks ?? []).some(
     (r) =>
       (r.state === "active" || r.state === "shipped") &&
-      ((ref.optionId && String(r.clickupBigSwingOptionId ?? "") === String(ref.optionId)) ||
+      ((ref.optionId && ownsSwing(r, ref.optionId)) ||
         String(r.title).trim().toLowerCase() === String(ref.label).trim().toLowerCase()),
   );
 }
@@ -1127,20 +1163,27 @@ function swingRow(ref, { ownerId = "", chooseOwner = false, notARock = false } =
   // A rock named nearly the same ("Ready to Pour" for "New Products: Ready to Pour") is
   // almost always the one meant, so it is offered first.
   const likely = ref.optionId ? likelyRock(ref.label, sorted) : null;
-  const rockChoices = sorted
-    .map((r) => `<option value="${esc(r.id)}"${r.id === likely?.id ? " selected" : ""}>${esc(r.title)}${r.state === "active" ? "" : ` (${esc(r.state)})`}</option>`)
+  // From Supabase, the choices are each rock and the open tactics under it.
+  const targets = fromSupabase()
+    ? sorted.flatMap((r) => [r, ...(r.tactics ?? []).filter((t) => t.status !== "done").map((t) => ({ ...t, label: `${r.title} › ${t.title}` }))])
+    : sorted;
+  const best = ref.optionId && fromSupabase() ? likelyRock(ref.label, targets) : likely;
+  const rockChoices = targets
+    .map((r) => `<option value="${esc(r.id)}"${r.id === best?.id ? " selected" : ""}>${esc(r.label ?? r.title)}${!r.state || r.state === "active" ? "" : ` (${esc(r.state)})`}</option>`)
     .join("");
   const owners = (state.rocks?.people ?? []).map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
   return `<div class="qf-row" data-swing="${esc(ref.label)}" data-swing-id="${esc(ref.optionId ?? "")}" data-owner="${esc(ownerId)}">
     <span class="qf-title">${esc(ref.label)}</span>
-    ${parked && parked.state === "backlog"
-      ? `<button type="button" class="sm" data-qf="swing-activate" data-rock-id="${esc(parked.id)}">Make "${esc(parked.title)}" active</button>`
-      : `${chooseOwner ? `<select class="sm" data-qf-input="swing-owner" aria-label="Owner"><option value="">Owner…</option>${owners}</select>` : ""}
+    ${fromSupabase()
+      ? ""
+      : parked && parked.state === "backlog"
+        ? `<button type="button" class="sm" data-qf="swing-activate" data-rock-id="${esc(parked.id)}">Make "${esc(parked.title)}" active</button>`
+        : `${chooseOwner ? `<select class="sm" data-qf-input="swing-owner" aria-label="Owner"><option value="">Owner…</option>${owners}</select>` : ""}
          <button type="button" class="sm" data-qf="swing-add">Add as rock</button>`}
     ${ref.optionId
-      ? `<select class="sm" data-qf-input="swing-rock" aria-label="Existing rock"><option value="">or link a rock…</option>${rockChoices}</select>
-         <button type="button" class="${likely ? "" : "ghost "}sm" data-qf="swing-link">Link</button>
-         ${likely ? `<span class="meta">Looks like "${esc(likely.title)}"</span>` : ""}`
+      ? `<select class="sm" data-qf-input="swing-rock" aria-label="Existing rock"><option value="">${fromSupabase() ? "link a rock or tactic…" : "or link a rock…"}</option>${rockChoices}</select>
+         <button type="button" class="${best ? "" : "ghost "}sm" data-qf="swing-link">Link</button>
+         ${best ? `<span class="meta">Looks like "${esc(best.title)}"</span>` : ""}`
       : ""}
     ${notARock ? `<button type="button" class="ghost sm" data-qf="swing-not-rock" title="Ongoing work, not a project: set this flag aside">Not a rock</button>` : ""}
   </div>`;
@@ -1205,19 +1248,26 @@ function saveRockField(card, rockId, field, value) {
 async function saveRockPatch(card, rock, { field = null, value = null, note = "Fixed" } = {}) {
   const errorAt = card.querySelector(".quick-fix");
   try {
-    const res = await fetch(`${FN}/rocks`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ rock, version: state.rocks?.version }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      // Someone changed the rocks since this page loaded: take theirs, and say so.
-      if (res.status === 409) await loadRocks();
-      throw new Error(body.error ?? `HTTP ${res.status}`);
+    if (fromSupabase()) {
+      // Only the owner and the Big Swing can be set on a Supabase rock or tactic.
+      const { id, ...patch } = rock;
+      if (!id) throw new Error("Rocks come from Supabase. Add it in the standup app.");
+      await saveLinks(id, patch);
+    } else {
+      const res = await fetch(`${FN}/rocks`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ rock, version: state.rocks?.version }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // Someone changed the rocks since this page loaded: take theirs, and say so.
+        if (res.status === 409) await loadRocks();
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      state.rocks = { ...state.rocks, version: body.version, rocks: body.rocks };
+      renderRocks();
     }
-    state.rocks = { ...state.rocks, version: body.version, rocks: body.rocks };
-    renderRocks();
 
     // A list fix is only done when nothing is left on the list.
     const multi = card.querySelector("[data-multi]");
@@ -1234,6 +1284,27 @@ async function saveRockPatch(card, rock, { field = null, value = null, note = "F
   } catch (err) {
     showQuickFixError(errorAt ?? card, `Not saved: ${err.message}`);
   }
+}
+
+/**
+ * Sets the owner, Big Swing or links on one Supabase rock or tactic, then reloads the
+ * rocks so every view that draws from them catches up. Throws on a refusal.
+ */
+async function saveLinks(id, links) {
+  const allowed = ["owner", "clickupBigSwingOptionId", "experimentLinks", "reportLinks", "websiteUrl", "notes"];
+  const patch = Object.fromEntries(Object.entries(links).filter(([k]) => allowed.includes(k)));
+  if (!Object.keys(patch).length) throw new Error(SB_NOTE);
+  const res = await fetch(`${FN}/rocks?links=1`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, title: linkTargetById(id)?.title ?? null, links: patch, version: state.rocks?.version }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (res.status === 409) await loadRocks();
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  await loadRocks();
 }
 
 function showQuickFixError(host, message) {
@@ -1274,7 +1345,7 @@ document.addEventListener("click", (event) => {
     if (el.dataset.qf === "swing-link") {
       const id = row.querySelector('[data-qf-input="swing-rock"]')?.value;
       if (!id) return showQuickFixError(el.closest(".quick-fix"), "Pick a rock first.");
-      const rock = rockById(id);
+      const rock = linkTargetById(id) ?? rockById(id);
       // A rock already on another Big Swing would lose that link, so say so first.
       if (rock?.clickupBigSwingOptionId && String(rock.clickupBigSwingOptionId) !== String(optionId)) {
         if (!window.confirm(`"${rock.title}" is linked to another Big Swing. Move its link to "${label}"?`)) return;
@@ -1606,9 +1677,9 @@ const swingKey = (t) => (t.bigSwing?.label ? String(t.bigSwing.label) : NO_SWING
 function rockForTask(task) {
   const swing = task?.bigSwing;
   if (!swing?.optionId && !swing?.label) return null;
-  const rocks = (state.rocks?.rocks ?? []).filter((r) => r.state !== "shipped" || r.clickupBigSwingOptionId);
+  const rocks = (state.rocks?.rocks ?? []).filter((r) => r.state !== "shipped" || swingIdsOf(r).length);
   return (
-    rocks.find((r) => swing.optionId && r.clickupBigSwingOptionId && String(r.clickupBigSwingOptionId) === String(swing.optionId)) ??
+    rocks.find((r) => ownsSwing(r, swing.optionId)) ??
     rocks.find((r) => swing.label && String(r.title).trim().toLowerCase() === String(swing.label).trim().toLowerCase()) ??
     null
   );
@@ -2833,6 +2904,11 @@ async function loadRocks() {
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
     state.rocks = await res.json();
     rocksError(null);
+    // Nothing to create, import or file by queue when the rocks are read from Supabase.
+    for (const id of ["new-rock-btn", "import-rocks-btn", "rock-state-filter"]) $(id)?.classList.toggle("hidden", fromSupabase());
+    $("rocks-sub").textContent = fromSupabase()
+      ? "Your rocks and tactics from Supabase, with the sprint and backlog tickets that reach each through its Big Swings. Set who owns each tactic and which Big Swing its tickets use; those changes are recorded with what they were before."
+      : $("rocks-sub").dataset.storeText;
     renderRocks();
     // The flags' quick fixes and the sprint's rock links are drawn from the rocks, so
     // they wait for them.
@@ -2972,11 +3048,13 @@ function renderRocks() {
     offRockBySwing.get(key).push(t);
   }
 
+  const sb = fromSupabase() ? supabaseRocksHtml(rocks, { ticketsFor, backlogLine, peopleById, swingById }) : null;
+
   $("rocks-list").innerHTML = `
     ${data.clickupOptions?.available === false ? `<div class="note"><strong>ClickUp link unavailable.</strong> ${esc(data.clickupOptions.reason ?? "")}</div>` : ""}
     ${backlogInfo && !backlogInfo.available ? `<div class="note"><strong>Backlog not loaded.</strong> ${esc(backlogInfo.reason ?? "")} Rocks show their sprint tickets only.</div>` : ""}
     ${preSprintHtml(state.report?.detail?.preSprint)}
-    ${groups
+    ${sb ?? (groups
       .map(
         (g) => `<section class="rk-month-group">
           <div class="sp-group-head"><h3>${esc(g.title)}</h3><span class="meta">${esc(plural(g.rocks.length, "rock", "rocks"))}${g.current ? " · this month" : ""}${
@@ -2985,8 +3063,8 @@ function renderRocks() {
           ${g.rocks.map(item).join("")}
         </section>`,
       )
-      .join("") || `<p class="sub">${(data.rocks ?? []).length ? "No rocks match that filter." : "No rocks yet. Use New rock to add the first."}</p>`}
-    ${shipped.length ? `<details class="section"><summary><h2>Shipped</h2><span class="sec-count">${esc(shipped.length)}</span></summary>${shipped.map(item).join("")}</details>` : ""}
+      .join("") || `<p class="sub">${(data.rocks ?? []).length ? "No rocks match that filter." : "No rocks yet. Use New rock to add the first."}</p>`)}
+    ${!sb && shipped.length ? `<details class="section"><summary><h2>Shipped</h2><span class="sec-count">${esc(shipped.length)}</span></summary>${shipped.map(item).join("")}</details>` : ""}
     ${offRock.length
       ? `<details class="section"><summary><h2>Backlog on no rock</h2><span class="sec-count">${esc(offRock.length)}</span></summary>
           <p class="sub">Open backlog tickets whose Big Swing no rock claims, or that have none. Either they belong under a rock, or they are BAU.</p>
@@ -2995,6 +3073,109 @@ function renderRocks() {
       : ""}
     <p class="sub">${rocks.length} of ${(data.rocks ?? []).length} shown · version ${esc(data.version)}${data.updatedAt ? ` · last changed ${new Date(data.updatedAt).toLocaleString()}` : ""}</p>`;
 }
+
+const SB_COLOR = { green: ["on_track", "On Track"], amber: ["at_risk", "At Risk"], red: ["off_track", "Off Track"] };
+const TACTIC_STATUS = { on_track: ["on_track", "On Track"], at_risk: ["at_risk", "At Risk"], overdue: ["off_track", "Check-in overdue"], done: ["done", "Done"] };
+
+/**
+ * The Supabase rocks: each with its latest status and why, this month's and next
+ * month's milestones, its tactics (each with the owner and Big Swing this app holds for
+ * it), and the tickets that reach it.
+ */
+function supabaseRocksHtml(rocks, { ticketsFor, backlogLine, peopleById, swingById }) {
+  const data = state.rocks;
+  const meta = data.supabase ?? {};
+  const thisMonth = todayKey().slice(0, 7);
+  const people = data.people ?? [];
+  const swings = data.bigSwingOptions?.options ?? [];
+  const select = (id, field, current, list, blank) =>
+    `<select class="sm" data-link-id="${esc(id)}" data-link-field="${esc(field)}">
+      <option value="">${esc(blank)}</option>
+      ${current && !list.some((o) => String(o.id) === String(current)) ? `<option value="${esc(current)}" selected>⚠ no longer in ClickUp</option>` : ""}
+      ${list.map((o) => `<option value="${esc(o.id)}"${String(o.id) === String(current ?? "") ? " selected" : ""}>${esc(o.label ?? o.name)}</option>`).join("")}
+    </select>`;
+
+  const milestones = (r) => {
+    const soon = (r.milestones ?? []).filter((m) => m.month >= thisMonth).slice(0, 8);
+    const late = (r.milestones ?? []).filter((m) => m.month < thisMonth && !m.done);
+    const line = (m) =>
+      `<li class="${m.done ? "sb-done" : m.month < thisMonth ? "bad" : ""}">${m.done ? "✓" : "○"} <span class="meta">${esc(m.month)}</span> ${esc(m.deliverable ?? "")}${
+        m.blocker ? ` <span class="chip warn">blocked: ${esc(m.blocker)}</span>` : ""
+      }</li>`;
+    if (!soon.length && !late.length) return "";
+    return `<details class="sb-ms"><summary class="meta">Milestones${late.length ? ` · <span class="bad">${esc(plural(late.length, "past its month", "past their month"))}</span>` : ""}</summary>
+      <ul class="plain">${late.map(line).join("")}${soon.map(line).join("")}</ul></details>`;
+  };
+
+  const tactic = (t) => {
+    const [tone, label] = TACTIC_STATUS[t.status] ?? ["", t.status ?? ""];
+    return `<li class="sb-tactic">
+      <span class="sig ${esc(tone)}">${esc(label)}</span>
+      <span class="sb-tactic-title">${esc(t.title)}${t.checkInDate ? ` <span class="meta">check-in ${esc(t.checkInDate)}</span>` : ""}</span>
+      ${select(t.id, "owner", t.owner, people, "owner…")}
+      ${select(t.id, "clickupBigSwingOptionId", t.clickupBigSwingOptionId, swings, "Big Swing…")}
+    </li>`;
+  };
+
+  const card = (r) => {
+    const [tone, label] = SB_COLOR[r.statusColor] ?? ["", "No status yet"];
+    const open = (r.tactics ?? []).filter((t) => t.status !== "done");
+    const done = (r.tactics ?? []).filter((t) => t.status === "done");
+    const t = ticketsFor(r);
+    const gaps = r.bau ? [] : [!r.owner && "no owner", !swingIdsOf(r).length && "no Big Swing"].filter(Boolean);
+    return `<div class="rk-item sb-rock">
+      <button class="rock-row" data-open="${esc(r.id)}">
+        <span class="sig ${esc(tone)}">${esc(label)}</span>
+        <span class="rock-row-main">
+          <span class="rock-row-title">${esc(r.title)}</span>
+          <span class="meta">
+            ${esc(r.bau ? "business as usual" : peopleById.get(r.owner) ?? "no owner")}
+            ${r.checkInDate ? `· checked in ${esc(r.checkInDate)}` : "· never checked in"}
+            ${swingIdsOf(r).length ? `· ${esc(swingIdsOf(r).map((id) => swingById.get(id) ?? "linked").join(", "))}` : ""}
+            ${r.readout?.headline ? `· <strong>${esc(r.readout.headline)}</strong>` : ""}
+          </span>
+          ${r.kpi ? `<span class="meta">Done when: ${esc(r.kpi)}</span>` : ""}
+        </span>
+        <span class="rock-row-gaps">${gaps.map((g) => `<span class="chip warn">${esc(g)}</span>`).join("")}</span>
+      </button>
+      ${r.statusReason || r.actionPlan ? `<p class="meta sb-why">${r.statusReason ? `Why: ${esc(r.statusReason)}` : ""}${r.statusReason && r.actionPlan ? " · " : ""}${r.actionPlan ? `Plan: ${esc(r.actionPlan)}` : ""}</p>` : ""}
+      ${open.length ? `<ul class="plain sb-tactics">${open.map(tactic).join("")}</ul>` : '<p class="meta">No open tactics under this rock in Supabase.</p>'}
+      ${done.length ? `<p class="meta">Done: ${esc(done.map((x) => x.title).join(", "))}</p>` : ""}
+      ${milestones(r)}
+      <details>
+        <summary class="meta">${esc(plural(t.sprint.length, "ticket", "tickets"))} on the sprint · ${esc(plural(t.backlog.length, "in the backlog", "in the backlog"))}${
+          !r.bau && !t.sprint.length && !t.backlog.length ? ' · <span class="bad">nothing planned</span>' : ""
+        }</summary>
+        ${t.sprint.length ? `<p class="meta rk-head">On the sprint</p>${t.sprint.map((x) => ticketRow(x)).join("")}` : ""}
+        ${t.backlog.length ? `<p class="meta rk-head">In the backlog</p><ul class="plain">${t.backlog.map(backlogLine).join("")}</ul>` : ""}
+        ${!t.sprint.length && !t.backlog.length ? `<p class="sub">${swingIdsOf(r).length ? "No open ticket on its Big Swings, in the sprint or the backlog." : "No Big Swing is linked to it or its tactics, so no ticket can reach it."}</p>` : ""}
+      </details>
+    </div>`;
+  };
+
+  const unmatched = (data.seed?.unmatched ?? []).filter((u) => u.clickupBigSwingOptionId && !rocks.some((r) => ownsSwing(r, u.clickupBigSwingOptionId)));
+  const ordered = [...rocks.filter((r) => !r.bau), ...rocks.filter((r) => r.bau)];
+  return `
+    <div class="note">Read from Supabase: the ${esc(meta.team ?? "")} team's rocks for ${esc(meta.quarter ?? "this quarter")}${
+      meta.takenAt ? `, ${esc(new Date(meta.takenAt).toLocaleString())}` : ""
+    }. Change rocks, statuses and tactics in the standup app. The owner and Big Swing on each are this app's.</div>
+    ${meta.stale ? `<div class="missing">Supabase could not be read (${esc(meta.stale.reason)}). Showing the copy from ${esc(new Date(meta.stale.takenAt).toLocaleString())}.</div>` : ""}
+    ${unmatched.length ? `<div class="note"><strong>Not carried over from the old rocks:</strong> ${esc(unmatched.map((u) => `"${u.title}" (${swingById.get(String(u.clickupBigSwingOptionId)) ?? "its Big Swing"})`).join(", "))}. Link each Big Swing to the tactic it now belongs to.</div>` : ""}
+    ${ordered.map(card).join("") || '<p class="sub">No rocks for this team and quarter in Supabase.</p>'}`;
+}
+
+/** An owner or Big Swing picked on a tactic or rock row saves straight away. */
+$("rocks-list").addEventListener("change", async (event) => {
+  const input = event.target.closest("[data-link-id]");
+  if (!input) return;
+  input.disabled = true;
+  try {
+    await saveLinks(input.dataset.linkId, { [input.dataset.linkField]: input.value || null });
+  } catch (err) {
+    rocksError(`Not saved: ${err.message}`);
+    input.disabled = false;
+  }
+});
 
 /** Sets a rock's target month straight from the Rocks view. */
 $("rocks-list").addEventListener("change", async (event) => {
@@ -3056,6 +3237,54 @@ function openRock(id) {
   const cu = data.clickupOptions ?? { available: false, options: [] };
   const swings = data.bigSwingOptions ?? { available: false, options: [] };
 
+  const linkRows = `
+    <h4 class="form-head">Links</h4>
+    <p class="meta">Up to three Intelligems experiments, the live page, and up to three reports. Paste an Intelligems URL and the experiment id is read out of it.</p>
+    ${[0, 1, 2].map((i) => {
+      const link = r?.experimentLinks?.[i];
+      return `<div class="link-row">
+        <input class="lk" data-lk="experiment" data-i="${i}" data-p="url" value="${esc(link?.url ?? "")}" placeholder="Intelligems experiment URL">
+        <input class="lk narrow" data-lk="experiment" data-i="${i}" data-p="label" value="${esc(link?.label ?? "")}" placeholder="label">
+        ${link?.experienceId ? `<span class="chip">id ${esc(link.experienceId.slice(0, 8))}</span>` : ""}
+      </div>`;
+    }).join("")}
+    <label class="wide">Website URL<input class="rk" data-f="websiteUrl" value="${esc(r?.websiteUrl ?? "")}" placeholder="the page this rock changes"></label>
+    ${[0, 1, 2].map((i) => {
+      const link = r?.reportLinks?.[i];
+      return `<div class="link-row">
+        <input class="lk" data-lk="report" data-i="${i}" data-p="url" value="${esc(link?.url ?? "")}" placeholder="Report or doc URL">
+        <input class="lk narrow" data-lk="report" data-i="${i}" data-p="label" value="${esc(link?.label ?? "")}" placeholder="label">
+      </div>`;
+    }).join("")}`;
+
+  // A Supabase rock: what Supabase says, read only, and the fields this app keeps.
+  if (fromSupabase() && r) {
+    const [, statusText] = SB_COLOR[r.statusColor] ?? ["", "No status yet"];
+    $("rock-modal-title").textContent = "Rock";
+    $("rock-delete").classList.add("hidden");
+    $("rock-form").innerHTML = `
+      <div class="note"><strong>${esc(r.title)}</strong><br>
+        ${esc(statusText)}${r.checkInDate ? ` · checked in ${esc(r.checkInDate)}` : ""} · ${esc(r.quarter ?? "")}
+        ${r.kpi ? `<br><span class="meta">Done when: ${esc(r.kpi)}</span>` : ""}
+        ${r.statusReason ? `<br><span class="meta">Why: ${esc(r.statusReason)}</span>` : ""}
+        ${r.actionPlan ? `<br><span class="meta">Plan: ${esc(r.actionPlan)}</span>` : ""}
+        <br><span class="meta">${esc(SB_NOTE)}</span></div>
+      <div class="form-grid">
+        <label>Owner <span class="meta">in ClickUp terms</span><select class="rk" data-f="owner">${opts(people, r.owner, "no owner")}</select></label>
+        <label>Big Swing <span class="meta">for tickets on the rock itself</span>${
+          swings.available
+            ? `<select class="rk" data-f="clickupBigSwingOptionId">${opts(swings.options, r.ownBigSwingOptionId, "not linked")}</select>`
+            : `<input class="rk" data-f="clickupBigSwingOptionId" value="" placeholder="option id">`
+        }</label>
+      </div>
+      <p class="meta">Each tactic's own Big Swing and owner are set on its row on the Rocks tab.</p>
+      ${linkRows}
+      <label class="wide">Notes<textarea class="rk" data-f="notes" rows="3">${esc(r.notes ?? "")}</textarea></label>
+      ${renderRockReadout(r.readout)}`;
+    $("rock-modal").hidden = false;
+    return;
+  }
+
   $("rock-form").innerHTML = `
     <label class="wide">Title<input class="rk" data-f="title" value="${esc(r?.title ?? "")}" placeholder="What is the rock"></label>
     <div class="form-grid">
@@ -3078,24 +3307,7 @@ function openRock(id) {
           : `<input class="rk" data-f="clickupOptionId" value="${esc(r?.clickupOptionId ?? "")}" placeholder="option id">`
       }</label>
     </div>
-    <h4 class="form-head">Links</h4>
-    <p class="meta">Up to three Intelligems experiments, the live page, and up to three reports. Paste an Intelligems URL and the experiment id is read out of it.</p>
-    ${[0, 1, 2].map((i) => {
-      const link = r?.experimentLinks?.[i];
-      return `<div class="link-row">
-        <input class="lk" data-lk="experiment" data-i="${i}" data-p="url" value="${esc(link?.url ?? "")}" placeholder="Intelligems experiment URL">
-        <input class="lk narrow" data-lk="experiment" data-i="${i}" data-p="label" value="${esc(link?.label ?? "")}" placeholder="label">
-        ${link?.experienceId ? `<span class="chip">id ${esc(link.experienceId.slice(0, 8))}</span>` : ""}
-      </div>`;
-    }).join("")}
-    <label class="wide">Website URL<input class="rk" data-f="websiteUrl" value="${esc(r?.websiteUrl ?? "")}" placeholder="the page this rock changes"></label>
-    ${[0, 1, 2].map((i) => {
-      const link = r?.reportLinks?.[i];
-      return `<div class="link-row">
-        <input class="lk" data-lk="report" data-i="${i}" data-p="url" value="${esc(link?.url ?? "")}" placeholder="Report or doc URL">
-        <input class="lk narrow" data-lk="report" data-i="${i}" data-p="label" value="${esc(link?.label ?? "")}" placeholder="label">
-      </div>`;
-    }).join("")}
+    ${linkRows}
 
     <label class="wide">Notes / details<textarea class="rk" data-f="notes" rows="4" placeholder="context, what done looks like">${esc(r?.notes ?? "")}</textarea></label>
 
@@ -3178,6 +3390,16 @@ function renderRockReadout(readout) {
 async function saveRock() {
   const errBox = $("rock-form-error");
   errBox.classList.add("hidden");
+  if (fromSupabase()) {
+    try {
+      await saveLinks(editingId, formPayload());
+      closeRock();
+    } catch (err) {
+      errBox.textContent = err.message;
+      errBox.classList.remove("hidden");
+    }
+    return;
+  }
   const res = await fetch(`${FN}/rocks`, {
     method: "POST",
     headers: { "content-type": "application/json" },
