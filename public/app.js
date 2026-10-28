@@ -4,6 +4,8 @@
 // The refresh path polls rather than awaits: a background function returns 202 straight
 // away and the caller cannot wait for its result.
 
+import { buildUpdate, updateText, windowStart } from "./update-text.js";
+
 const $ = (id) => document.getElementById(id);
 const layerLabel = (layer) => (layer === "cross" ? "CROSS" : layer === 0 ? "STORE" : `L${layer}`);
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -145,6 +147,7 @@ function render() {
   part("Layer 1", () => renderLayer1(report));
   part("the cross layer", () => renderCross(report));
   part("the sprint", () => renderLayer2(report));
+  part("the update", () => renderUpdate(report));
   part("the tests", () => renderTests());
   part("the open decisions", () => renderOpenItems());
   $("report-text").textContent = report.text ?? "";
@@ -1835,6 +1838,78 @@ $("layer2")?.addEventListener("click", (event) => {
   if (state.report) renderLayer2(state.report);
 });
 
+/* --------------------------------- update ---------------------------------
+   The daily update text, grouped by Big Swing. Built in update-text.js from the tickets
+   the report already holds; this only draws it and copies it. */
+
+const updateExcluded = new Set();
+let updateGroups = [];
+
+/** The @name for a ClickUp user: their handle from the roster, else their first name. */
+function handleFor(user) {
+  const person = (state.people ?? []).find((p) => p.clickupUserId && String(p.clickupUserId) === String(user.id));
+  return person?.handle || String(person?.name ?? user.username ?? user.id).split(/\s+/)[0];
+}
+
+function renderUpdate(report) {
+  const section = report.sections.clickup;
+  if (!section?.present) {
+    $("update").innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
+    return;
+  }
+  const since = windowStart();
+  updateGroups = buildUpdate(report.detail?.clickup?.tasks ?? [], { since, handleFor });
+  const pulled = new Date(report.generatedAt);
+  const stale = Date.now() - pulled.getTime() > 2 * 3600_000;
+  const text = updateText(updateGroups, updateExcluded);
+  const count = updateGroups.reduce((n, g) => n + g.tasks.length, 0);
+
+  $("update").innerHTML = `
+    <p class="meta">Since ${esc(new Date(since).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }))}. From ClickUp as pulled ${esc(pulled.toLocaleString())}${stale ? `: press <strong>Refresh</strong> to include today so far` : ""}.</p>
+    ${
+      count
+        ? `<div class="bar up-bar"><button type="button" id="copy-update">Copy all</button><span class="meta" id="copy-update-note">${esc(plural(count, "ticket", "tickets"))} across ${esc(plural(updateGroups.length, "Big Swing", "Big Swings"))}</span></div>
+      <textarea id="update-text" class="up-text" rows="${Math.min(24, text.split("\n").length + 1)}" readonly>${esc(text)}</textarea>
+      ${updateGroups
+        .map(
+          (g) => `<section class="up-group">
+          <div class="sp-group-head"><h3>${esc(g.label)}</h3><span class="meta">${esc(plural(g.tasks.length, "ticket", "tickets"))}</span></div>
+          ${g.tasks
+            .map(
+              ({ task, text: line }) => `<label class="up-item">
+              <input type="checkbox" data-update-task="${esc(task.id)}"${updateExcluded.has(String(task.id)) ? "" : " checked"}>
+              <span>${esc(line)}</span>
+              ${task.url ? `<a class="meta" href="${esc(task.url)}" target="_blank" rel="noreferrer">open</a>` : ""}
+            </label>`,
+            )
+            .join("")}
+        </section>`,
+        )
+        .join("")}`
+        : `<p class="sub">Nothing on the sprint has been touched since then.</p>`
+    }`;
+}
+
+$("update")?.addEventListener("change", (event) => {
+  const id = event.target.dataset?.updateTask;
+  if (!id) return;
+  if (event.target.checked) updateExcluded.delete(id);
+  else updateExcluded.add(id);
+  // Only the text changes; redrawing everything would drop the scroll position.
+  const text = updateText(updateGroups, updateExcluded);
+  $("update-text").value = text;
+});
+
+$("update")?.addEventListener("click", async (event) => {
+  if (event.target.id !== "copy-update") return;
+  try {
+    await navigator.clipboard.writeText($("update-text").value);
+    $("copy-update-note").textContent = "Copied.";
+  } catch {
+    $("copy-update-note").textContent = "The browser would not copy. Select the text and copy it by hand.";
+  }
+});
+
 /* -------------------------- day over day: windows --------------------------
    The 8 AM readout always compares against the previous working day's 8 AM snapshot.
    Here the same view can also be asked about the last 24 hours, or today since
@@ -3199,7 +3274,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 
 // Sprint, Rocks and 1:1 are the tabs. The rest live in the menu and name themselves in
 // the top bar when open.
-const TAB_VIEWS = new Set(["sprint", "rocks", "people"]);
+const TAB_VIEWS = new Set(["sprint", "rocks", "people", "update"]);
 const VIEW_TITLES = { readout: "Daily readout", tests: "Tests", setup: "Setup" };
 
 /* --------------------------------- 1:1 prep ---------------------------------

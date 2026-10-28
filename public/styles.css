@@ -602,3 +602,10 @@ ul.plain { margin: 0; padding-left: 18px; }
 .rk-month input { font: inherit; font-size: 12px; padding: 1px 4px; }
 .rk-head { margin: 8px 0 4px; font-weight: 600; }
 .sp-group-head .bad, .rk-plan .bad, .rk-month-group .bad { color: var(--red); font-weight: 600; }
+
+/* --------------------------------- update --------------------------------- */
+.up-bar { margin: 10px 0 6px; }
+.up-text { width: 100%; font: inherit; font-size: 13px; padding: 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); resize: vertical; }
+.up-group { margin-top: 18px; }
+.up-item { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; font-size: 14px; }
+.up-item span { flex: 1; }

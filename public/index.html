@@ -29,6 +29,7 @@
       <button class="tab" role="tab" data-view="sprint">Sprint</button>
       <button class="tab" role="tab" data-view="rocks">Rocks</button>
       <button class="tab" role="tab" data-view="people">1:1</button>
+      <button class="tab" role="tab" data-view="update">Update</button>
     </nav>
     <strong id="view-title" hidden></strong>
     <span class="grow"></span>
@@ -41,6 +42,7 @@
     <button class="nav" data-view="sprint">Sprint</button>
     <button class="nav" data-view="rocks">Rocks</button>
     <button class="nav" data-view="people">1:1</button>
+    <button class="nav" data-view="update">Update</button>
     <p class="drawer-label nav-label">More</p>
     <button class="nav" data-view="readout">Daily readout</button>
     <button class="nav" data-view="tests">Tests</button>
@@ -156,6 +158,13 @@
       <h2>Sprint</h2>
       <p class="sub">The week's commitment: every open ticket, how long it has sat in its status, what it is waiting on, and the last thing said on it in ClickUp.</p>
       <div id="layer2"></div>
+    </section>
+
+    <!-- ----------------------------------- update --------------------------------- -->
+    <section class="view hidden" id="view-update">
+      <h2>Update</h2>
+      <p class="sub">Every sprint ticket touched since the start of the previous working day (updated, closed or commented on) that is to do, in progress, in QA or VQA, ready for deploy, or done. Grouped by Big Swing, ready to paste. Untick anything that should not go in.</p>
+      <div id="update"></div>
     </section>
 
     <!-- ------------------------------------ tests --------------------------------- -->

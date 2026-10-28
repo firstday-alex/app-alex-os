@@ -47,6 +47,6 @@ export default async (req) => {
     today: dateKey(new Date(), config.system.timezone),
     flagEntries,
     // Who a flag can be waiting on. Names only: the system never contacts the team.
-    people: (config.people?.team ?? []).filter((p) => p?.name).map((p) => ({ name: p.name, clickupUserId: p.clickupUserId == null ? null : String(p.clickupUserId) })),
+    people: (config.people?.team ?? []).filter((p) => p?.name).map((p) => ({ name: p.name, handle: p.handle ?? null, clickupUserId: p.clickupUserId == null ? null : String(p.clickupUserId) })),
   });
 };

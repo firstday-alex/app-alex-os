@@ -1,5 +1,6 @@
 {
   "_comment": "Team roster. Maps ClickUp user ids to a display name. The one-big-swing capacity rule needs this to know its denominator. No contact details: the system only ever communicates with Alex, never with the team.",
+  "_handle": "Optional \"handle\" per person: the @name the Update tab writes for them (e.g. a nickname). Without one it uses their first name.",
   "_BLOCKER": "The workspace has 54 members, which is the whole company. The team below was inferred from who actually holds OPEN work in Current Sprint as of 2026-09-10, which is the only defensible denominator for the one-big-swing rule. Alex must confirm it: getting this list wrong makes 'everyone is at capacity' either meaningless or wrong.",
   "team": [
     {
