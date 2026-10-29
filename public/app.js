@@ -148,6 +148,7 @@ function render() {
   part("Layer 1", () => renderLayer1(report));
   part("the cross layer", () => renderCross(report));
   part("the sprint", () => renderLayer2(report));
+  part("the backlog", () => renderBacklog());
   part("the update", () => renderUpdate(report));
   part("the tests", () => renderTests());
   part("the open decisions", () => renderOpenItems());
@@ -1684,6 +1685,59 @@ function preSprintHtml(p) {
   </details>`;
 }
 
+/** One backlog ticket as a list line: Ready chip, link, who it belongs to. */
+function backlogLine(t) {
+  const who = accountable(t).map((p) => p.name).join(", ");
+  return `<li>${t.ready ? '<span class="chip good">Ready</span> ' : ""}${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)} <span class="meta">${esc(who || "nobody on it")}</span></li>`;
+}
+
+/* ---------------------------------- backlog ----------------------------------
+   Its own tab, apart from the sprint: the pre-planning check on the Ready pool, then
+   every open backlog ticket under the rock it reaches through its Big Swing, Ready first.
+   Tickets on no rock are grouped by their Big Swing so the missing link is plain. */
+
+function renderBacklog() {
+  const box = $("backlog-view");
+  if (!box || !state.report) return;
+  const info = state.report.detail?.backlog;
+  if (!info?.available) {
+    box.innerHTML = `${preSprintHtml(state.report.detail?.preSprint)}<div class="note"><strong>Backlog not loaded.</strong> ${esc(info?.reason ?? "")}</div>`;
+    return;
+  }
+  const open = info.items.filter((t) => t.bucket !== "done");
+  const byRock = new Map();
+  const offRock = new Map();
+  for (const t of open) {
+    const rock = rockForTask(t);
+    const [map, key, title] = rock ? [byRock, rock.id, rock.title] : [offRock, t.bigSwing?.label ?? "No Big Swing", t.bigSwing?.label ?? "No Big Swing"];
+    if (!map.has(key)) map.set(key, { title, rockId: rock?.id ?? null, tasks: [] });
+    map.get(key).tasks.push(t);
+  }
+  const readyFirst = (list) => [...list].sort((a, b) => Number(b.ready) - Number(a.ready));
+  const group = (g) => {
+    const ready = g.tasks.filter((t) => t.ready).length;
+    return `<section class="rk-month-group">
+      <div class="sp-group-head"><h3>${esc(g.title)}</h3><span class="meta">${esc(plural(g.tasks.length, "ticket", "tickets"))}${ready ? `, ${esc(ready)} Ready` : ""}</span>
+        ${g.rockId ? `<span class="grow"></span><a class="meta" href="#rocks/${encodeURIComponent(g.rockId)}">Rock →</a>` : ""}</div>
+      <ul class="plain">${readyFirst(g.tasks).map(backlogLine).join("")}</ul>
+    </section>`;
+  };
+  const sortGroups = (map) => [...map.values()].sort((a, b) => b.tasks.filter((t) => t.ready).length - a.tasks.filter((t) => t.ready).length || b.tasks.length - a.tasks.length);
+  const off = sortGroups(offRock);
+  box.innerHTML = `
+    ${preSprintHtml(state.report.detail?.preSprint)}
+    ${state.rocks ? "" : `<p class="sub">Loading the rocks to place each ticket…</p>`}
+    <details class="section" open><summary><h2>By rock</h2><span class="sec-count">${esc(open.length - off.reduce((n, g) => n + g.tasks.length, 0))}</span></summary>
+      ${sortGroups(byRock).map(group).join("") || `<p class="sub">No open backlog ticket reaches a rock yet.</p>`}
+    </details>
+    ${off.length
+      ? `<details class="section"><summary><h2>On no rock</h2><span class="sec-count">${esc(off.reduce((n, g) => n + g.tasks.length, 0))}</span></summary>
+          <p class="sub">Open backlog tickets whose Big Swing no rock claims, or that have none. Either they belong under a rock, or they are BAU.</p>
+          ${off.map(group).join("")}
+        </details>`
+      : ""}`;
+}
+
 /* ------------------------------- sprint board -------------------------------
    The week's commitment: every open ticket on the sprint, where it is, and what it is
    waiting on. Built from what the readout already holds, so it costs no extra request.
@@ -2963,6 +3017,7 @@ async function loadRocks() {
     if (state.report) {
       renderAllFlags();
       renderLayer2(state.report);
+      renderBacklog();
       renderPeople();
     }
   } catch (err) {
@@ -3052,11 +3107,6 @@ function renderRocks() {
     const mine = (t) => rockForTask(t)?.id === r.id;
     return { sprint: sprintOpen.filter(mine), backlog: backlog.filter(mine).sort((a, b) => Number(b.ready) - Number(a.ready)) };
   };
-  const backlogLine = (t) => {
-    const who = accountable(t).map((p) => p.name).join(", ");
-    return `<li>${t.ready ? '<span class="chip good">Ready</span> ' : ""}${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)} <span class="meta">${esc(who || "nobody on it")}</span></li>`;
-  };
-
   const item = (r) => {
     const t = ticketsFor(r);
     const ready = t.backlog.filter((x) => x.ready).length;
@@ -3087,21 +3137,11 @@ function renderRocks() {
   ].filter((g) => g.rocks.length);
   const shipped = rocks.filter((r) => r.state === "shipped");
 
-  const swingOf = (t) => t.bigSwing?.label ?? null;
-  const offRock = backlog.filter((t) => !rockForTask(t));
-  const offRockBySwing = new Map();
-  for (const t of offRock) {
-    const key = swingOf(t) ?? "No Big Swing";
-    if (!offRockBySwing.has(key)) offRockBySwing.set(key, []);
-    offRockBySwing.get(key).push(t);
-  }
-
   const sb = fromSupabase() ? supabaseRocksHtml(rocks, { ticketsFor, peopleById, swingById }) : null;
 
   $("rocks-list").innerHTML = `
     ${data.clickupOptions?.available === false ? `<div class="note"><strong>ClickUp link unavailable.</strong> ${esc(data.clickupOptions.reason ?? "")}</div>` : ""}
     ${backlogInfo && !backlogInfo.available ? `<div class="note"><strong>Backlog not loaded.</strong> ${esc(backlogInfo.reason ?? "")} Rocks show their sprint tickets only.</div>` : ""}
-    ${preSprintHtml(state.report?.detail?.preSprint)}
     ${sb ?? (groups
       .map(
         (g) => `<section class="rk-month-group">
@@ -3113,12 +3153,6 @@ function renderRocks() {
       )
       .join("") || `<p class="sub">${(data.rocks ?? []).length ? "No rocks match that filter." : "No rocks yet. Use New rock to add the first."}</p>`)}
     ${!sb && shipped.length ? `<details class="section"><summary><h2>Shipped</h2><span class="sec-count">${esc(shipped.length)}</span></summary>${shipped.map(item).join("")}</details>` : ""}
-    ${offRock.length
-      ? `<details class="section"><summary><h2>Backlog on no rock</h2><span class="sec-count">${esc(offRock.length)}</span></summary>
-          <p class="sub">Open backlog tickets whose Big Swing no rock claims, or that have none. Either they belong under a rock, or they are BAU.</p>
-          ${[...offRockBySwing.entries()].map(([swing, list]) => `<p class="meta rk-head">${esc(swing)}</p><ul class="plain">${list.map(backlogLine).join("")}</ul>`).join("")}
-        </details>`
-      : ""}
     <p class="sub">${rocks.length} of ${(data.rocks ?? []).length} shown · version ${esc(data.version)}${data.updatedAt ? ` · last changed ${new Date(data.updatedAt).toLocaleString()}` : ""}</p>`;
 }
 
@@ -4162,7 +4196,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 
 // Sprint, Rocks and 1:1 are the tabs. The rest live in the menu and name themselves in
 // the top bar when open.
-const TAB_VIEWS = new Set(["sprint", "rocks", "people", "update", "upsu", "wins", "standup", "ideation"]);
+const TAB_VIEWS = new Set(["sprint", "backlog", "rocks", "people", "update", "upsu", "wins", "standup", "ideation"]);
 const VIEW_TITLES = { readout: "Daily readout", tests: "Tests", setup: "Setup" };
 
 /* --------------------------------- 1:1 prep ---------------------------------
@@ -4527,7 +4561,7 @@ function showView(name) {
   // and overwriting it there would drop the very test we were asked to open.
   if (parseHash(location.hash).name !== name) location.hash = name;
   closeDrawer();
-  if (name === "rocks" && !state.rocks) loadRocks();
+  if ((name === "rocks" || name === "backlog") && !state.rocks) loadRocks();
   if (name === "setup" && !state.settings) loadSettings();
   if (name === "people") renderPeople();
   if (name === "ideation" && !ideation.loaded) loadIdeation();

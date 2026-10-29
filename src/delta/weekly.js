@@ -89,6 +89,6 @@ export function weeklyLines(w) {
   }
   out.push(`Flags: ${w.flags.handled} handled this week, ${w.flags.open} still open (${w.flags.p1} P1${w.flags.escalated ? `, ${w.flags.escalated} escalated` : ""}).`);
   if (w.tests.decisionsDue.length) out.push(`Tests waiting on a decision: ${list(w.tests.decisionsDue)}.`);
-  if (w.preSprintGaps) out.push(`Before next sprint: ${w.preSprintGaps} gap(s) to fix in the Ready pool. See the Sprint view.`);
+  if (w.preSprintGaps) out.push(`Before next sprint: ${w.preSprintGaps} gap(s) to fix in the Ready pool. See the Backlog tab.`);
   return out;
 }
