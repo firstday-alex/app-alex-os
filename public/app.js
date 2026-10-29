@@ -669,12 +669,15 @@ function triageActions(flag, { compact = false, fix = false } = {}) {
 function flagCard(flag, { compact = false, also = 0 } = {}) {
   const ctx = flagContext(flag);
   const t = triageOf(flag);
-  const primary = ctx.links.findIndex((l) => l.external);
+  // ClickUp links are primary; on a card without one, the first external link is.
+  const primary = ctx.links.some((l) => l.clickup) ? -1 : ctx.links.findIndex((l) => l.external);
   const links = ctx.links
     .map((l, i) =>
-      l.external
-        ? `<a class="ql${i === primary ? " primary" : ""}" href="${esc(l.href)}" target="_blank" rel="noreferrer">${esc(l.label)} ↗</a>`
-        : `<a class="ql" href="${esc(l.href)}">${esc(l.label)}</a>`,
+      l.more
+        ? `<span class="ql more">${esc(l.label)}</span>`
+        : l.external
+          ? `<a class="ql${l.clickup || i === primary ? " primary" : ""}" href="${esc(l.href)}" target="_blank" rel="noreferrer"${l.title ? ` title="${esc(l.title)}"` : ""}>${esc(l.label)} ↗</a>`
+          : `<a class="ql" href="${esc(l.href)}">${esc(l.label)}</a>`,
     )
     .join("");
   const fix = t ? "" : quickFix(flag);
@@ -744,7 +747,7 @@ function flagContext(flag) {
       owners = [...new Set([...(task?.assignees ?? []), ...(task?.taskOwners ?? [])].map((u) => u.username).filter(Boolean))];
       url = subject.url ?? flag.url ?? task?.url ?? null;
       // ClickUp only: a Sprint link was the same on every ticket.
-      if (url) links.push({ label: "ClickUp", href: url, external: true });
+      if (url) links.push({ label: "ClickUp", href: url, external: true, clickup: true });
       break;
     }
     case "test": {
@@ -774,7 +777,6 @@ function flagContext(flag) {
       owners = subject.label ? [subject.label] : [];
       links.push({ label: "Their rocks", href: `#rocks/${encodeURIComponent(subject.label ?? "")}` });
       links.push({ label: "Cross layer", href: "#readout/cross" });
-      links.push({ label: "Sprint", href: "#sprint" });
       break;
     case "field":
       // The dropdown flags are fixed by relinking rocks; the missing-field ones in Setup.
@@ -790,6 +792,16 @@ function flagContext(flag) {
     case "metric":
       links.push({ label: "Store metrics", href: "#readout/store-head" });
       break;
+  }
+  // A flag about a person or a rock names several tickets: each gets its ClickUp link,
+  // ahead of the in-app ones. A long list stops at four and the rest are a count.
+  const tickets = Array.isArray(flag.values?.tickets) ? flag.values.tickets.filter((t) => t?.url) : [];
+  if (subject.type !== "task" && tickets.length) {
+    const short = (name) => (String(name).length > 28 ? `${String(name).slice(0, 26).trimEnd()}…` : String(name));
+    links.unshift(
+      ...tickets.slice(0, 4).map((t) => ({ label: short(t.name), title: t.name, href: t.url, external: true, clickup: true })),
+      ...(tickets.length > 4 ? [{ label: `+${tickets.length - 4} more`, more: true }] : []),
+    );
   }
   return { owners, links, url, itemKey: `${subject.type}:${id}`, itemLabel: itemLabel ?? ruleLabel(flag.rule) };
 }

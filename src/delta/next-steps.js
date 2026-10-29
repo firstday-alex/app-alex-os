@@ -262,7 +262,7 @@ export function nextStepFlags({ tasks = [], statusLedger = null, leadership = nu
       severity: "attention",
       subject: personSubject(p, "wip"),
       message: `${first(p.name)} has ${p.tasks.length} tickets in progress at once: ${listOf(p.tasks)}. Ask which one gets finished first.`,
-      values: { action: "decide", who: first(p.name), count: p.tasks.length, limit: tooManyInProgress },
+      values: { action: "decide", who: first(p.name), count: p.tasks.length, limit: tooManyInProgress, tickets: p.tasks.map((t) => ({ id: t.id, name: t.name, url: t.url })) },
     });
   }
 
@@ -299,7 +299,7 @@ export function nextStepFlags({ tasks = [], statusLedger = null, leadership = nu
       severity: "attention",
       subject: { type: "priority", id: `${rock.id}:due-${monthKey}`, label: rock.title },
       message: `"${rock.title}" is due this month and no ticket on it is in progress${linked.length ? ` (${linked.length} still to do)` : " (none on the sprint)"}. Decide with ${owner ? first(owner) : "its owner"}: start the work, or move the month.`,
-      values: { action: "decide", who: owner ? first(owner) : null, targetMonth: rock.targetMonth, tickets: linked.length },
+      values: { action: "decide", who: owner ? first(owner) : null, targetMonth: rock.targetMonth, tickets: linked.map((t) => ({ id: t.id, name: t.name, url: t.url })) },
     });
   }
 

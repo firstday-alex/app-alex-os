@@ -130,6 +130,7 @@ test("too much at once, and nothing started, are about who is doing the work", (
   const flags = run([...wip, idle]);
   assert.deepEqual(rules(flags), ["nextstep.idle", "nextstep.too_much_in_progress"]);
   assert.equal(flags.find((f) => f.rule === "nextstep.too_much_in_progress").values.who, "Cristobal");
+  assert.ok(flags.find((f) => f.rule === "nextstep.too_much_in_progress").values.tickets.every((t) => t.id && t.name), "names its tickets so the card can link them");
   assert.equal(flags.find((f) => f.rule === "nextstep.idle").values.who, "Blake");
 });
 

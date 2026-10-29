@@ -504,6 +504,7 @@ tr.underpowered td { opacity: .5; }
 .ql:hover { border-color: var(--link); }
 .ql.primary { background: var(--link); border-color: var(--link); color: #fff; font-weight: 600; }
 .ql.primary:hover { background: #234b74; }
+.ql.more { color: var(--muted); border-color: transparent; background: none; }
 
 /* Take action: a small menu so the row is Done, Take action, and the advisor. */
 .act-menu { position: relative; }
