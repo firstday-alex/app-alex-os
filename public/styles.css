@@ -691,3 +691,8 @@ ul.plain { margin: 0; padding-left: 18px; }
 .sb-tickets li { padding: 1px 0; }
 .sb-onrock { margin-top: 8px; padding-left: 12px; border-left: 3px dashed var(--line); }
 .sb-onrock > p { margin: 0; }
+
+/* Big Swings with tickets but no tactic, each with a suggested tactic or a picker. */
+.sb-link-swings ul { margin: 6px 0 0; }
+.sb-link-swings li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 0; }
+.sb-link-swings select { width: auto; max-width: 300px; }

@@ -3222,7 +3222,6 @@ function supabaseRocksHtml(rocks, { ticketsFor, peopleById, swingById }) {
     </section>`;
   };
 
-  const unmatched = (data.seed?.unmatched ?? []).filter((u) => u.clickupBigSwingOptionId && !rocks.some((r) => ownsSwing(r, u.clickupBigSwingOptionId)));
   const ordered = [...rocks.filter((r) => !r.bau), ...rocks.filter((r) => r.bau)];
   return `
     <div class="sb-bar">
@@ -3231,9 +3230,112 @@ function supabaseRocksHtml(rocks, { ticketsFor, peopleById, swingById }) {
     </div>
     ${editingLinks ? '<p class="meta">Set who owns each tactic and the ClickUp Big Swing its tickets use. Each change saves as you pick it.</p>' : ""}
     ${meta.stale ? `<div class="missing">Supabase could not be read (${esc(meta.stale.reason)}). Showing the copy from ${esc(new Date(meta.stale.takenAt).toLocaleString())}.</div>` : ""}
-    ${unmatched.length ? `<div class="note">${esc(plural(unmatched.length, "Big Swing", "Big Swings"))} from the old rocks ${unmatched.length === 1 ? "is" : "are"} on no tactic: ${esc(unmatched.map((u) => swingById.get(String(u.clickupBigSwingOptionId)) ?? u.title).join(", "))}. Use Edit links to put ${unmatched.length === 1 ? "it" : "each"} on the tactic it belongs to.</div>` : ""}
+    ${swingLinksHtml(rocks, swings)}
     ${ordered.map(card).join("") || '<p class="sub">No rocks for this team and quarter in Supabase.</p>'}`;
 }
+
+/* ------------------------- Big Swings to link -------------------------
+   A ClickUp Big Swing with tickets on it that no rock or tactic claims leaves those
+   tickets on nothing. Each is paired with the open tactic, still without a Big Swing,
+   whose title shares the most words with it ("1-Step Quiz Buy Box Funnel" and "New
+   Problem Based Bundle Buy Box"), one swing per tactic, best pairs first. Nothing is
+   linked until Link is pressed. A swing with no likely tactic gets a picker instead. */
+
+const SWING_STOP = new Set(["a", "an", "and", "the", "to", "of", "on", "in", "for", "with", "new", "based", "out", "via"]);
+// Numbers alone ("2.0", "90") say little about what a swing is, and paired "Bundles / Upsells 2.0" with any other 2.0.
+const swingWords = (s) => new Set(String(s ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w && !SWING_STOP.has(w) && !/^\d+$/.test(w)));
+
+/** Sprint and backlog tickets per Big Swing option id, open ones only. */
+function swingTicketCounts() {
+  const counts = new Map();
+  const d = state.report?.detail ?? {};
+  for (const t of [...(d.clickup?.tasks ?? []), ...(d.backlog?.items ?? [])]) {
+    const id = t.bigSwing?.optionId;
+    if (!id || t.closed || t.bucket === "done") continue;
+    counts.set(String(id), (counts.get(String(id)) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function swingSuggestions(rocks, swings) {
+  const counts = swingTicketCounts();
+  const loose = swings.filter((o) => counts.get(String(o.id)) && !rocks.some((r) => ownsSwing(r, o.id)));
+  const open = rocks.flatMap((r) => (r.tactics ?? []).filter((t) => t.status !== "done" && !t.clickupBigSwingOptionId).map((t) => ({ t, r })));
+  const pairs = [];
+  for (const o of loose) {
+    const sw = swingWords(o.label);
+    for (const x of open) {
+      const shared = [...swingWords(x.t.title)].filter((w) => sw.has(w)).length;
+      if (shared >= 2) pairs.push({ ...x, swing: o, shared });
+    }
+  }
+  pairs.sort((a, b) => b.shared - a.shared);
+  const usedSwing = new Set();
+  const usedTactic = new Set();
+  const suggested = [];
+  for (const p of pairs) {
+    if (usedSwing.has(p.swing.id) || usedTactic.has(p.t.id)) continue;
+    usedSwing.add(p.swing.id);
+    usedTactic.add(p.t.id);
+    suggested.push(p);
+  }
+  return { counts, suggested, unplaced: loose.filter((o) => !usedSwing.has(o.id)) };
+}
+
+function swingLinksHtml(rocks, swings) {
+  if (!swings.length) return "";
+  const { counts, suggested, unplaced } = swingSuggestions(rocks, swings);
+  if (!suggested.length && !unplaced.length) return "";
+  const n = (id) => plural(counts.get(String(id)) ?? 0, "ticket", "tickets");
+  const swingName = (id) => swings.find((o) => String(o.id) === String(id))?.label ?? null;
+  const targets = rocks.flatMap((r) => [
+    ...(r.tactics ?? []).filter((t) => t.status !== "done").map((t) => ({ id: t.id, label: `${r.title} › ${t.title}`, has: t.clickupBigSwingOptionId })),
+    { id: r.id, label: `${r.title} (the rock itself)`, has: r.ownBigSwingOptionId },
+  ]);
+  const place = (o, prompt = "Put it on…") => `<select class="sm" data-place-swing="${esc(o.id)}" aria-label="Put ${esc(o.label)} on">
+      <option value="">${esc(prompt)}</option>
+      ${targets.map((x) => `<option value="${esc(x.id)}">${esc(x.label)}${x.has ? ` (replaces ${esc(swingName(x.has) ?? "its Big Swing")})` : ""}</option>`).join("")}
+    </select>`;
+  return `<div class="note sb-link-swings">
+    <p><strong>${esc(plural(suggested.length + unplaced.length, "Big Swing has", "Big Swings have"))} tickets but no tactic</strong>, so those tickets reach no rock.${
+      suggested.length > 1 ? ` <button type="button" class="sm" data-link-all>Link all ${esc(suggested.length)} suggested</button>` : ""
+    }</p>
+    <ul class="plain">
+      ${suggested
+        .map(
+          (p) => `<li><strong>${esc(p.swing.label)}</strong> <span class="meta">${esc(n(p.swing.id))}</span> → ${esc(p.t.title)} <span class="meta">under ${esc(p.r.title)}</span>
+          <button type="button" class="sm" data-link-swing="${esc(p.swing.id)}" data-link-to="${esc(p.t.id)}">Link</button> ${place(p.swing, "or put it elsewhere…")}</li>`,
+        )
+        .join("")}
+      ${unplaced.map((o) => `<li><strong>${esc(o.label)}</strong> <span class="meta">${esc(n(o.id))} · no tactic with a matching name</span> ${place(o)}</li>`).join("")}
+    </ul>
+  </div>`;
+}
+
+async function linkSwings(list, control) {
+  if (control) control.disabled = true;
+  try {
+    for (const { to, swing } of list) await saveLinks(to, { clickupBigSwingOptionId: swing });
+  } catch (err) {
+    rocksError(`Not linked: ${err.message}`);
+    if (control) control.disabled = false;
+  }
+}
+
+$("rocks-list").addEventListener("click", (event) => {
+  const one = event.target.closest("[data-link-swing]");
+  if (one) return linkSwings([{ to: one.dataset.linkTo, swing: one.dataset.linkSwing }], one);
+  const all = event.target.closest("[data-link-all]");
+  if (!all) return;
+  const list = [...document.querySelectorAll("#rocks-list [data-link-swing]")].map((b) => ({ to: b.dataset.linkTo, swing: b.dataset.linkSwing }));
+  linkSwings(list, all);
+});
+
+$("rocks-list").addEventListener("change", (event) => {
+  const select = event.target.closest("[data-place-swing]");
+  if (!select?.value) return;
+  linkSwings([{ to: select.value, swing: select.dataset.placeSwing }], select);
+});
 
 $("rocks-list").addEventListener("click", (event) => {
   if (!event.target.closest("[data-toggle-links]")) return;
