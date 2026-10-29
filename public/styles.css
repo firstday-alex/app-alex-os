@@ -659,7 +659,25 @@ ul.plain { margin: 0; padding-left: 18px; }
 .ns .flag .flag-badges:empty { display: none; }
 .ns .flag .flag-badges, .ns .flag .flag-links { display: inline-flex; gap: 4px; margin: 0 6px 4px 0; }
 .ns .flag .advise { font-size: 12px; padding: 3px 8px; }
-.ns-group { margin-top: 12px; }
+.ns-group { margin-top: 14px; }
+.ns-head, .ns-folded > summary { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin: 0 0 6px; }
+.ns-folded > summary { cursor: pointer; }
+.ns-label { font-weight: 700; color: var(--green); text-transform: uppercase; letter-spacing: .03em; font-size: 13px; }
+.ns-n { font-weight: 700; font-variant-numeric: tabular-nums; }
+.ns-reply .ns-label { color: var(--red); }
+.ns-reply .flag { border-left-width: 4px; }
+.ns-more > summary { cursor: pointer; color: var(--green); font-size: 14px; padding: 4px 0 6px; }
+/* Collapsed: the message and its chips. Buttons, quick fixes and the advisor wait for Act. */
+.flag.ns-compact .msg { cursor: pointer; }
+.flag.ns-compact:not(.open) :is(.triage-actions, .quick-fix, .advise, .triage-panel) { display: none; }
+.flag.ns-compact.open { background: var(--panel); }
+.ns-toggle { font-size: 12px; padding: 1px 8px; }
+.sp-stats { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 10px; font-size: 15px; }
+.sp-stat strong { font-size: 18px; font-variant-numeric: tabular-nums; margin-right: 2px; }
+.sp-stat.zero { color: var(--muted); }
+.sp-stat.bad strong { color: var(--red); }
+.sp-stat.warn strong { color: var(--amber-ink); }
+.sp-stat.good strong { color: var(--green); }
 
 /* Supabase rocks: a rock, the tactics under it, and each tactic's tickets. */
 .sb-bar { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin: 8px 0 12px; }

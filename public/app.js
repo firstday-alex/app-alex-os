@@ -2007,14 +2007,17 @@ function renderLayer2(report) {
   const open = tasks.filter((t) => t.bucket !== "done").sort((a, b) => stageRank(a) - stageRank(b));
   const doneThisWeek = doneThisSprint(tasks);
 
+  // One line, read left to right from what needs a question to what is fine. A count
+  // that needs attention is coloured only when it is above zero; the rest stay quiet.
   const count = (fn) => open.filter(fn).length;
+  const stat = (n, k, tone = "") => `<span class="sp-stat${n && tone ? ` ${tone}` : ""}${n ? "" : " zero"}"><strong>${esc(n)}</strong> ${esc(k)}</span>`;
   const tiles = [
-    tile(count((t) => t.signal === "stalled" || stageOf(t).id === "blocked"), "Stalled or blocked"),
-    tile(count((t) => stageOf(t).id === "review"), "Waiting on QA"),
-    tile(count((t) => stageOf(t).id === "deploy"), "Waiting on deploy"),
-    tile(count((t) => stageOf(t).id === "work" && t.signal !== "stalled"), "Being worked"),
-    tile(count((t) => stageOf(t).id === "start"), "Not started"),
-    tile(doneThisWeek.length, "Done this week"),
+    stat(count((t) => t.signal === "stalled" || stageOf(t).id === "blocked"), "stalled or blocked", "bad"),
+    stat(count((t) => stageOf(t).id === "review"), "waiting on QA", "warn"),
+    stat(count((t) => stageOf(t).id === "deploy"), "waiting on deploy", "warn"),
+    stat(count((t) => stageOf(t).id === "work" && t.signal !== "stalled"), "being worked"),
+    stat(count((t) => stageOf(t).id === "start"), "not started"),
+    stat(doneThisWeek.length, "done this week", "good"),
   ].join("");
 
   let groups;
@@ -2071,7 +2074,7 @@ function renderLayer2(report) {
     .join("");
 
   $("layer2").innerHTML = `
-    <div class="tiles">${tiles}</div>
+    <p class="sp-stats">${tiles}</p>
     <details class="section ns" id="sec-next" open>
       <summary><h2>Next steps</h2><span class="sec-count" id="next-steps-count"></span></summary>
       <div id="next-steps"></div>
@@ -2106,14 +2109,17 @@ function renderLayer2(report) {
 /* -------------------------------- next steps --------------------------------
    Every ticket check that ends in something Alex does, filed under the action: reply,
    nudge, decide, fix. The nextstep.* flags say their own action; the older ticket flags
-   are filed here by rule. A stalled or stuck ticket Alex owns is a reply, not a nudge:
-   nobody else will move it. Same cards and buttons as the readout. */
+   are filed here by rule. A stalled or stuck ticket Alex owns with nobody else assigned is
+   a reply, not a nudge: nobody else will move it. Same cards and buttons as the readout. */
 
+// In the order to work them: what only Alex can unblock, then the sprint calls, then
+// asking others, then ticket hygiene. `show` is how many are listed before "more", and a
+// group with show 0 starts folded.
 const NEXT_ACTIONS = [
-  { id: "reply", label: "Reply", sub: "Waiting on you." },
-  { id: "nudge", label: "Nudge", sub: "Ask the owner or whoever is doing it." },
-  { id: "decide", label: "Decide", sub: "A call on the sprint." },
-  { id: "fix", label: "Fix the ticket", sub: "Missing what the other checks read." },
+  { id: "reply", label: "Reply", sub: "Waiting on you. Start here.", show: 5 },
+  { id: "decide", label: "Decide", sub: "A call on the sprint.", show: 3 },
+  { id: "nudge", label: "Nudge", sub: "Ask whoever is doing it.", show: 3 },
+  { id: "fix", label: "Fix the ticket", sub: "Missing fields. Tidy when there is time.", show: 0 },
 ];
 const RULE_ACTION = {
   "clickup.stalled": "nudge",
@@ -2128,7 +2134,9 @@ function nextActionOf(flag) {
   if (!own) return null;
   if (own === "nudge" && subjectOf(flag).type === "task") {
     const task = state.flagCtx?.tasks.get(baseId(subjectOf(flag).id));
-    if (task && ownersOf(task).some(isMe)) return "reply";
+    // Alex's own ticket is a reply only when nobody else is assigned; otherwise the nudge
+    // goes to the assignee, as the drafted nudge does.
+    if (task && ownersOf(task).some(isMe) && !doersOf(task).some((p) => !isMe(p))) return "reply";
   }
   return own;
 }
@@ -2159,15 +2167,38 @@ function renderNextSteps() {
           }
         }
         if (!list.length) return "";
-        return `<section class="ns-group">
-          <div class="sp-group-head"><h3>${esc(a.label)}</h3><span class="meta">${esc(list.length)} · ${esc(a.sub)}</span></div>
-          ${list.map(({ flag, also }) => flagCard(flag).replace('<p class="flag-badges">', `<p class="flag-badges">${also ? `<span class="chip">+${also} more on this ticket</span>` : ""}`)).join("")}
+        const card = ({ flag, also }) =>
+          flagCard(flag)
+            .replace('<div class="flag ', '<div class="flag ns-compact ')
+            .replace(
+              '<p class="flag-badges">',
+              `<p class="flag-badges"><button type="button" class="ghost sm ns-toggle" aria-expanded="false">Act ▾</button>${also ? `<span class="chip">+${also} more on this ticket</span>` : ""}`,
+            );
+        const head = `<span class="ns-label">${esc(a.label)}</span> <span class="ns-n">${esc(list.length)}</span> <span class="meta">${esc(a.sub)}</span>`;
+        if (!a.show) {
+          return `<details class="ns-group ns-folded"><summary>${head}</summary>${list.map(card).join("")}</details>`;
+        }
+        const first = list.slice(0, a.show);
+        const rest = list.slice(a.show);
+        return `<section class="ns-group ns-${a.id}">
+          <div class="ns-head">${head}</div>
+          ${first.map(card).join("")}
+          ${rest.length ? `<details class="ns-more"><summary>${esc(rest.length)} more</summary>${rest.map(card).join("")}</details>` : ""}
         </section>`;
       }).join("") + (handled ? `<p class="meta">${esc(plural(handled, "handled item is", "handled items are"))} under Waiting and Parked in the Daily readout.</p>` : "")
     : `<p class="sub">Nothing to do on the sprint right now.${handled ? ` ${esc(plural(handled, "handled item is", "handled items are"))} under Waiting and Parked in the Daily readout.` : ""}</p>`;
   const shown = root.querySelectorAll(".flag").length;
   $("next-steps-count").textContent = shown ? `${shown} open` : "nothing open";
 }
+
+// A next step shows what and why; its buttons open on Act, or a click on the message.
+document.addEventListener("click", (event) => {
+  const hit = event.target.closest(".ns-compact .ns-toggle, .ns-compact .msg");
+  if (!hit) return;
+  const card = hit.closest(".ns-compact");
+  const open = card.classList.toggle("open");
+  card.querySelector(".ns-toggle")?.setAttribute("aria-expanded", String(open));
+});
 
 $("layer2")?.addEventListener("change", (event) => {
   if (event.target.id !== "sprint-swing") return;

@@ -176,3 +176,10 @@ test("not started on Wednesday is raised for the assignee, not the Task Owner", 
   assert.equal(wed[0].subject.label, "Blake Tucker");
   assert.match(wed[0].message, /Blake has 1 ticket not started/);
 });
+
+test("due soon and not started on a ticket only Alex is on is Alex's to do, not a nudge", () => {
+  const t = ticket("a", { status: "to do", bucket: "notStarted", assignees: [ALEX], taskOwners: [ALEX], dueDate: now + 3_600_000 });
+  const [f] = run([t]).filter((x) => x.rule === "nextstep.due_not_started");
+  assert.equal(f.values.action, "reply");
+  assert.match(f.message, /is yours, due today, and not started/);
+});

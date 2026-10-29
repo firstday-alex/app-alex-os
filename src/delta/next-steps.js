@@ -91,6 +91,8 @@ export function nextStepFlags({ tasks = [], statusLedger = null, leadership = nu
     const a = (t.assignees ?? []).filter((u) => !isMe(u));
     return a.length ? a : owners(t).filter((u) => !isMe(u));
   };
+  // Nobody but Alex on it: there is no one to nudge, so it is Alex's to do.
+  const onlyMe = (t) => !contact(t).length && [...(t.assignees ?? []), ...owners(t)].some(isMe);
 
   for (const t of open) {
     const s = statusOf(t);
@@ -164,12 +166,16 @@ export function nextStepFlags({ tasks = [], statusLedger = null, leadership = nu
           values: { action: "decide", who, dueDate: t.dueDate, daysOver: -daysLeft, status: t.status },
         });
       } else if (TODO.has(s) && daysLeft <= dueSoonDays) {
+        const when = daysLeft === 0 ? "today" : daysLeft === 1 ? "tomorrow" : due;
+        const mine = onlyMe(t);
         add({
           rule: "nextstep.due_not_started",
           severity: "attention",
           subject: subject(t, "due-soon"),
-          message: `Nudge ${who}: "${t.name}" is due ${daysLeft === 0 ? "today" : daysLeft === 1 ? "tomorrow" : due} and has not been started.`,
-          values: { action: "nudge", who, dueDate: t.dueDate, daysLeft },
+          message: mine
+            ? `"${t.name}" is yours, due ${when}, and not started. Start it or move the date.`
+            : `Nudge ${who}: "${t.name}" is due ${when} and has not been started.`,
+          values: { action: mine ? "reply" : "nudge", who: mine ? "you" : who, dueDate: t.dueDate, daysLeft },
         });
       }
     }
