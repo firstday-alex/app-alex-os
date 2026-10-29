@@ -4389,7 +4389,53 @@ function showView(name) {
   if (name === "tests" && !state.testNotes) loadTestNotes().then(renderTests);
 }
 
+/* ------------------------------ page contents ------------------------------
+   Jump links to the open page's sections, listed under its name in the drawer. Built
+   each time the drawer opens, from the headings on the page as it is drawn right then,
+   so it never lags a re-render. A section inside a closed <details> is opened before
+   scrolling to it. */
+
+const TOC_HEADINGS = "h2, h3, .su-head > strong, .test-name";
+let tocTargets = [];
+
+function buildToc() {
+  document.getElementById("drawer-toc")?.remove();
+  const view = document.querySelector(".view:not(.hidden)");
+  const nav = view && document.querySelector(`#drawer .nav[data-view="${view.id.replace(/^view-/, "")}"]`);
+  if (!nav) return;
+  const pageName = nav.textContent.trim().toLowerCase();
+  tocTargets = [...view.querySelectorAll(TOC_HEADINGS)].filter((el) => {
+    const text = el.textContent.trim();
+    // The page's own title repeats the nav entry above it, and hidden parts are not there to jump to.
+    return text && text.toLowerCase() !== pageName && el.getClientRects().length > 0;
+  });
+  if (!tocTargets.length) return;
+  const list = document.createElement("div");
+  list.id = "drawer-toc";
+  list.innerHTML = tocTargets
+    .map((el, i) => {
+      const text = el.textContent.trim().replace(/\s+/g, " ");
+      const sub = el.tagName !== "H2" ? " toc-sub" : "";
+      return `<button type="button" class="toc-link${sub}" data-toc="${i}" title="${esc(text)}">${esc(text)}</button>`;
+    })
+    .join("");
+  nav.after(list);
+}
+
+$("drawer").addEventListener("click", (event) => {
+  const link = event.target.closest("[data-toc]");
+  if (!link) return;
+  const target = tocTargets[Number(link.dataset.toc)];
+  if (!target?.isConnected) return;
+  for (let node = target.parentElement; node; node = node.parentElement) {
+    if (node.tagName === "DETAILS" && !target.closest("summary")) node.open = true;
+  }
+  closeDrawer();
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
 function openDrawer() {
+  buildToc();
   $("drawer").classList.add("open");
   $("drawer").setAttribute("aria-hidden", "false");
   $("menu-toggle").setAttribute("aria-expanded", "true");
