@@ -261,29 +261,9 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
     });
   }
 
-  // A leadership priority nobody is actually working on. The queue says it is active and
-  // owned, but no open ticket ladders up to it.
-  const laddered = new Set();
-  for (const row of people.values()) {
-    for (const swing of row.bigSwings) if (swing.priorityLabel) laddered.add(String(swing.priorityLabel).toLowerCase());
-  }
-  for (const item of activeItems) {
-    // Worked on means an open ticket names the rock's Big Swing, or, for a rock with no
-    // Big Swing set yet, names a Big Swing with the rock's title.
-    const hit =
-      laddered.has(String(item.title).toLowerCase()) ||
-      openTasks.some((t) => ownsSwing(item, t.bigSwing?.optionId));
-    if (!hit) {
-      add({
-        layer: "cross",
-        rule: "crosslayer.priority_without_work",
-        severity: "attention",
-        subject: { type: "priority", id: item.id, label: item.title },
-        message: `"${item.title}" is an active leadership priority with no open sprint ticket pointing at it.`,
-        values: { owner: item.owner?.name ?? null, state: item.state },
-      });
-    }
-  }
+  // A rock with nothing on the sprint is not flagged here: the Backlog tab's coverage
+  // table shows which rocks and people have urgent or high work queued for next sprint,
+  // which is where that gets planned.
 
   return {
     flags,

@@ -139,11 +139,9 @@ test("a Leadership Priority with no Big Swing does not tie a ticket to a rock", 
   assert.ok(rulesFor(result, "dana").includes("crosslayer.no_big_swing"));
 });
 
-test("an active leadership priority with no open ticket pointing at it is flagged", () => {
+test("a rock with no open sprint ticket is not flagged; the Backlog tab covers it", () => {
   const result = check([{ ...task({ id: "a", bigSwing: SUB }), ...owner("u1", "dana") }]);
-  const orphan = result.flags.find((f) => f.rule === "crosslayer.priority_without_work");
-  assert.ok(orphan);
-  assert.equal(orphan.subject.label, "Shipping threshold test");
+  assert.ok(!result.flags.some((f) => f.rule === "crosslayer.priority_without_work"));
 });
 
 test("done tickets do not count toward anyone's sprint", () => {
@@ -201,15 +199,6 @@ test("BAU still wins over a Big Swing value, because BAU is expected work", () =
   const dana = result.people.find((p) => p.name === "dana");
   assert.equal(dana.bauTickets.length, 1);
   assert.equal(dana.distinctBigSwings, 0);
-});
-
-test("a rock is considered worked on when a ticket names its Big Swing", () => {
-  const result = check(
-    [{ ...task({ id: "a", bigSwing: SWING_QUIZ, leadershipPriority: null }), ...owner("u1", "dana") }],
-    LEADERSHIP_WITH_SWINGS,
-  );
-  const orphans = result.flags.filter((f) => f.rule === "crosslayer.priority_without_work").map((f) => f.subject.label);
-  assert.ok(!orphans.includes("Subscription upsell"), "its Big Swing is being worked on");
 });
 
 /* --------------------- surviving a ClickUp option rename --------------------- */

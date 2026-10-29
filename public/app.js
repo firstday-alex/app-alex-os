@@ -1641,50 +1641,6 @@ function stalenessLabel(task) {
   return `<span class="age ${tone}" title="${esc(title)}">${esc(qualifier)}${esc(age.days)}d</span>`;
 }
 
-/**
- * Before sprint planning: the backlog tickets marked Ready, checked against the rocks.
- * What needs fixing is listed first and open; what is fine is a collapsed table.
- */
-function preSprintHtml(p) {
-  if (!p) return "";
-  if (!p.available) {
-    return `<details class="pre-sprint"><summary><h3>Before sprint planning</h3><span class="meta">not available: ${esc(p.reason ?? "")}</span></summary></details>`;
-  }
-  const ticket = (t) =>
-    `<li>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)} ↗</a>` : esc(t.name)}${t.swing ? ` <span class="meta">${esc(t.swing)}</span>` : ""}</li>`;
-  const noSwingPeople = p.people.filter((x) => x.noBigSwing);
-  const gaps = [
-    noSwingPeople.length
-      ? `<div class="ps-gap"><p class="ps-head bad">${esc(plural(noSwingPeople.length, "person has", "people have"))} no big swing queued</p>
-         <p>${noSwingPeople.map((x) => `<strong>${esc(x.name)}</strong> <span class="meta">${esc(plural(x.ready, "Ready ticket", "Ready tickets"))}, none on a live rock</span>`).join("<br>")}</p></div>`
-      : "",
-    p.unqueuedRocks.length
-      ? `<div class="ps-gap"><p class="ps-head bad">${esc(plural(p.unqueuedRocks.length, "active rock has", "active rocks have"))} nothing queued or open</p>
-         <p class="flag-links">${p.unqueuedRocks.map((r) => `<a href="#rocks/${encodeURIComponent(r.id)}">${esc(r.title)}${r.owner ? ` · ${esc(r.owner)}` : ""}</a>`).join("")}</p></div>`
-      : "",
-    p.noSwing.length
-      ? `<div class="ps-gap"><p class="ps-head">${esc(plural(p.noSwing.length, "Ready ticket has", "Ready tickets have"))} no Big Swing</p><ul>${p.noSwing.map(ticket).join("")}</ul></div>`
-      : "",
-    p.unclaimedSwing.length
-      ? `<div class="ps-gap"><p class="ps-head">${esc(plural(p.unclaimedSwing.length, "Ready ticket is", "Ready tickets are"))} on a Big Swing no active rock claims</p><ul>${p.unclaimedSwing.map(ticket).join("")}</ul></div>`
-      : "",
-    p.unowned.length
-      ? `<div class="ps-gap"><p class="ps-head">${esc(plural(p.unowned.length, "Ready ticket has", "Ready tickets have"))} nobody on it</p><ul>${p.unowned.map(ticket).join("")}</ul></div>`
-      : "",
-  ].filter(Boolean);
-  const rows = p.people
-    .map((x) => `<tr><td>${esc(x.name)}</td><td>${esc(x.ready)}</td><td class="wrap">${x.rocks.length ? esc(x.rocks.join(", ")) : "—"}</td><td class="wrap">${x.carryover.length ? esc(x.carryover.join(", ")) : "—"}</td></tr>`)
-    .join("");
-  return `<details class="pre-sprint" ${gaps.length ? "open" : ""}>
-    <summary><h3>Before sprint planning</h3><span class="meta">${esc(plural(p.readyCount, "ticket", "tickets"))} marked Ready in the backlog${gaps.length ? ` · <span class="bad">${esc(plural(gaps.length, "gap", "gaps"))}</span>` : " · no gaps"}</span></summary>
-    <p class="sub">The backlog's Ready tickets are the pool for the next sprint. This checks the pool against the rocks while it is still cheap to change.</p>
-    ${gaps.join("") || `<p class="sub">Everyone has a big swing queued and every active rock has work. Nothing to fix before planning.</p>`}
-    <details><summary class="meta">By person</summary>
-      <div class="scroll"><table><thead><tr><th>Person</th><th>Ready</th><th>Rocks in the pool</th><th>Carried over</th></tr></thead><tbody>${rows}</tbody></table></div>
-    </details>
-  </details>`;
-}
-
 /** One backlog ticket as a list line: Ready chip, link, who it belongs to. */
 function backlogLine(t) {
   const who = accountable(t).map((p) => p.name).join(", ");
@@ -1701,7 +1657,7 @@ function renderBacklog() {
   if (!box || !state.report) return;
   const info = state.report.detail?.backlog;
   if (!info?.available) {
-    box.innerHTML = `${preSprintHtml(state.report.detail?.preSprint)}<div class="note"><strong>Backlog not loaded.</strong> ${esc(info?.reason ?? "")}</div>`;
+    box.innerHTML = `<div class="note"><strong>Backlog not loaded.</strong> ${esc(info?.reason ?? "")}</div>`;
     return;
   }
   const open = info.items.filter((t) => t.bucket !== "done");
@@ -1725,7 +1681,6 @@ function renderBacklog() {
   const sortGroups = (map) => [...map.values()].sort((a, b) => b.tasks.filter((t) => t.ready).length - a.tasks.filter((t) => t.ready).length || b.tasks.length - a.tasks.length);
   const off = sortGroups(offRock);
   box.innerHTML = `
-    ${preSprintHtml(state.report.detail?.preSprint)}
     ${state.rocks ? "" : `<p class="sub">Loading the rocks to place each ticket…</p>`}
     <details class="section" open><summary><h2>By rock</h2><span class="sec-count">${esc(open.length - off.reduce((n, g) => n + g.tasks.length, 0))}</span></summary>
       ${sortGroups(byRock).map(group).join("") || `<p class="sub">No open backlog ticket reaches a rock yet.</p>`}
@@ -1735,7 +1690,71 @@ function renderBacklog() {
           <p class="sub">Open backlog tickets whose Big Swing no rock claims, or that have none. Either they belong under a rock, or they are BAU.</p>
           ${off.map(group).join("")}
         </details>`
-      : ""}`;
+      : ""}
+    ${coverageHtml(open)}`;
+}
+
+// The backlog's urgent and high tickets are what Alex queues for the following week's
+// sprint, so coverage is read from those, by ClickUp priority.
+const QUEUED_PRIORITIES = ["urgent", "high"];
+
+/**
+ * Next sprint coverage: does each person, and each active rock, have at least one urgent
+ * or high ticket queued. A zero is information for planning, not a fault, so it is
+ * shown plainly rather than flagged.
+ */
+function coverageHtml(open) {
+  const queued = open
+    .filter((t) => QUEUED_PRIORITIES.includes(String(t.priority ?? "").toLowerCase()))
+    .sort((a, b) => QUEUED_PRIORITIES.indexOf(a.priority) - QUEUED_PRIORITIES.indexOf(b.priority));
+  const line = (t, { showRock = true, showWho = true } = {}) => {
+    const rock = rockForTask(t);
+    const who = accountable(t).map((p) => p.name).join(", ");
+    const bits = [showRock ? rock?.title ?? t.bigSwing?.label ?? "no Big Swing" : null, showWho ? who || "nobody on it" : null].filter(Boolean);
+    return `<li><span class="chip${t.priority === "urgent" ? " bad" : " warn"}">${esc(t.priority)}</span> ${
+      t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)
+    }${bits.length ? ` <span class="meta">${esc(bits.join(" · "))}</span>` : ""}</li>`;
+  };
+  const cell = (list, opts) => (list.length ? `<ul class="plain">${list.map((t) => line(t, opts)).join("")}</ul>` : `<span class="meta">none queued</span>`);
+
+  // People: everyone on the roster, then anyone else a queued ticket names.
+  const people = new Map(
+    (state.people ?? []).filter((p) => p.clickupUserId && p.countsTowardCapacity !== false).map((p) => [String(p.clickupUserId), { name: p.name, tasks: [] }]),
+  );
+  for (const t of queued) {
+    for (const p of accountable(t)) {
+      if (!people.has(p.id)) people.set(p.id, { name: p.name, tasks: [] });
+      people.get(p.id).tasks.push(t);
+    }
+  }
+  const personRows = [...people.values()]
+    .map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(p.tasks.length)}</td><td class="wrap">${cell(p.tasks, { showWho: false })}</td></tr>`)
+    .join("");
+
+  const rocks = (state.rocks?.rocks ?? []).filter((r) => r.state === "active");
+  const rockRows = rocks
+    .map((r) => {
+      const list = queued.filter((t) => rockForTask(t)?.id === r.id);
+      return `<tr><td><a href="#rocks/${encodeURIComponent(r.id)}">${esc(r.title)}</a></td><td>${esc(list.length)}</td><td class="wrap">${cell(list, { showRock: false })}</td></tr>`;
+    })
+    .join("");
+  const onNoRock = queued.filter((t) => !rockForTask(t));
+  const emptyPeople = [...people.values()].filter((p) => !p.tasks.length).length;
+  const emptyRocks = rocks.filter((r) => !queued.some((t) => rockForTask(t)?.id === r.id)).length;
+
+  return `<details class="section" open><summary><h2>Next sprint coverage</h2><span class="sec-count">${esc(queued.length)}</span></summary>
+    <p class="sub">The backlog's urgent and high priority tickets, the work queued for next sprint, laid out by person and by rock. ${esc(
+      plural(emptyPeople, "person has", "people have"),
+    )} nothing queued and ${esc(plural(emptyRocks, "rock has", "rocks have"))} nothing queued. That can be fine; it is here to plan against.</p>
+    <h3>By person</h3>
+    <div class="scroll"><table><thead><tr><th>Person</th><th>Queued</th><th>Urgent and high tickets</th></tr></thead><tbody>${personRows}</tbody></table></div>
+    <h3>By rock</h3>
+    ${state.rocks
+      ? `<div class="scroll"><table><thead><tr><th>Rock</th><th>Queued</th><th>Urgent and high tickets</th></tr></thead><tbody>${rockRows}${
+          onNoRock.length ? `<tr><td class="meta">On no rock</td><td>${esc(onNoRock.length)}</td><td class="wrap">${cell(onNoRock)}</td></tr>` : ""
+        }</tbody></table></div>`
+      : `<p class="sub">Loading the rocks…</p>`}
+  </details>`;
 }
 
 /* ------------------------------- sprint board -------------------------------
@@ -2093,7 +2112,6 @@ const RULE_ACTION = {
   "clickup.no_task_owner": "fix",
   "clickup.multiple_task_owners": "fix",
   "clickup.no_big_swing_set": "fix",
-  "crosslayer.priority_without_work": "decide",
 };
 
 function nextActionOf(flag) {
