@@ -2907,7 +2907,7 @@ async function loadRocks() {
     // Nothing to create, import or file by queue when the rocks are read from Supabase.
     for (const id of ["new-rock-btn", "import-rocks-btn", "rock-state-filter"]) $(id)?.classList.toggle("hidden", fromSupabase());
     $("rocks-sub").textContent = fromSupabase()
-      ? "Your rocks and tactics from Supabase, with the sprint and backlog tickets that reach each through its Big Swings. Set who owns each tactic and which Big Swing its tickets use; those changes are recorded with what they were before."
+      ? "Each rock, the tactics under it, and the sprint and backlog tickets that reach each tactic through its ClickUp Big Swing."
       : $("rocks-sub").dataset.storeText;
     renderRocks();
     // The flags' quick fixes and the sprint's rock links are drawn from the rocks, so
@@ -3048,7 +3048,7 @@ function renderRocks() {
     offRockBySwing.get(key).push(t);
   }
 
-  const sb = fromSupabase() ? supabaseRocksHtml(rocks, { ticketsFor, backlogLine, peopleById, swingById }) : null;
+  const sb = fromSupabase() ? supabaseRocksHtml(rocks, { ticketsFor, peopleById, swingById }) : null;
 
   $("rocks-list").innerHTML = `
     ${data.clickupOptions?.available === false ? `<div class="note"><strong>ClickUp link unavailable.</strong> ${esc(data.clickupOptions.reason ?? "")}</div>` : ""}
@@ -3077,43 +3077,59 @@ function renderRocks() {
 const SB_COLOR = { green: ["on_track", "On Track"], amber: ["at_risk", "At Risk"], red: ["off_track", "Off Track"] };
 const TACTIC_STATUS = { on_track: ["on_track", "On Track"], at_risk: ["at_risk", "At Risk"], overdue: ["off_track", "Check-in overdue"], done: ["done", "Done"] };
 
+/** Whether the owner and Big Swing pickers are showing on the Rocks tab. Off by default. */
+let editingLinks = false;
+
 /**
- * The Supabase rocks: each with its latest status and why, this month's and next
- * month's milestones, its tactics (each with the owner and Big Swing this app holds for
- * it), and the tickets that reach it.
+ * The Supabase rocks, read top down: each rock, the tactics under it, and under each
+ * tactic the tickets that reach it through its Big Swing. Read only by default; "Edit
+ * links" swaps the owner and Big Swing text on each row for pickers.
  */
-function supabaseRocksHtml(rocks, { ticketsFor, backlogLine, peopleById, swingById }) {
+function supabaseRocksHtml(rocks, { ticketsFor, peopleById, swingById }) {
   const data = state.rocks;
   const meta = data.supabase ?? {};
   const thisMonth = todayKey().slice(0, 7);
   const people = data.people ?? [];
   const swings = data.bigSwingOptions?.options ?? [];
-  const select = (id, field, current, list, blank) =>
-    `<select class="sm" data-link-id="${esc(id)}" data-link-field="${esc(field)}">
+  const first = (id) => String(peopleById.get(id) ?? "").split(/\s+/)[0] || null;
+  const monthName = (m) => new Date(`${m}-01T12:00:00`).toLocaleDateString(undefined, { month: "long" });
+  const shortDate = (d) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+  const picker = (id, field, current, list, blank) =>
+    `<select class="sm" data-link-id="${esc(id)}" data-link-field="${esc(field)}" aria-label="${esc(blank)}">
       <option value="">${esc(blank)}</option>
       ${current && !list.some((o) => String(o.id) === String(current)) ? `<option value="${esc(current)}" selected>⚠ no longer in ClickUp</option>` : ""}
       ${list.map((o) => `<option value="${esc(o.id)}"${String(o.id) === String(current ?? "") ? " selected" : ""}>${esc(o.label ?? o.name)}</option>`).join("")}
     </select>`;
 
-  const milestones = (r) => {
-    const soon = (r.milestones ?? []).filter((m) => m.month >= thisMonth).slice(0, 8);
-    const late = (r.milestones ?? []).filter((m) => m.month < thisMonth && !m.done);
-    const line = (m) =>
-      `<li class="${m.done ? "sb-done" : m.month < thisMonth ? "bad" : ""}">${m.done ? "✓" : "○"} <span class="meta">${esc(m.month)}</span> ${esc(m.deliverable ?? "")}${
-        m.blocker ? ` <span class="chip warn">blocked: ${esc(m.blocker)}</span>` : ""
-      }</li>`;
-    if (!soon.length && !late.length) return "";
-    return `<details class="sb-ms"><summary class="meta">Milestones${late.length ? ` · <span class="bad">${esc(plural(late.length, "past its month", "past their month"))}</span>` : ""}</summary>
-      <ul class="plain">${late.map(line).join("")}${soon.map(line).join("")}</ul></details>`;
+  // One ticket, on one line: name, status, who.
+  const ticket = (t, where) => {
+    const who = accountable(t).map(firstName).join(", ");
+    return `<li>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)}
+      <span class="meta">${esc(where === "backlog" ? (t.ready ? "backlog · Ready" : "backlog") : t.status ?? "")}${who ? ` · ${esc(who)}` : ""}</span></li>`;
   };
+  const ticketList = (list) =>
+    list.length ? `<ul class="plain sb-tickets">${list.map(({ t, where }) => ticket(t, where)).join("")}</ul>` : "";
 
-  const tactic = (t) => {
+  const tacticRow = (t, tickets) => {
     const [tone, label] = TACTIC_STATUS[t.status] ?? ["", t.status ?? ""];
+    // Without the live options (ClickUp unreachable) a link is still a link; only with them
+    // can it be told to be gone.
+    const gone = data.bigSwingOptions?.available ? "a Big Swing no longer in ClickUp" : "linked";
+    const swing = t.clickupBigSwingOptionId ? swingById.get(String(t.clickupBigSwingOptionId)) ?? gone : null;
+    const links = editingLinks
+      ? `<span class="sb-edit">${picker(t.id, "owner", t.owner, people, "Owner")}${picker(t.id, "clickupBigSwingOptionId", t.clickupBigSwingOptionId, swings, "Big Swing")}</span>`
+      : `<span class="meta">${esc(first(t.owner) ?? "no owner")} · ${
+          swing ? `Big Swing: ${esc(swing)}` : '<span class="bad">no Big Swing, so no tickets reach it</span>'
+        }</span>`;
     return `<li class="sb-tactic">
-      <span class="sig ${esc(tone)}">${esc(label)}</span>
-      <span class="sb-tactic-title">${esc(t.title)}${t.checkInDate ? ` <span class="meta">check-in ${esc(t.checkInDate)}</span>` : ""}</span>
-      ${select(t.id, "owner", t.owner, people, "owner…")}
-      ${select(t.id, "clickupBigSwingOptionId", t.clickupBigSwingOptionId, swings, "Big Swing…")}
+      <div class="sb-tactic-head">
+        <span class="sig ${esc(tone)}">${esc(label)}</span>
+        <strong class="sb-tactic-title">${esc(t.title)}</strong>
+        <span class="meta sb-count">${esc(swing ? plural(tickets.length, "ticket", "tickets") : "")}${t.checkInDate ? `${swing ? " · " : ""}check-in ${esc(shortDate(t.checkInDate))}` : ""}</span>
+      </div>
+      <div class="sb-tactic-sub">${links}</div>
+      ${ticketList(tickets)}
     </li>`;
   };
 
@@ -3121,48 +3137,61 @@ function supabaseRocksHtml(rocks, { ticketsFor, backlogLine, peopleById, swingBy
     const [tone, label] = SB_COLOR[r.statusColor] ?? ["", "No status yet"];
     const open = (r.tactics ?? []).filter((t) => t.status !== "done");
     const done = (r.tactics ?? []).filter((t) => t.status === "done");
-    const t = ticketsFor(r);
-    const gaps = r.bau ? [] : [!r.owner && "no owner", !swingIdsOf(r).length && "no Big Swing"].filter(Boolean);
-    return `<div class="rk-item sb-rock">
-      <button class="rock-row" data-open="${esc(r.id)}">
+    const all = ticketsFor(r);
+    const tagged = [...all.sprint.map((t) => ({ t, where: "sprint" })), ...all.backlog.map((t) => ({ t, where: "backlog" }))];
+    const forSwing = (id) => (id ? tagged.filter(({ t }) => String(t.bigSwing?.optionId ?? "") === String(id)) : []);
+    const claimed = new Set(open.map((t) => String(t.clickupBigSwingOptionId ?? "")).filter(Boolean));
+    const onRock = tagged.filter(({ t }) => !claimed.has(String(t.bigSwing?.optionId ?? "")));
+
+    // This month's milestones, as one line: how many are done, and what is blocked.
+    const month = (r.milestones ?? []).filter((m) => m.month === thisMonth);
+    const late = (r.milestones ?? []).filter((m) => m.month < thisMonth && !m.done);
+    const blocked = month.filter((m) => m.blocker && !m.done);
+    const msLine = month.length || late.length
+      ? `<details class="sb-ms"><summary class="meta">${esc(monthName(thisMonth))} milestones: ${esc(month.filter((m) => m.done).length)} of ${esc(month.length)} done${
+          late.length ? ` · <span class="bad">${esc(late.length)} from earlier not done</span>` : ""
+        }${blocked.length ? ` · <span class="bad">${esc(blocked.length)} blocked</span>` : ""}</summary>
+        <ul class="plain">${[...late, ...month]
+          .map((m) => `<li class="${m.done ? "sb-done" : ""}">${m.done ? "✓" : "○"} ${esc(m.deliverable ?? "")}${m.month < thisMonth ? ` <span class="meta">(${esc(monthName(m.month))})</span>` : ""}${m.blocker ? ` <span class="chip warn">blocked: ${esc(m.blocker)}</span>` : ""}</li>`)
+          .join("")}</ul></details>`
+      : "";
+
+    const ownerText = r.bau ? "business as usual" : first(r.owner) ? `owner ${first(r.owner)}` : '<span class="bad">no owner</span>';
+    return `<section class="sb-rock" id="rock-${esc(r.id)}">
+      <div class="sb-rock-head">
         <span class="sig ${esc(tone)}">${esc(label)}</span>
-        <span class="rock-row-main">
-          <span class="rock-row-title">${esc(r.title)}</span>
-          <span class="meta">
-            ${esc(r.bau ? "business as usual" : peopleById.get(r.owner) ?? "no owner")}
-            ${r.checkInDate ? `· checked in ${esc(r.checkInDate)}` : "· never checked in"}
-            ${swingIdsOf(r).length ? `· ${esc(swingIdsOf(r).map((id) => swingById.get(id) ?? "linked").join(", "))}` : ""}
-            ${r.readout?.headline ? `· <strong>${esc(r.readout.headline)}</strong>` : ""}
-          </span>
-          ${r.kpi ? `<span class="meta">Done when: ${esc(r.kpi)}</span>` : ""}
-        </span>
-        <span class="rock-row-gaps">${gaps.map((g) => `<span class="chip warn">${esc(g)}</span>`).join("")}</span>
-      </button>
-      ${r.statusReason || r.actionPlan ? `<p class="meta sb-why">${r.statusReason ? `Why: ${esc(r.statusReason)}` : ""}${r.statusReason && r.actionPlan ? " · " : ""}${r.actionPlan ? `Plan: ${esc(r.actionPlan)}` : ""}</p>` : ""}
-      ${open.length ? `<ul class="plain sb-tactics">${open.map(tactic).join("")}</ul>` : '<p class="meta">No open tactics under this rock in Supabase.</p>'}
-      ${done.length ? `<p class="meta">Done: ${esc(done.map((x) => x.title).join(", "))}</p>` : ""}
-      ${milestones(r)}
-      <details>
-        <summary class="meta">${esc(plural(t.sprint.length, "ticket", "tickets"))} on the sprint · ${esc(plural(t.backlog.length, "in the backlog", "in the backlog"))}${
-          !r.bau && !t.sprint.length && !t.backlog.length ? ' · <span class="bad">nothing planned</span>' : ""
-        }</summary>
-        ${t.sprint.length ? `<p class="meta rk-head">On the sprint</p>${t.sprint.map((x) => ticketRow(x)).join("")}` : ""}
-        ${t.backlog.length ? `<p class="meta rk-head">In the backlog</p><ul class="plain">${t.backlog.map(backlogLine).join("")}</ul>` : ""}
-        ${!t.sprint.length && !t.backlog.length ? `<p class="sub">${swingIdsOf(r).length ? "No open ticket on its Big Swings, in the sprint or the backlog." : "No Big Swing is linked to it or its tactics, so no ticket can reach it."}</p>` : ""}
-      </details>
-    </div>`;
+        <h3>${esc(r.title)}</h3>
+        <button type="button" class="ghost sm" data-open="${esc(r.id)}">Details</button>
+      </div>
+      <p class="meta sb-rock-meta">${ownerText}${r.checkInDate ? ` · checked in ${esc(shortDate(r.checkInDate))}` : ""}${
+        r.kpi ? ` · <span title="${esc(r.kpi)}">done when: ${esc(r.kpi.length > 90 ? `${r.kpi.slice(0, 90)}…` : r.kpi)}</span>` : ""
+      }</p>
+      ${r.statusReason || r.actionPlan ? `<p class="meta sb-rock-meta">${r.statusReason ? `Why: ${esc(r.statusReason)}` : ""}${r.statusReason && r.actionPlan ? " · " : ""}${r.actionPlan ? `Plan: ${esc(r.actionPlan)}` : ""}</p>` : ""}
+      ${msLine}
+      ${open.length ? `<ul class="plain sb-tactics">${open.map((t) => tacticRow(t, forSwing(t.clickupBigSwingOptionId))).join("")}</ul>` : '<p class="meta sb-rock-meta">No open tactics under this rock.</p>'}
+      ${onRock.length ? `<div class="sb-onrock"><p class="meta">On the rock directly (${esc(onRock.length)})</p>${ticketList(onRock)}</div>` : ""}
+      ${done.length ? `<p class="meta sb-rock-meta">Done tactics: ${esc(done.map((x) => x.title).join(", "))}</p>` : ""}
+    </section>`;
   };
 
   const unmatched = (data.seed?.unmatched ?? []).filter((u) => u.clickupBigSwingOptionId && !rocks.some((r) => ownsSwing(r, u.clickupBigSwingOptionId)));
   const ordered = [...rocks.filter((r) => !r.bau), ...rocks.filter((r) => r.bau)];
   return `
-    <div class="note">Read from Supabase: the ${esc(meta.team ?? "")} team's rocks for ${esc(meta.quarter ?? "this quarter")}${
-      meta.takenAt ? `, ${esc(new Date(meta.takenAt).toLocaleString())}` : ""
-    }. Change rocks, statuses and tactics in the standup app. The owner and Big Swing on each are this app's.</div>
+    <div class="sb-bar">
+      <span class="meta">${esc(meta.team ?? "")} rocks, ${esc(meta.quarter ?? "")}, from Supabase${meta.takenAt ? ` · read ${esc(new Date(meta.takenAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}` : ""}. Edit rocks and tactics in the standup app.</span>
+      <button type="button" class="${editingLinks ? "" : "ghost "}sm" data-toggle-links>${editingLinks ? "Done editing" : "Edit links"}</button>
+    </div>
+    ${editingLinks ? '<p class="meta">Set who owns each tactic and the ClickUp Big Swing its tickets use. Each change saves as you pick it.</p>' : ""}
     ${meta.stale ? `<div class="missing">Supabase could not be read (${esc(meta.stale.reason)}). Showing the copy from ${esc(new Date(meta.stale.takenAt).toLocaleString())}.</div>` : ""}
-    ${unmatched.length ? `<div class="note"><strong>Not carried over from the old rocks:</strong> ${esc(unmatched.map((u) => `"${u.title}" (${swingById.get(String(u.clickupBigSwingOptionId)) ?? "its Big Swing"})`).join(", "))}. Link each Big Swing to the tactic it now belongs to.</div>` : ""}
+    ${unmatched.length ? `<div class="note">${esc(plural(unmatched.length, "Big Swing", "Big Swings"))} from the old rocks ${unmatched.length === 1 ? "is" : "are"} on no tactic: ${esc(unmatched.map((u) => swingById.get(String(u.clickupBigSwingOptionId)) ?? u.title).join(", "))}. Use Edit links to put ${unmatched.length === 1 ? "it" : "each"} on the tactic it belongs to.</div>` : ""}
     ${ordered.map(card).join("") || '<p class="sub">No rocks for this team and quarter in Supabase.</p>'}`;
 }
+
+$("rocks-list").addEventListener("click", (event) => {
+  if (!event.target.closest("[data-toggle-links]")) return;
+  editingLinks = !editingLinks;
+  renderRocks();
+});
 
 /** An owner or Big Swing picked on a tactic or rock row saves straight away. */
 $("rocks-list").addEventListener("change", async (event) => {

@@ -650,18 +650,23 @@ ul.plain { margin: 0; padding-left: 18px; }
 .ns .flag .advise { font-size: 12px; padding: 3px 8px; }
 .ns-group { margin-top: 12px; }
 
-/* Supabase rocks: tactics under each rock, each with its owner and Big Swing. */
-.sb-tactics { list-style: none; margin: 6px 0 4px 12px; padding: 0; }
-.sb-tactic { display: grid; grid-template-columns: auto minmax(0, 1fr) 150px 210px; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line, #e5e5e5); }
-.sb-tactic:first-child { border-top: 0; }
-.sb-tactic select { width: 100%; }
-.sb-tactic-title { min-width: 0; }
-.sb-why { margin: 4px 0 0 12px; }
-.sb-ms, .sb-rock > details { margin-left: 12px; }
-.sb-ms ul { margin: 4px 0; }
+/* Supabase rocks: a rock, the tactics under it, and each tactic's tickets. */
+.sb-bar { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin: 8px 0 12px; }
+.sb-rock { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; margin-bottom: 14px; }
+.sb-rock-head { display: flex; gap: 10px; align-items: center; }
+.sb-rock-head h3 { margin: 0; font-size: 1.05rem; flex: 1; min-width: 0; }
+.sb-rock-meta { margin: 4px 0 0; }
+.sb-ms { margin: 6px 0 0; }
+.sb-ms ul { margin: 4px 0 4px 4px; }
 .sb-done { opacity: 0.6; }
-.sb-rock > .meta { margin-left: 12px; }
-@media (max-width: 640px) {
-  .sb-tactic { grid-template-columns: auto minmax(0, 1fr); }
-  .sb-tactic select { grid-column: 1 / -1; }
-}
+.sb-tactics { list-style: none; margin: 10px 0 0; padding: 0; }
+.sb-tactic { padding: 8px 0 8px 12px; border-left: 3px solid var(--line); margin-top: 6px; }
+.sb-tactic-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.sb-tactic-title { flex: 1; min-width: 0; font-weight: 600; }
+.sb-tactic-sub { margin-top: 2px; }
+.sb-edit { display: flex; gap: 8px; flex-wrap: wrap; }
+.sb-edit select { max-width: 260px; }
+.sb-tickets { margin: 4px 0 0 4px; font-size: 0.92em; }
+.sb-tickets li { padding: 1px 0; }
+.sb-onrock { margin-top: 8px; padding-left: 12px; border-left: 3px dashed var(--line); }
+.sb-onrock > p { margin: 0; }
