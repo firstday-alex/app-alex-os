@@ -136,6 +136,13 @@ test("snooze and waiting are dated in working days, and waiting needs a person",
   assert.equal(cleared.triage, undefined);
 });
 
+test("hiding for today snoozes to the next calendar day, even on a Friday", async () => {
+  const ledger = new FlagLedger(backend());
+  const hidden = await ledger.setTriage("k", { status: "snoozed", calendarDays: 1 }, { today: "2026-10-16" });
+  assert.equal(hidden.triage.until, "2026-10-17");
+  await assert.rejects(ledger.setTriage("k", { status: "snoozed" }, { today: "2026-10-16" }), /number of working days/);
+});
+
 test("the first run backfills age from consecutive official reports, stopping at a gap", async () => {
   const b = backend();
   const store = { backend: b, prefixes: {} };

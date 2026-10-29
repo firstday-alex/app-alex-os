@@ -161,7 +161,8 @@ export class FlagLedger {
    * The dashboard's write. Sets or clears the triage on one flag.
    *
    * @param {string} key
-   * @param {object} action  { status: 'done'|'snoozed'|'waiting'|'dismissed'|null, workingDays?, waitingOn?, note? }
+   * @param {object} action  { status: 'done'|'snoozed'|'waiting'|'dismissed'|null, workingDays?, calendarDays?, waitingOn?, note? }
+   *                         calendarDays on a snooze counts every day, so 1 hides a flag for the rest of today.
    * @param {object} ctx     { today, workingWeekdays, by, layer, defaultWaitingDays }
    */
   async setTriage(key, action, { today, workingWeekdays, by = "dashboard", layer = null, defaultWaitingDays = 2 } = {}) {
@@ -178,8 +179,10 @@ export class FlagLedger {
       const triage = { status, at: new Date().toISOString(), by };
       const days = Number(action.workingDays);
       if (status === "snoozed") {
-        if (!(days > 0)) throw new FlagLedgerError("A snooze needs a number of working days.");
-        triage.until = addWorkingDays(today, days, workingWeekdays);
+        const calendar = Number(action.calendarDays);
+        if (calendar > 0) triage.until = shiftDateKey(today, calendar);
+        else if (days > 0) triage.until = addWorkingDays(today, days, workingWeekdays);
+        else throw new FlagLedgerError("A snooze needs a number of working days.");
       }
       if (status === "waiting") {
         const name = String(action.waitingOn ?? "").trim();

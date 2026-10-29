@@ -13,6 +13,8 @@
   --red: #9c3d34;
   --red-bg: #fbf1f0;
   --code: #e4e9e8;
+  --link: #2c5d8f;
+  --link-bg: #eaf1f8;
   color-scheme: light only;
 }
 
@@ -481,7 +483,47 @@ tr.underpowered td { opacity: .5; }
 .flag-badges:empty { display: none; }
 .flag-badges .chip { font-size: 12px; padding: 1px 8px; }
 .flag-badges .age-new { background: #eef4ef; border-color: var(--green); color: var(--green); }
-.triage-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.triage-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+
+/* The card: × top right, then message, then quicklinks and badges on one line. Quicklinks
+   are blue so they read as "go somewhere", apart from the green "do something" buttons. */
+.flag { position: relative; }
+.flag:has(> .flag-x) > .msg { padding-right: 28px; }
+.flag-x {
+  position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 0;
+  background: none; border: 0; color: var(--muted); font-size: 20px; line-height: 1; border-radius: 4px;
+}
+.flag-x:hover { background: var(--code); color: var(--ink); }
+.flag-foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.flag-foot .flag-badges { margin: 0; }
+.quicklinks { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.ql {
+  font-size: 12px; padding: 2px 10px; border-radius: 10px; text-decoration: none;
+  color: var(--link); background: #fff; border: 1px solid var(--link-bg);
+}
+.ql:hover { border-color: var(--link); }
+.ql.primary { background: var(--link); border-color: var(--link); color: #fff; font-weight: 600; }
+.ql.primary:hover { background: #234b74; }
+
+/* Take action: a small menu so the row is Done, Take action, and the advisor. */
+.act-menu { position: relative; }
+.act-menu > summary { list-style: none; }
+.act-menu > summary::-webkit-details-marker { display: none; }
+.btn-ghost {
+  display: inline-block; cursor: pointer; border-radius: 4px; border: 1px solid var(--green);
+  background: var(--panel); color: var(--green); font-size: 13px; padding: 4px 10px; user-select: none;
+}
+.act-menu[open] > .btn-ghost { background: #fff; }
+.act-pop {
+  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 190px;
+  background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 4px;
+  box-shadow: 0 6px 18px rgba(28, 43, 42, .14); display: flex; flex-direction: column;
+}
+.menu-item {
+  text-align: left; background: none; border: 0; color: var(--ink); font-size: 13px; padding: 6px 10px; border-radius: 4px;
+}
+.menu-item:hover, .menu-item:focus-visible { background: var(--panel); color: var(--green); }
+.menu-sep { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 10px 2px; border-top: 1px solid var(--line); margin-top: 4px; }
 button.sm, select.sm { font-size: 13px; padding: 4px 10px; }
 select.sm { font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--green); }
 .triage-panel { margin-top: 10px; padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 4px; display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
@@ -654,11 +696,9 @@ ul.plain { margin: 0; padding-left: 18px; }
 /* -------------------------------- next steps -------------------------------- */
 /* Compact cards: the message already names the ticket and the person. */
 .ns .flag { padding: 8px 12px; margin-bottom: 6px; }
-.ns .flag .msg { margin-bottom: 4px; }
-.ns .flag > .row .meta { display: none; }
-.ns .flag .flag-badges:empty { display: none; }
-.ns .flag .flag-badges, .ns .flag .flag-links { display: inline-flex; gap: 4px; margin: 0 6px 4px 0; }
-.ns .flag .advise { font-size: 12px; padding: 3px 8px; }
+.ns .flag .msg { margin-bottom: 0; }
+.ns .flag > .meta { display: none; }
+.ns .flag .triage-actions { margin-top: 8px; }
 .ns-group { margin-top: 14px; }
 .ns-head, .ns-folded > summary { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin: 0 0 6px; }
 .ns-folded > summary { cursor: pointer; }
@@ -667,11 +707,8 @@ ul.plain { margin: 0; padding-left: 18px; }
 .ns-reply .ns-label { color: var(--red); }
 .ns-reply .flag { border-left-width: 4px; }
 .ns-more > summary { cursor: pointer; color: var(--green); font-size: 14px; padding: 4px 0 6px; }
-/* Collapsed: the message and its chips. Buttons, quick fixes and the advisor wait for Act. */
-.flag.ns-compact .msg { cursor: pointer; }
-.flag.ns-compact:not(.open) :is(.triage-actions, .quick-fix, .advise, .triage-panel) { display: none; }
-.flag.ns-compact.open { background: var(--panel); }
-.ns-toggle { font-size: 12px; padding: 1px 8px; }
+/* A compact card's quick fix stays folded until "Fix it here". */
+.flag.ns-compact:not(.open) .quick-fix { display: none; }
 .sp-stats { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 10px; font-size: 15px; }
 .sp-stat strong { font-size: 18px; font-variant-numeric: tabular-nums; margin-right: 2px; }
 .sp-stat.zero { color: var(--muted); }

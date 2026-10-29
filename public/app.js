@@ -634,44 +634,58 @@ function triageBanner(flag, t) {
     <button type="button" class="link-btn" data-triage="clear">Undo</button></p>`;
 }
 
-function triageActions() {
+// Done and the advisor stay out; everything else that handles a flag sits under one menu.
+// A compact card keeps its quick fix folded until "Fix it here".
+function triageActions(flag, { compact = false, fix = false } = {}) {
+  const item = (act, label, title = "", extra = "") =>
+    `<button type="button" class="menu-item" data-triage="${act}"${extra}${title ? ` title="${esc(title)}"` : ""}>${esc(label)}</button>`;
   return `<div class="triage-actions">
-      <button type="button" class="ghost sm" data-triage="done" title="Handled. Hidden until the condition clears and comes back.">Done</button>
-      <select class="sm" data-triage="snooze" aria-label="Snooze">
-        <option value="">Snooze…</option>
-        <option value="1">1 working day</option>
-        <option value="3">3 working days</option>
-        <option value="5">1 week</option>
-      </select>
-      <button type="button" class="ghost sm" data-triage="waiting-open">Waiting on…</button>
-      <button type="button" class="ghost sm" data-triage="dismiss-open">Not a problem…</button>
-      <button type="button" class="ghost sm" data-triage="nudge-open" title="A message for you to send yourself">Draft a nudge</button>
+      <button type="button" class="sm" data-triage="done" title="Handled. Hidden until the condition clears and comes back.">Done</button>
+      <details class="act-menu">
+        <summary class="btn-ghost sm">Take action ▾</summary>
+        <div class="act-pop">
+          ${compact && fix ? item("fix-toggle", "Fix it here") : ""}
+          ${item("nudge-open", "Draft a nudge", "A message for you to send yourself")}
+          ${item("waiting-open", "Waiting on…")}
+          <span class="menu-sep">Snooze</span>
+          ${item("snooze", "1 working day", "", ' data-days="1"')}
+          ${item("snooze", "3 working days", "", ' data-days="3"')}
+          ${item("snooze", "1 week", "", ' data-days="5"')}
+          <span class="menu-sep"></span>
+          ${item("dismiss-open", "Not a problem…")}
+        </div>
+      </details>
+      ${flag.advisable ? `<button type="button" class="ghost sm advise" data-flag="${esc(flag.id)}">${esc(state.advisorButtonText)}</button>` : ""}
     </div>
     <div class="triage-panel hidden"></div>`;
 }
 
-function flagCard(flag) {
+/**
+ * A flag: what is wrong and why, then where to go and what to do. The first external link
+ * (the ClickUp ticket, the Intelligems test) is the primary quicklink. The × hides the
+ * flag for the rest of the calendar day; it is back tomorrow if the condition still holds.
+ * `compact` is the Next steps card: no rule line, quick fix folded, `also` on the badges.
+ */
+function flagCard(flag, { compact = false, also = 0 } = {}) {
   const ctx = flagContext(flag);
   const t = triageOf(flag);
+  const primary = ctx.links.findIndex((l) => l.external);
   const links = ctx.links
-    .map((l) =>
+    .map((l, i) =>
       l.external
-        ? `<a href="${esc(l.href)}" target="_blank" rel="noreferrer">${esc(l.label)} ↗</a>`
-        : `<a href="${esc(l.href)}">${esc(l.label)}</a>`,
+        ? `<a class="ql${i === primary ? " primary" : ""}" href="${esc(l.href)}" target="_blank" rel="noreferrer">${esc(l.label)} ↗</a>`
+        : `<a class="ql" href="${esc(l.href)}">${esc(l.label)}</a>`,
     )
     .join("");
+  const fix = t ? "" : quickFix(flag);
+  const badges = `${also ? `<span class="chip">+${esc(also)} more on this ticket</span>` : ""}${ageBadges(flag)}`;
   return `
-      <div class="flag sev-${esc(flag.severity)}"${t ? " data-triaged" : ""} data-flag="${esc(flag.id)}" data-key="${esc(keyOf(flag))}" data-layer="${esc(flag.layer)}">
-        <div class="row">
-          <div>
-            <p class="msg">${esc(flag.message)}</p>
-            <p class="meta">${esc(layerLabel(flag.layer))} · ${esc(flag.rule)}${ctx.owners.length ? ` · ${esc(ctx.owners.join(", "))}` : ""}</p>
-            <p class="flag-badges">${ageBadges(flag)}</p>
-            ${links ? `<p class="flag-links">${links}</p>` : ""}
-          </div>
-          ${flag.advisable && !t ? `<button class="ghost advise" data-flag="${esc(flag.id)}">${esc(state.advisorButtonText)}</button>` : ""}
-        </div>
-        ${t ? triageBanner(flag, t) : `${quickFix(flag)}${triageActions()}`}
+      <div class="flag sev-${esc(flag.severity)}${compact ? " ns-compact" : ""}"${t ? " data-triaged" : ""} data-flag="${esc(flag.id)}" data-key="${esc(keyOf(flag))}" data-layer="${esc(flag.layer)}">
+        ${t ? "" : `<button type="button" class="flag-x" data-triage="hide-today" title="Hide for today. Back tomorrow if it still holds." aria-label="Hide for today">×</button>`}
+        <p class="msg">${esc(flag.message)}</p>
+        <p class="meta">${esc(layerLabel(flag.layer))} · ${esc(flag.rule)}${ctx.owners.length ? ` · ${esc(ctx.owners.join(", "))}` : ""}</p>
+        ${badges || links ? `<div class="flag-foot">${links ? `<span class="quicklinks">${links}</span>` : ""}<span class="flag-badges">${badges}</span></div>` : ""}
+        ${t ? triageBanner(flag, t) : `${fix}${triageActions(flag, { compact, fix: Boolean(fix) })}`}
         <div class="advice hidden"></div>
       </div>`;
 }
@@ -729,8 +743,8 @@ function flagContext(flag) {
       // project owner after, so filtering by them still finds it.
       owners = [...new Set([...(task?.assignees ?? []), ...(task?.taskOwners ?? [])].map((u) => u.username).filter(Boolean))];
       url = subject.url ?? flag.url ?? task?.url ?? null;
+      // ClickUp only: a Sprint link was the same on every ticket.
       if (url) links.push({ label: "ClickUp", href: url, external: true });
-      links.push({ label: "Sprint", href: "#sprint" });
       break;
     }
     case "test": {
@@ -1519,22 +1533,18 @@ function chosenPerson(card) {
   return (window.prompt("Who is it waiting on?") ?? "").trim();
 }
 
-document.addEventListener("change", (event) => {
-  const card = event.target.closest(".flag[data-key]");
-  if (!card) return;
-  if (event.target.dataset.triage === "snooze" && event.target.value) {
-    saveTriage(card, { status: "snoozed", workingDays: Number(event.target.value) });
-  }
-});
-
 document.addEventListener("click", async (event) => {
   const el = event.target.closest("[data-triage]");
   if (!el || el.tagName === "SELECT") return;
   const card = el.closest(".flag[data-key]");
   if (!card) return;
   const action = el.dataset.triage;
+  el.closest("details.act-menu")?.removeAttribute("open");
 
   if (action === "done") return saveTriage(card, { status: "done" });
+  if (action === "hide-today") return saveTriage(card, { status: "snoozed", calendarDays: 1, note: "hidden for today" });
+  if (action === "snooze") return saveTriage(card, { status: "snoozed", workingDays: Number(el.dataset.days) });
+  if (action === "fix-toggle") return card.classList.toggle("open");
   if (action === "clear") return saveTriage(card, { status: null });
   if (action === "waiting-open") return openPanel(card, "waiting");
   if (action === "dismiss-open") return openPanel(card, "dismiss");
@@ -2167,13 +2177,7 @@ function renderNextSteps() {
           }
         }
         if (!list.length) return "";
-        const card = ({ flag, also }) =>
-          flagCard(flag)
-            .replace('<div class="flag ', '<div class="flag ns-compact ')
-            .replace(
-              '<p class="flag-badges">',
-              `<p class="flag-badges"><button type="button" class="ghost sm ns-toggle" aria-expanded="false">Act ▾</button>${also ? `<span class="chip">+${also} more on this ticket</span>` : ""}`,
-            );
+        const card = ({ flag, also }) => flagCard(flag, { compact: true, also });
         const head = `<span class="ns-label">${esc(a.label)}</span> <span class="ns-n">${esc(list.length)}</span> <span class="meta">${esc(a.sub)}</span>`;
         if (!a.show) {
           return `<details class="ns-group ns-folded"><summary>${head}</summary>${list.map(card).join("")}</details>`;
@@ -2191,13 +2195,10 @@ function renderNextSteps() {
   $("next-steps-count").textContent = shown ? `${shown} open` : "nothing open";
 }
 
-// A next step shows what and why; its buttons open on Act, or a click on the message.
+// One action menu open at a time; a click anywhere else closes it.
 document.addEventListener("click", (event) => {
-  const hit = event.target.closest(".ns-compact .ns-toggle, .ns-compact .msg");
-  if (!hit) return;
-  const card = hit.closest(".ns-compact");
-  const open = card.classList.toggle("open");
-  card.querySelector(".ns-toggle")?.setAttribute("aria-expanded", String(open));
+  const inside = event.target.closest("details.act-menu");
+  for (const menu of document.querySelectorAll("details.act-menu[open]")) if (menu !== inside) menu.removeAttribute("open");
 });
 
 $("layer2")?.addEventListener("change", (event) => {

@@ -44,7 +44,7 @@ test("a flag's severity is namespaced, so it cannot collide with a global rule",
       assert.ok(!bare.test(emitter), `flag class "${emitter}" stamps a bare severity`);
     }
   }
-  assert.match(app, /class="flag sev-\$\{esc\(flag\.severity\)\}"/);
+  assert.match(app, /class="flag sev-\$\{esc\(flag\.severity\)\}/);
 });
 
 test("no bare stylesheet rule matches a value the data can take", () => {

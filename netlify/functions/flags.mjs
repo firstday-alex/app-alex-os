@@ -1,7 +1,7 @@
 // Triage on a flag: done, snoozed, waiting on someone, or not a problem.
 //
 //   GET  /flags   { today, entries }   every flag's age and triage as it stands
-//   POST /flags   { key, layer, status, workingDays?, waitingOn?, note? }
+//   POST /flags   { key, layer, status, workingDays?, calendarDays?, waitingOn?, note? }
 //                 status null clears the triage (undo)
 //
 // Writes only to this system's own storage. Nothing here touches ClickUp, Intelligems or
@@ -34,6 +34,7 @@ export default async (req) => {
       const entry = await ledger.setTriage(String(body.key ?? ""), {
         status: body.status ?? null,
         workingDays: body.workingDays,
+        calendarDays: body.calendarDays,
         waitingOn: body.waitingOn,
         note: body.note,
       }, {
