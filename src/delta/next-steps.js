@@ -85,10 +85,11 @@ export function nextStepFlags({ tasks = [], statusLedger = null, leadership = nu
   const subject = (t, suffix) => ({ type: "task", id: `${t.id}:${suffix}`, label: t.name, url: t.url });
   const owners = (t) => t.taskOwners ?? [];
   const doers = (t) => (t.assignees?.length ? t.assignees : owners(t));
-  // Who to reach about a ticket: its owner, unless that is Alex, then whoever is on it.
+  // Who to reach about a sprint ticket: whoever is assigned, doing the work now, rather
+  // than the project owner. The owner only when nobody else is on it.
   const contact = (t) => {
-    const o = owners(t).filter((u) => !isMe(u));
-    return o.length ? o : doers(t).filter((u) => !isMe(u));
+    const a = (t.assignees ?? []).filter((u) => !isMe(u));
+    return a.length ? a : owners(t).filter((u) => !isMe(u));
   };
 
   for (const t of open) {

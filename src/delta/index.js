@@ -12,6 +12,7 @@ import { intelligemsDelta } from "./intelligems-delta.js";
 import { leadershipChecks } from "./leadership-checks.js";
 import { crossLayerCheck } from "./crosslayer.js";
 import { nextStepFlags } from "./next-steps.js";
+import { markParked } from "./parked.js";
 
 export { clickupDelta, intelligemsDelta, leadershipChecks, crossLayerCheck };
 
@@ -364,6 +365,7 @@ export function computeFlags({ snapshots, baselines, config, settings = null, st
 
   /* ---- Layer 2 ---- */
   let cuDelta = null;
+  let parkedIds = new Set();
   if (snapshots.clickup) {
     cuDelta = clickupDelta(baselines.clickup?.snapshot ?? null, snapshots.clickup, {
       config,
@@ -371,6 +373,8 @@ export function computeFlags({ snapshots, baselines, config, settings = null, st
       comments: snapshots.clickup.comments,
       statusLedger,
     });
+    // Before any rule reads them, so the tickets carry the label wherever they are shown.
+    parkedIds = markParked(cuDelta.tasks, config);
     flags.push(...clickupFlags(cuDelta, { config, dateKey, fieldMap: snapshots.clickup.fieldMap }));
 
     // Sat too long where it is. Separate from the `stalled` signal, which asks whether
@@ -505,7 +509,9 @@ export function computeFlags({ snapshots, baselines, config, settings = null, st
     };
   }
 
-  const sorted = sortFlags(flags);
+  // A parked ticket is not chased: none of its own flags go out.
+  const kept = flags.filter((f) => !(f.subject?.type === "task" && parkedIds.has(String(f.subject.id).split(":")[0])));
+  const sorted = sortFlags(kept);
   logFlags(sorted, logger);
 
   return {

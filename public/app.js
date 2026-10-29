@@ -724,8 +724,9 @@ function flagContext(flag) {
     case "task": {
       const task = idx.tasks.get(id);
       itemLabel ??= task?.name;
-      const owned = task?.taskOwners?.length ? task.taskOwners : task?.assignees ?? [];
-      owners = owned.map((u) => u.username).filter(Boolean);
+      // Whoever is assigned first, so a nudge goes to the person doing the work; the
+      // project owner after, so filtering by them still finds it.
+      owners = [...new Set([...(task?.assignees ?? []), ...(task?.taskOwners ?? [])].map((u) => u.username).filter(Boolean))];
       url = subject.url ?? flag.url ?? task?.url ?? null;
       if (url) links.push({ label: "ClickUp", href: url, external: true });
       links.push({ label: "Sprint", href: "#sprint" });
@@ -1430,7 +1431,52 @@ function matchPerson(name) {
  */
 function nudgeText(flag) {
   const { url } = flagContext(flag);
+  const subject = subjectOf(flag);
+  const task = subject.type === "task" ? state.flagCtx?.tasks.get(baseId(subject.id)) : null;
+  if (task) return ticketNudge(task, url);
   return `Quick check on this: ${flag.message}${url ? ` ${url}` : ""}\nWhat's the next step, and when do you expect it to move?`;
+}
+
+/**
+ * A ticket's nudge, reasoned from where it is and when it is due rather than from the
+ * flag's wording: the due date is the commitment, and the status says what is left.
+ */
+function ticketNudge(task, url) {
+  const stage = stageOf(task);
+  const status = String(task.status ?? "").toLowerCase();
+  const DAY = 86_400_000;
+  const midnight = (ms) => new Date(new Date(ms).toDateString()).getTime();
+  const daysToDue = task.dueDate ? Math.round((midnight(task.dueDate) - midnight(Date.now())) / DAY) : null;
+  const dueOn = task.dueDate ? new Date(task.dueDate).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : null;
+  const inStatus = task.statusAge?.days != null ? ` (${task.statusAge.exact ? "" : "at least "}${plural(task.statusAge.days, "day", "days")} so far)` : "";
+
+  const where = {
+    start: `it hasn't been started yet`,
+    work: `it's ${status || "in progress"}${inStatus}`,
+    review: `it's in ${status || "review"}${inStatus}`,
+    deploy: `it's ready for deploy${inStatus}`,
+    blocked: `it's blocked${inStatus}`,
+  }[stage.id];
+
+  const when =
+    daysToDue == null
+      ? "and there's no due date on it"
+      : daysToDue < 0
+        ? `and it was due ${dueOn} (${plural(-daysToDue, "day", "days")} ago)`
+        : daysToDue === 0
+          ? "and it's due today"
+          : `and it's due ${dueOn} (${daysToDue === 1 ? "tomorrow" : `in ${daysToDue} days`})`;
+
+  const late = daysToDue != null && daysToDue < 0;
+  const ask = {
+    start: late ? "When can you start it, and what's a realistic new date?" : daysToDue == null ? "When are you planning to start it, and can you add a due date?" : `When are you starting it, so it still lands by ${dueOn}?`,
+    work: late ? "What's left, and what's the new date?" : daysToDue == null ? "What's left, and when do you expect it done? Can you add a due date?" : `What's left, and are you still on track for ${daysToDue === 0 ? "today" : dueOn}?`,
+    review: late ? "What's left in review, and what's the new date?" : "What's left in review, and who's it waiting on?",
+    deploy: "What's holding the deploy, and when can it go out?",
+    blocked: "What's it blocked on, and can I help unblock it?",
+  }[stage.id];
+
+  return `Quick check on "${task.name}"${url ? ` ${url}` : ""}: ${where}, ${when}.\n${ask}`;
 }
 
 function openPanel(card, kind) {
@@ -1757,6 +1803,8 @@ function stageOf(task) {
 
 /** What a ticket is waiting on, and why we think so. */
 function waitingOn(task) {
+  // Marked on the ticket as fine where it is ("[Waiting for Test Slot]"): not chased.
+  if (task.parked) return { text: `Parked: ${task.parked}`, why: "marked on the ticket", tone: "" };
   const marked = (state.report?.flags ?? []).find(
     (f) => viewOf(f) === "waiting" && baseId(f.subject?.id) === String(task.id) && triageOf(f)?.waitingOn,
   );

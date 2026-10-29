@@ -79,5 +79,12 @@
     "url": "https://rghlagmhkmsejhzkkggo.supabase.co",
     "team": "Web",
     "_comment": "Layer 1's rocks and tactics are read from the marketing standup's Supabase project, for this team, this quarter. READ ONLY: the app only ever sends GET requests there (src/collectors/supabase-rocks.js, enforced by test/supabase-rocks.test.js). The key is SUPABASE_SERVICE_KEY, a Netlify secret. What only this app knows (ClickUp owner, Big Swing link, experiment and report links) is kept in its own storage, keyed by the Supabase id. Remove this block to go back to the dashboard's own rocks store."
+  },
+  "parked": {
+    "markers": [
+      "waiting for test slot",
+      "on track"
+    ],
+    "_comment": "A ticket whose title has one of these in [brackets] or (parentheses), any case, or a ClickUp tag with the same words, is parked: no ticket flags or nudges, labelled Parked on the sprint, and the marker is left out of the update text. Alex, 2026-10-29."
   }
 }

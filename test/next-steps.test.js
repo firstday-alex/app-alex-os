@@ -155,3 +155,16 @@ test("nobody assigned is a fix", () => {
   assert.deepEqual(rules(flags), ["nextstep.no_assignee"]);
   assert.equal(flags[0].severity, "info");
 });
+
+test("a sprint ticket's nudge goes to whoever is assigned, not the project owner", () => {
+  const t = ticket("d", { status: "to do", bucket: "notStarted", assignees: [BLAKE], taskOwners: [ROBSON], dueDate: now + DAY });
+  const [flag] = run([t]).filter((f) => f.rule === "nextstep.due_not_started");
+  assert.equal(flag.values.who, "Blake");
+  assert.match(flag.message, /^Nudge Blake:/);
+});
+
+test("with nobody assigned, the nudge falls back to the project owner", () => {
+  const t = ticket("e", { status: "to do", bucket: "notStarted", assignees: [], taskOwners: [ROBSON], dueDate: now + DAY });
+  const [flag] = run([t]).filter((f) => f.rule === "nextstep.due_not_started");
+  assert.equal(flag.values.who, "Robson");
+});

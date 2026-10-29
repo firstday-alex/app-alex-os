@@ -190,6 +190,8 @@ export function normalizeTask(task, { fieldMap, statusMap, logger }) {
     leadershipPriority,
     bigSwing,
     priority: task.priority?.priority ?? null,
+    // Read for parked tickets (src/delta/parked.js). Empty where the space has tags off.
+    tags: (task.tags ?? []).map((t) => t.name).filter(Boolean),
     dueDate: task.due_date ? Number(task.due_date) : null,
     dateUpdated: task.date_updated ? Number(task.date_updated) : null,
     dateClosed: task.date_closed ? Number(task.date_closed) : null,

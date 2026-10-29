@@ -74,7 +74,8 @@ export function cleanName(name) {
 export function updateItem(task, handleFor) {
   const holders = task.assignees?.length ? task.assignees : task.taskOwners ?? [];
   const who = holders.map((u) => `@${handleFor(u)}`).join(" + ") || "@unassigned";
-  const name = cleanName(task.name);
+  // A parked ticket's marker, "[Waiting for Test Slot]", is a note to the dashboard, not part of the title.
+  const name = cleanName(task.plainName ?? task.name);
   if (isDone(task)) return `✅ ${who} – ${name} – done ${shortDate(doneDate(task))}`;
   const status = STATUS_LABEL[statusKey(task)] ?? task.status ?? "";
   return `${who} – ${status} – ${name} – last update: ${shortDate(lastActivity(task))}`;
