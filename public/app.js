@@ -1641,10 +1641,19 @@ function stalenessLabel(task) {
   return `<span class="age ${tone}" title="${esc(title)}">${esc(qualifier)}${esc(age.days)}d</span>`;
 }
 
-/** One backlog ticket as a list line: Ready chip, link, who it belongs to. */
+/**
+ * Who a backlog ticket is queued for: its primary assignee, the first one listed. Other
+ * assignees are collaborators, and the Task Owner is who follows up on the initiative or
+ * answers the assignee's questions, so neither counts as having the work queued.
+ */
+function primaryAssignee(task) {
+  return toPeople(task.assignees).slice(0, 1);
+}
+
+/** One backlog ticket as a list line: Ready chip, link, its primary assignee. */
 function backlogLine(t) {
-  const who = accountable(t).map((p) => p.name).join(", ");
-  return `<li>${t.ready ? '<span class="chip good">Ready</span> ' : ""}${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)} <span class="meta">${esc(who || "nobody on it")}</span></li>`;
+  const who = primaryAssignee(t).map((p) => p.name).join(", ");
+  return `<li>${t.ready ? '<span class="chip good">Ready</span> ' : ""}${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)} <span class="meta">${esc(who || "nobody assigned")}</span></li>`;
 }
 
 /* ---------------------------------- backlog ----------------------------------
@@ -1709,8 +1718,8 @@ function coverageHtml(open) {
     .sort((a, b) => QUEUED_PRIORITIES.indexOf(a.priority) - QUEUED_PRIORITIES.indexOf(b.priority));
   const line = (t, { showRock = true, showWho = true } = {}) => {
     const rock = rockForTask(t);
-    const who = accountable(t).map((p) => p.name).join(", ");
-    const bits = [showRock ? rock?.title ?? t.bigSwing?.label ?? "no Big Swing" : null, showWho ? who || "nobody on it" : null].filter(Boolean);
+    const who = primaryAssignee(t).map((p) => p.name).join(", ");
+    const bits = [showRock ? rock?.title ?? t.bigSwing?.label ?? "no Big Swing" : null, showWho ? who || "nobody assigned" : null].filter(Boolean);
     return `<li><span class="chip${t.priority === "urgent" ? " bad" : " warn"}">${esc(t.priority)}</span> ${
       t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)
     }${bits.length ? ` <span class="meta">${esc(bits.join(" · "))}</span>` : ""}</li>`;
@@ -1722,7 +1731,7 @@ function coverageHtml(open) {
     (state.people ?? []).filter((p) => p.clickupUserId && p.countsTowardCapacity !== false).map((p) => [String(p.clickupUserId), { name: p.name, tasks: [] }]),
   );
   for (const t of queued) {
-    for (const p of accountable(t)) {
+    for (const p of primaryAssignee(t)) {
       if (!people.has(p.id)) people.set(p.id, { name: p.name, tasks: [] });
       people.get(p.id).tasks.push(t);
     }
@@ -4258,7 +4267,7 @@ function personData(person) {
   });
   const backlogInfo = d.backlog;
   const queued = (backlogInfo?.available ? backlogInfo.items : [])
-    .filter((t) => t.bucket !== "done" && accountable(t).some((u) => u.id === id || isPerson(u.name, person)))
+    .filter((t) => t.bucket !== "done" && primaryAssignee(t).some((u) => u.id === id || isPerson(u.name, person)))
     .sort((a, b) => Number(b.ready) - Number(a.ready));
   return { tasks, open, doneThisWeek, rocks, cross, openFlags, waiting, tests, queued };
 }
