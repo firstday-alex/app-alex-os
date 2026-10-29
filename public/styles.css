@@ -219,6 +219,13 @@ main { max-width: 940px; margin: 0 auto; padding: 22px 18px 80px; }
 .sig.done     { background: var(--code); color: var(--muted); }
 
 @media (max-width: 640px) { #drawer { width: 82vw; } }
+/* Wide screens: the drawer stays open beside the page, with the page's contents in it. */
+@media (min-width: 1280px) {
+  #shell { padding-left: 250px; }
+  #drawer { transform: none; transition: none; }
+  #menu-toggle, #scrim { display: none !important; }
+}
+.toc-link.current { color: var(--green); font-weight: 600; background: var(--code); }
 
 /* rock links + readout */
 .form-head { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--green); margin: 16px 0 4px; }

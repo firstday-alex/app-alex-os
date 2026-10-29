@@ -4420,7 +4420,41 @@ function buildToc() {
     })
     .join("");
   nav.after(list);
+  markTocCurrent();
 }
+
+/* On a wide screen the drawer stays open beside the page, so its contents follow the page:
+   rebuilt when the page redraws, and the section you are reading is highlighted. */
+const drawerPinned = matchMedia("(min-width: 1280px)");
+let tocRebuild = null;
+new MutationObserver(() => {
+  if (!drawerPinned.matches) return;
+  clearTimeout(tocRebuild);
+  tocRebuild = setTimeout(buildToc, 150);
+}).observe(document.querySelector("main"), { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "open"] });
+drawerPinned.addEventListener("change", () => {
+  closeDrawer();
+  if (drawerPinned.matches) buildToc();
+});
+
+function markTocCurrent() {
+  let current = -1;
+  tocTargets.forEach((el, i) => {
+    if (el.isConnected && el.getBoundingClientRect().top < 90) current = i;
+  });
+  for (const link of document.querySelectorAll("#drawer-toc .toc-link")) {
+    link.classList.toggle("current", Number(link.dataset.toc) === current);
+  }
+}
+let tocScroll = false;
+addEventListener("scroll", () => {
+  if (tocScroll || !drawerPinned.matches) return;
+  tocScroll = true;
+  requestAnimationFrame(() => {
+    tocScroll = false;
+    markTocCurrent();
+  });
+}, { passive: true });
 
 $("drawer").addEventListener("click", (event) => {
   const link = event.target.closest("[data-toc]");
@@ -4443,7 +4477,8 @@ function openDrawer() {
 }
 function closeDrawer() {
   $("drawer").classList.remove("open");
-  $("drawer").setAttribute("aria-hidden", "true");
+  // Pinned open on a wide screen, so still there for a screen reader.
+  $("drawer").setAttribute("aria-hidden", String(!drawerPinned.matches));
   $("menu-toggle").setAttribute("aria-expanded", "false");
   $("scrim").hidden = true;
 }
