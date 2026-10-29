@@ -168,3 +168,11 @@ test("with nobody assigned, the nudge falls back to the project owner", () => {
   const [flag] = run([t]).filter((f) => f.rule === "nextstep.due_not_started");
   assert.equal(flag.values.who, "Robson");
 });
+
+test("not started on Wednesday is raised for the assignee, not the Task Owner", () => {
+  const t = ticket("a", { status: "to do", bucket: "notStarted", assignees: [BLAKE], taskOwners: [ROBSON] });
+  const wed = nextStepFlags({ tasks: [t], config, dateKey: "2026-10-28", nowIso: WEDNESDAY }).filter((f) => f.rule === "nextstep.commitment_at_risk");
+  assert.equal(wed.length, 1);
+  assert.equal(wed[0].subject.label, "Blake Tucker");
+  assert.match(wed[0].message, /Blake has 1 ticket not started/);
+});

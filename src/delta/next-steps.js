@@ -222,7 +222,7 @@ export function nextStepFlags({ tasks = [], statusLedger = null, leadership = nu
 
   // Wednesday or later and still not started: keep it this sprint, or move it out.
   if (today.weekday >= 3 && today.weekday <= 5) {
-    for (const p of byPerson(open.filter((t) => TODO.has(statusOf(t))), owners)) {
+    for (const p of byPerson(open.filter((t) => TODO.has(statusOf(t))), contact)) {
       add({
         rule: "nextstep.commitment_at_risk",
         severity: "attention",
@@ -238,7 +238,7 @@ export function nextStepFlags({ tasks = [], statusLedger = null, leadership = nu
     const e = statusLedger?.entries?.[String(t.id)];
     return e?.firstObserved != null && e.firstObserved < sprintStart;
   });
-  for (const p of byPerson(carried, owners)) {
+  for (const p of byPerson(carried, contact)) {
     add({
       rule: "nextstep.carried_over",
       severity: "attention",
