@@ -36,9 +36,22 @@ reports the delta. The **dashboard** reads the same storage and can re-pull on d
 | The **Strategic Advisor**, when Alex clicks the button on a flagged item | **one Anthropic call** | Judgement is the product. |
 | The **Learning Skill**, when Alex replies with feedback in Slack | **one Anthropic call** | Same. |
 | **Ideation**, when Alex presses the button on the Ideation tab | **one Anthropic call** over the whole sprint | Same. |
+| **Alex's Impact**, each working morning at 9 Central (and on "Reorganize now") | plain-code harvest, then **one Anthropic call** (effort medium) to regroup the themes | Grouping work into outcomes is judgement. What gets recorded is not: the harvest is code, and code enforces that no item is ever dropped. |
 
-**Expected token spend on a normal day: zero.** Tokens are spent only when Alex asks a
-question or gives feedback.
+**Expected token spend on a normal day: one regrouping call for Alex's Impact.** Every
+other token is spent only when Alex asks a question or gives feedback. The readout itself
+still spends none.
+
+### Alex's Impact
+
+An append-only record of what Alex and the team shipped, grouped into themes and
+sub-themes that get regrouped as it grows. `src/impact/ledger.js` harvests from the latest
+report: done tickets (ClickUp), tests launched and concluded (Intelligems), shipped rocks,
+and one item per day of commits to this repo (needs `GITHUB_TOKEN`). Every item links to
+the work. `src/agents/impact.js` runs the daily pass; `skills/impact-curator/SKILL.md` is
+the brief. Items are never deleted: anything a regrouping leaves out goes back under its
+old theme or into "Not yet sorted". Each day's themes are kept at
+`impact/history/<date>.json`.
 
 The rule of thumb, for anyone extending this: if you can write the logic as an `if`
 statement, it is deterministic. If the answer depends on business context that lives in a

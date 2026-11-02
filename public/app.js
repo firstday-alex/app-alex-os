@@ -4260,6 +4260,167 @@ document.addEventListener("click", async (event) => {
   renderIdeation();
 });
 
+/* ---------------------------------- impact ----------------------------------
+   Alex's Impact: the append-only record of what Alex and the team shipped, in themes.
+   The server harvests and regroups it each working morning; this draws it and can start
+   a pass on demand. */
+
+const IMPACT_KIND = { ticket: "Ticket", test: "Test", rock: "Rock", build: "MOS build" };
+const impact = { ledger: null, status: null, loaded: false, polling: null, error: null, query: "" };
+
+async function loadImpact() {
+  const res = await fetch(`${FN}/impact`).then((r) => r.json()).catch(() => null);
+  impact.loaded = true;
+  if (res) {
+    impact.ledger = res.ledger;
+    impact.status = res.status;
+  }
+  renderImpact();
+  if (impact.status?.running) pollImpact();
+}
+
+function pollImpact() {
+  if (impact.polling) return;
+  impact.polling = setInterval(async () => {
+    const res = await fetch(`${FN}/impact`).then((r) => r.json()).catch(() => null);
+    if (!res) return;
+    impact.ledger = res.ledger;
+    impact.status = res.status;
+    if (!res.status?.running) {
+      clearInterval(impact.polling);
+      impact.polling = null;
+    }
+    renderImpact();
+  }, 5000);
+}
+
+/** Every item id under a theme, at any depth. */
+function impactIds(theme) {
+  return [...(theme.itemIds ?? []), ...(theme.themes ?? []).flatMap(impactIds)];
+}
+
+function impactItem(item) {
+  const date = item.date ? new Date(item.date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "";
+  const who = (item.who ?? []).map((n) => String(n).split(/\s+/)[0]).join(", ");
+  const facts = item.facts ?? {};
+  const bits = [
+    IMPACT_KIND[item.kind] ?? item.kind,
+    item.kind === "test" ? (item.status === "concluded" ? "concluded" : "running") : null,
+    facts.verdict && item.kind === "test" ? `verdict ${facts.verdict}` : null,
+    facts.estMonthlyRevenueImpact != null ? `est. $${Number(facts.estMonthlyRevenueImpact).toLocaleString()}/mo (Intelligems)` : null,
+    who || null,
+    date || null,
+  ].filter(Boolean);
+  const name = item.url
+    ? `<a href="${esc(item.url)}"${item.url.startsWith("#") ? "" : ` target="_blank" rel="noreferrer"`}>${esc(item.title)}</a>`
+    : esc(item.title);
+  const changes = item.kind === "build" && facts.changes?.length
+    ? `<details class="im-changes"><summary class="meta">What changed</summary><ul>${facts.changes.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></details>`
+    : "";
+  return `<li class="im-item"><span class="im-name">${name}</span> <span class="meta">${esc(bits.join(" · "))}</span>${changes}</li>`;
+}
+
+function impactMatches(item, q) {
+  if (!q) return true;
+  return [item.title, item.bigSwing, item.rock, ...(item.who ?? [])].some((v) => String(v ?? "").toLowerCase().includes(q));
+}
+
+function impactList(ids, items, q) {
+  const rows = ids
+    .map((id) => items[id])
+    .filter((it) => it && impactMatches(it, q))
+    .sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
+  return rows.length ? `<ul class="im-items">${rows.map(impactItem).join("")}</ul>` : "";
+}
+
+function impactTheme(theme, items, q, depth) {
+  const ids = impactIds(theme);
+  const shown = ids.filter((id) => items[id] && impactMatches(items[id], q));
+  if (!shown.length) return "";
+  const H = depth ? "h4" : "h3";
+  const newest = Math.max(0, ...ids.map((id) => Date.parse(items[id]?.firstSeen ?? 0) || 0));
+  const fresh = Date.now() - newest < 3 * 86_400_000;
+  return `<details class="im-theme im-depth-${depth}" id="impact-${esc(theme.id)}"${depth === 0 || q ? " open" : ""}>
+    <summary><${H}>${esc(theme.title)}</${H}><span class="meta">${esc(plural(ids.length, "item", "items"))}${fresh ? " · new this week" : ""}</span></summary>
+    ${theme.summary ? `<p class="im-summary">${esc(theme.summary)}</p>` : ""}
+    ${(theme.themes ?? []).map((t) => impactTheme(t, items, q, depth + 1)).join("")}
+    ${impactList(theme.itemIds ?? [], items, q)}
+  </details>`;
+}
+
+function renderImpact() {
+  const root = $("impact");
+  if (!root) return;
+  if (!impact.loaded) {
+    root.innerHTML = `<p class="sub">Loading…</p>`;
+    return;
+  }
+  const { ledger, status } = impact;
+  const running = Boolean(status?.running);
+  const items = ledger?.items ?? {};
+  const themes = ledger?.themes ?? [];
+  const all = Object.values(items);
+  const count = (k) => all.filter((i) => i.kind === k).length;
+  const lastRun = ledger?.runs?.[0];
+  const q = impact.query.trim().toLowerCase();
+
+  root.innerHTML = `
+    <div class="bar up-bar">
+      <button type="button" id="impact-run"${running ? " disabled" : ""}>${running ? "Working…" : ledger ? "Reorganize now" : "Build it now"}</button>
+      <input id="impact-filter" placeholder="Filter by title, person, rock or Big Swing" value="${esc(impact.query)}">
+      <span class="meta">${
+        running
+          ? `Started ${esc(new Date(status.startedAt).toLocaleTimeString())}. Harvesting, then one call to Claude to regroup; usually a minute or two.`
+          : ledger
+            ? `Updated ${esc(new Date(ledger.updatedAt).toLocaleString())}${ledger.reorganizedAt ? `; last regrouped ${esc(new Date(ledger.reorganizedAt).toLocaleDateString())}` : ""}.`
+            : "Not built yet. It builds itself each working morning at 9, or press the button."
+      }</span>
+    </div>
+    ${status?.state === "failed" && !running ? `<div class="missing">The last pass failed. ${esc(status.error ?? "")}</div>` : ""}
+    ${lastRun?.error ? `<p class="meta">Last pass: ${esc(lastRun.error)}</p>` : ""}
+    ${impact.error ? `<div class="missing">${esc(impact.error)}</div>` : ""}
+    ${
+      all.length
+        ? `<p class="meta">${esc(plural(all.length, "item", "items"))} in ${esc(plural(themes.length, "theme", "themes"))}: ${esc(
+            [["ticket", "ticket", "tickets"], ["test", "test", "tests"], ["rock", "rock shipped", "rocks shipped"], ["build", "MOS build day", "MOS build days"]]
+              .filter(([k]) => count(k))
+              .map(([k, one, many]) => plural(count(k), one, many))
+              .join(", "),
+          )}. Recorded since ${esc(new Date(ledger.createdAt).toLocaleDateString())}.</p>
+      ${ledger.changeNote ? `<p class="im-note"><strong>Latest change.</strong> ${esc(ledger.changeNote)}</p>` : ""}
+      ${themes.map((t) => impactTheme(t, items, q, 0)).join("") || `<p class="sub">Nothing matches.</p>`}`
+        : ledger
+          ? `<p class="sub">Nothing recorded yet: the latest readout holds no done tickets, tests or shipped rocks.</p>`
+          : ""
+    }`;
+}
+
+document.addEventListener("input", (event) => {
+  if (event.target.id !== "impact-filter") return;
+  impact.query = event.target.value;
+  const pos = event.target.selectionStart;
+  renderImpact();
+  const input = $("impact-filter");
+  input.focus();
+  input.setSelectionRange(pos, pos);
+});
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("#impact-run");
+  if (!button) return;
+  button.disabled = true;
+  impact.error = null;
+  const res = await fetch(`${FN}/impact`, { method: "POST" }).catch((err) => ({ ok: false, json: async () => ({ reason: err.message }) }));
+  const body = await res.json().catch(() => ({}));
+  if (res.ok || res.status === 409) {
+    impact.status = { state: "running", startedAt: body.startedAt ?? body.status?.startedAt ?? new Date().toISOString(), running: true };
+    pollImpact();
+  } else {
+    impact.error = `Could not start the pass. ${body.reason ?? body.error ?? ""}`;
+  }
+  renderImpact();
+});
+
 $("import-apply").addEventListener("click", applyImport);
 $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import-modal") closeImport(); });
 
@@ -4267,7 +4428,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 
 // Sprint, Rocks and 1:1 are the tabs. The rest live in the menu and name themselves in
 // the top bar when open.
-const TAB_VIEWS = new Set(["sprint", "backlog", "rocks", "people", "update", "upsu", "wins", "standup", "ideation"]);
+const TAB_VIEWS = new Set(["sprint", "backlog", "rocks", "people", "update", "upsu", "wins", "standup", "ideation", "impact"]);
 const VIEW_TITLES = { readout: "Daily readout", tests: "Tests", setup: "Setup" };
 
 /* --------------------------------- 1:1 prep ---------------------------------
@@ -4636,6 +4797,7 @@ function showView(name) {
   if (name === "setup" && !state.settings) loadSettings();
   if (name === "people") renderPeople();
   if (name === "ideation" && !ideation.loaded) loadIdeation();
+  if (name === "impact" && !impact.loaded) loadImpact();
   if (name === "standup" && !standup.data && !standup.loading) loadStandup();
   if (name === "upsu") {
     if (!standup.data && !standup.loading) loadStandup();

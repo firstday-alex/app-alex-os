@@ -86,5 +86,9 @@
       "on track"
     ],
     "_comment": "A ticket whose title has one of these in [brackets] or (parentheses), any case, or a ClickUp tag with the same words, is parked: no ticket flags or nudges, labelled Parked on the sprint, and the marker is left out of the update text. Alex, 2026-10-29."
+  },
+  "impact": {
+    "hourCentral": 9,
+    "_comment": "Alex's Impact: the daily pass runs at this Central hour on working days, after the 8 AM readout. One Anthropic call per working day (effort medium) regroups the record into themes; the harvest itself is plain code and nothing is ever deleted."
   }
 }

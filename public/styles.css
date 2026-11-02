@@ -742,3 +742,19 @@ ul.plain { margin: 0; padding-left: 18px; }
 .sb-link-swings ul { margin: 6px 0 0; }
 .sb-link-swings li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 0; }
 .sb-link-swings select { width: auto; max-width: 300px; }
+
+/* ---------------------------------- impact ---------------------------------- */
+#impact-filter { flex: 1 1 220px; min-width: 0; }
+.im-note { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 8px 12px; }
+.im-theme { border-top: 1px solid var(--line); padding: 8px 0; }
+.im-theme > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; cursor: pointer; list-style: none; }
+.im-theme > summary::-webkit-details-marker { display: none; }
+.im-theme > summary::before { content: "▸"; color: var(--muted, #888); }
+.im-theme[open] > summary::before { content: "▾"; }
+.im-theme > summary h3, .im-theme > summary h4 { margin: 0; }
+.im-depth-1 { margin-left: 18px; border-top-style: dashed; }
+.im-summary { margin: 6px 0 4px; }
+.im-items { margin: 4px 0 0; padding-left: 20px; }
+.im-item { margin: 4px 0; overflow-wrap: anywhere; }
+.im-name a { font-weight: 600; }
+.im-changes ul { margin: 2px 0 6px; padding-left: 18px; }

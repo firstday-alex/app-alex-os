@@ -1,8 +1,9 @@
 // The only place an Anthropic call is made.
 //
-// Expected token spend on a normal day is zero. This module runs when Alex clicks the
-// button on a flagged item, when Alex replies to a readout with feedback, and when Alex
-// presses the button on the Ideation tab. Nothing else invokes it.
+// Expected token spend on a normal day is one call: the Alex's Impact regrouping each
+// working morning. Beyond that, this module runs when Alex clicks the button on a flagged
+// item, replies to a readout with feedback, presses the button on the Ideation tab, or
+// presses "Reorganize now" on the Impact tab. The readout never invokes it.
 
 import Anthropic from "@anthropic-ai/sdk";
 import fs from "node:fs";
