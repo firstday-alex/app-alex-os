@@ -258,20 +258,49 @@ export function placeTree(proposed, ledger, previous = ledger.themes ?? []) {
 }
 
 /**
+ * For tickets with no rock or Big Swing, a theme from the words in the title. First match
+ * wins, so the order matters. Only used until the daily regrouping runs; it keeps the tab
+ * readable rather than one long "Not yet sorted" pile.
+ */
+export const KEYWORD_THEMES = [
+  ["How the team runs", /\b(okr|okrs|interview|hiring|big swings|ideation|claude|reporting|site audit|workflow)\b/i],
+  ["The quiz", /\bquiz\b/i],
+  ["The 90-day subscription funnel", /\b90[ -]?d(ay)?\b|subscri|selling plan|\bstay\b/i],
+  ["Cart, checkout and gifts with purchase", /\b(cart|minicart|checkout|gwp|gwps|gift|gifts|package protection)\b/i],
+  ["Bundles and upsells", /bundle|upsell|aftersell|post[- ]purchase|\baov\b|kit builder|upgrade/i],
+  ["Landing pages", /\blps?\b|landing page|listicle|\/teens|hero/i],
+  ["Product pages", /\bpdps?\b|buy ?box|product (section|module|information|footer)|carousel|vanity title|benefit/i],
+  ["Homepage and navigation", /homepage|\bhp\d*\b|\bnav\b|navigation|menu|subnav|announcement bar/i],
+  ["New products on the site", /hydration|\brtp\b|ready to pour|flavou?rs?|variants?|gumm(y|ies)|\bskus?\b|\b\d+ct\b/i],
+  ["Offers, pricing and A/B tests", /\b(a\/?b|tests?|offers?|discounts?|threshold|welcome|pricing|price|coupon|free shipping|sale)\b/i],
+  ["Site health: bugs and tech debt", /\bbugs?\b|\bfix(es)?\b|tech debt|clean[- ]?up|glitch|breakpoint|consent|pixel|ga4|tag\b/i],
+];
+
+export function keywordTheme(title) {
+  return KEYWORD_THEMES.find(([, re]) => re.test(String(title ?? "")))?.[0] ?? null;
+}
+
+/**
  * The plain-code placement, for days without a reorganization: new items go under their
- * rock (leadership priority), then Big Swing; tests, rocks and builds under their own kind.
+ * rock (leadership priority), then Big Swing; tests, rocks and builds under their own kind;
+ * unlabelled tickets by the words in their title. Anything sitting in "Not yet sorted" gets
+ * another try, since that pile is a placeholder, not a choice.
  */
 export function placeDeterministic(ledger, ids) {
   const tree = structuredClone(ledger.themes ?? []);
+  const unsorted = tree.find((t) => t.title === UNSORTED);
+  const retry = unsorted ? placedIds([unsorted]) : [];
+  if (unsorted) tree.splice(tree.indexOf(unsorted), 1);
   const placed = new Set(placedIds(tree));
-  const KIND_THEME = { test: "Experiments", rock: "Rocks shipped", build: "Management operating system" };
-  for (const id of ids) {
+  const KIND_THEME = { test: "Experiments", rock: "Rocks shipped", build: "How the team runs" };
+  for (const id of [...retry, ...ids]) {
     if (placed.has(id)) continue;
     const item = ledger.items[id];
     if (!item) continue;
-    const topTitle = KIND_THEME[item.kind] ?? item.rock ?? item.bigSwing ?? UNSORTED;
+    const topTitle = KIND_THEME[item.kind] ?? item.rock ?? item.bigSwing ?? keywordTheme(item.title) ?? UNSORTED;
     const top = findOrMake(tree, topTitle);
-    const target = item.kind === "ticket" && item.rock && item.bigSwing ? findOrMake((top.themes ??= []), item.bigSwing) : top;
+    const nest = item.kind === "ticket" && item.rock && item.bigSwing && item.bigSwing !== item.rock;
+    const target = nest ? findOrMake((top.themes ??= []), item.bigSwing) : top;
     target.itemIds.push(id);
     placed.add(id);
   }

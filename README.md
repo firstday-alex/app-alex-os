@@ -50,8 +50,11 @@ report: done tickets (ClickUp), tests launched and concluded (Intelligems), ship
 and one item per day of commits to this repo (needs `GITHUB_TOKEN`). Every item links to
 the work. `src/agents/impact.js` runs the daily pass; `skills/impact-curator/SKILL.md` is
 the brief. Items are never deleted: anything a regrouping leaves out goes back under its
-old theme or into "Not yet sorted". Each day's themes are kept at
-`impact/history/<date>.json`.
+old theme or into "Not yet sorted". The model sees items under short aliases (`n1`,
+`n2`, ...) so writing every id back fits in one answer. Until a regrouping succeeds, new
+items are placed by rock and Big Swing, then by keywords in the title (`KEYWORD_THEMES`).
+Each day's themes are kept at `impact/history/<date>.json`. On the tab every theme starts
+collapsed; biggest first, "Not yet sorted" last.
 
 The rule of thumb, for anyone extending this: if you can write the logic as an `if`
 statement, it is deterministic. If the answer depends on business context that lives in a

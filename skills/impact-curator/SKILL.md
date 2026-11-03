@@ -24,20 +24,36 @@ is a worse tree. Do not invent ids.
 
 ## How to group
 
-- A theme is an **outcome for the business**, not a ticket type: "Bundles and upsells
-  lift order value", "Checkout reliability", "Faster test cadence", "How the team runs".
-  Prefer the language of the rocks when a theme ladders up to one.
-- Two levels at most: a theme, and sub-themes under it. Split a theme into sub-themes
-  once it holds roughly eight or more items that fall into clear groups. Do not split
-  for the sake of it; a theme of four items needs no sub-themes.
-- **Change slowly.** The current themes are the starting point. Keep their titles unless
-  a better grouping is clearly earned by new items. Merge two themes when they are really
-  one; move an item when it plainly belongs elsewhere. Alex should recognise the tab from
-  one day to the next.
-- Place every new item. "Not yet sorted" should be empty after your pass.
-- Team work counts as Alex's organizational impact. Group by outcome, not by person.
-- A test belongs with the work it was testing. A Management OS build item belongs under a
-  theme about how the team is run.
+Alex reads this tab top-down to answer "what has your org delivered?". It should read
+like a short table of contents, not a ticket dump.
+
+- **Six to ten themes.** A theme is an **outcome or area of the business**, not a ticket
+  type or a ClickUp field: "Cart, checkout and gifts with purchase", "Bundles and upsells
+  lift order value", "The 90-day subscription funnel", "Landing pages for paid traffic",
+  "Product page conversion", "The quiz", "Homepage and navigation", "New products on the
+  site", "Site health: bugs and tech debt", "How the team runs". Use these as a starting
+  vocabulary, not a fixed list.
+- **Never use a raw field label as a title.** `rock` and `bigSwing` are hints about where
+  an item belongs, not themes. Titles like "BAU", "CVR", "ncAOV", "Other", "AB Testing",
+  "Experiments" or "Not yet sorted" say nothing to a reader; replace them with what the
+  work did. Most items carry neither field: group those by what the title says.
+- **Sub-themes are required once a theme holds more than about eight items.** Split it
+  into sub-themes of roughly three to twelve items each, by the piece of the store or the
+  initiative ("Gift with purchase in cart and checkout", "Cart rebuild and progress
+  bar"). A theme of eight or fewer needs no sub-themes. Two levels at most. When a theme
+  has sub-themes, put every one of its items in a sub-theme; leave its own `itemIds` empty.
+- **Group by what the work is about, not by kind or by person.** A test sits with the
+  work it was testing (a buy-box test under product pages, an upsell-popup test under
+  upsells), not in an "Experiments" bucket. Near-duplicate tickets ("Update product
+  footers" twice) sit together. Team work counts as Alex's organizational impact.
+- A Management OS build item, OKR updates, hiring and planning go under a theme about how
+  the team runs.
+- **Change slowly once the tree is good.** When the current themes are already outcome
+  themes, keep their titles, place new items, and merge or split only when clearly earned.
+  Alex should recognise the tab from one day to the next. But when the current themes are
+  raw field labels or "Not yet sorted" holds many items, the tree was never organized:
+  build it fresh from the items and ignore the old titles.
+- Place every item. "Not yet sorted" must be empty after your pass.
 
 ## Summaries
 

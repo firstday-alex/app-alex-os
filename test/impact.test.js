@@ -2,8 +2,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { emptyLedger, harvest, itemsFromSources, placeDeterministic, placeTree, placedIds, UNSORTED } from "../src/impact/ledger.js";
-import { buildsFromCommits, massageImpact, reportKeysByDay } from "../src/agents/impact.js";
+import { emptyLedger, harvest, itemsFromSources, keywordTheme, placeDeterministic, placeTree, placedIds, UNSORTED } from "../src/impact/ledger.js";
+import { aliasIds, buildsFromCommits, mapTreeIds, massageImpact, reportKeysByDay } from "../src/agents/impact.js";
 import { Store } from "../src/lib/storage.js";
 
 const task = (id, over = {}) => ({ id, name: `Ticket ${id}`, status: "complete", url: `https://app.clickup.com/t/${id}`, assignees: [{ username: "Robson Lopes" }], dateClosed: 1_761_000_000_000, ...over });
@@ -132,4 +132,34 @@ test("the first pass backfills from every stored report, once, and concludes tes
   const second = await massageImpact({ store, config, env: {}, now: new Date("2026-11-03T15:00:00Z") });
   assert.equal(second.run.backfilled, undefined, "backfill runs once");
   assert.equal(Object.keys(second.ledger.items).length, 4);
+});
+
+test("unlabelled tickets fall back to a theme from their title, and the unsorted pile is retried", () => {
+  assert.equal(keywordTheme("Checkout GWP App Hardening"), "Cart, checkout and gifts with purchase");
+  assert.equal(keywordTheme("1-Step Quiz Bug: Not recommending 3 and 4 products"), "The quiz");
+  assert.equal(keywordTheme("Something with no signal"), null);
+
+  const ledger = emptyLedger();
+  harvest(ledger, itemsFromSources({ report: report([task("a", { name: "Upsell Modal Development" }), task("b", { name: "Mystery" })]) }));
+  ledger.themes = [{ id: "u", title: UNSORTED, summary: "", itemIds: ["ticket:a", "ticket:b"], themes: [] }];
+  const tree = placeDeterministic(ledger, []);
+  assert.deepEqual(tree.map((t) => t.title).sort(), ["Bundles and upsells", UNSORTED].sort());
+  assert.deepEqual(tree.find((t) => t.title === UNSORTED).itemIds, ["ticket:b"]);
+});
+
+test("a ticket whose Big Swing matches its rock is not nested under itself", () => {
+  const ledger = emptyLedger();
+  const added = harvest(ledger, itemsFromSources({ report: report([task("a", { leadershipPriority: { label: "BAU" }, bigSwing: { label: "BAU" } })]) }));
+  const tree = placeDeterministic(ledger, added);
+  assert.equal(tree[0].title, "BAU");
+  assert.deepEqual(tree[0].themes, []);
+  assert.deepEqual(tree[0].itemIds, ["ticket:a"]);
+});
+
+test("the model sees short aliases and the tree maps back to real ids; invented aliases vanish", () => {
+  const { toAlias, toId } = aliasIds(["ticket:868m3dxcf", "test:t1"]);
+  assert.equal(toAlias.get("ticket:868m3dxcf"), "n1");
+  const back = mapTreeIds([{ title: "A", itemIds: ["n2", "n99"], themes: [{ title: "B", itemIds: ["n1"] }] }], toId);
+  assert.deepEqual(back[0].itemIds, ["test:t1"]);
+  assert.deepEqual(back[0].themes[0].itemIds, ["ticket:868m3dxcf"]);
 });

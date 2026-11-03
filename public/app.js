@@ -4266,7 +4266,9 @@ document.addEventListener("click", async (event) => {
    a pass on demand. */
 
 const IMPACT_KIND = { ticket: "Ticket", test: "Test", rock: "Rock", build: "MOS build" };
-const impact = { ledger: null, status: null, loaded: false, polling: null, error: null, query: "" };
+// `open` holds the themes Alex has expanded. Everything starts collapsed, and the set
+// survives the re-render every poll does, so an open theme stays open.
+const impact = { ledger: null, status: null, loaded: false, polling: null, error: null, query: "", open: new Set() };
 
 async function loadImpact() {
   const res = await fetch(`${FN}/impact`).then((r) => r.json()).catch(() => null);
@@ -4297,6 +4299,18 @@ function pollImpact() {
 /** Every item id under a theme, at any depth. */
 function impactIds(theme) {
   return [...(theme.itemIds ?? []), ...(theme.themes ?? []).flatMap(impactIds)];
+}
+
+/** Biggest themes first; "Not yet sorted" always last. */
+function impactOrder(themes) {
+  return [...(themes ?? [])].sort(
+    (a, b) => (a.title === "Not yet sorted") - (b.title === "Not yet sorted") || impactIds(b).length - impactIds(a).length,
+  );
+}
+
+/** Every theme id, at any depth, for expand all. */
+function impactThemeIds(themes) {
+  return (themes ?? []).flatMap((t) => [t.id, ...impactThemeIds(t.themes)]);
 }
 
 function impactItem(item) {
@@ -4340,10 +4354,10 @@ function impactTheme(theme, items, q, depth) {
   const H = depth ? "h4" : "h3";
   const newest = Math.max(0, ...ids.map((id) => Date.parse(items[id]?.firstSeen ?? 0) || 0));
   const fresh = Date.now() - newest < 3 * 86_400_000;
-  return `<details class="im-theme im-depth-${depth}" id="impact-${esc(theme.id)}"${depth === 0 || q ? " open" : ""}>
+  return `<details class="im-theme im-depth-${depth}" id="impact-${esc(theme.id)}" data-theme="${esc(theme.id)}"${q || impact.open.has(theme.id) ? " open" : ""}>
     <summary><${H}>${esc(theme.title)}</${H}><span class="meta">${esc(plural(ids.length, "item", "items"))}${fresh ? " · new this week" : ""}</span></summary>
     ${theme.summary ? `<p class="im-summary">${esc(theme.summary)}</p>` : ""}
-    ${(theme.themes ?? []).map((t) => impactTheme(t, items, q, depth + 1)).join("")}
+    ${impactOrder(theme.themes).map((t) => impactTheme(t, items, q, depth + 1)).join("")}
     ${impactList(theme.itemIds ?? [], items, q)}
   </details>`;
 }
@@ -4367,6 +4381,7 @@ function renderImpact() {
   root.innerHTML = `
     <div class="bar up-bar">
       <button type="button" id="impact-run"${running ? " disabled" : ""}>${running ? "Working…" : ledger ? "Reorganize now" : "Build it now"}</button>
+      ${themes.length ? `<button type="button" id="impact-expand" class="ghost">${impact.open.size ? "Collapse all" : "Expand all"}</button>` : ""}
       <input id="impact-filter" placeholder="Filter by title, person, rock or Big Swing" value="${esc(impact.query)}">
       <span class="meta">${
         running
@@ -4388,12 +4403,37 @@ function renderImpact() {
               .join(", "),
           )}. Recorded since ${esc(new Date(ledger.createdAt).toLocaleDateString())}.</p>
       ${ledger.changeNote ? `<p class="im-note"><strong>Latest change.</strong> ${esc(ledger.changeNote)}</p>` : ""}
-      ${themes.map((t) => impactTheme(t, items, q, 0)).join("") || `<p class="sub">Nothing matches.</p>`}`
+      ${impactOrder(themes).map((t) => impactTheme(t, items, q, 0)).join("") || `<p class="sub">Nothing matches.</p>`}`
         : ledger
           ? `<p class="sub">Nothing recorded yet: the latest readout holds no done tickets, tests or shipped rocks.</p>`
           : ""
     }`;
 }
+
+// Remember what Alex opens or closes. While filtering every match is open, so the clicks
+// then are not remembered.
+document.addEventListener(
+  "toggle",
+  (event) => {
+    const el = event.target;
+    if (!el.matches?.(".im-theme") || impact.query.trim()) return;
+    const id = el.dataset.theme;
+    const before = impact.open.size;
+    if (el.open) impact.open.add(id);
+    else impact.open.delete(id);
+    if (Boolean(before) !== Boolean(impact.open.size)) {
+      const btn = $("impact-expand");
+      if (btn) btn.textContent = impact.open.size ? "Collapse all" : "Expand all";
+    }
+  },
+  true,
+);
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest("#impact-expand")) return;
+  impact.open = impact.open.size ? new Set() : new Set(impactThemeIds(impact.ledger?.themes));
+  renderImpact();
+});
 
 document.addEventListener("input", (event) => {
   if (event.target.id !== "impact-filter") return;

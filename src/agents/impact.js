@@ -206,11 +206,36 @@ export async function backfill({ ledger, store, config, logger }) {
   return added;
 }
 
+/**
+ * Item ids are long ("ticket:868m3dxcf") and the model has to write every one of them back.
+ * At a few hundred items that alone ran the regrouping past its length limit, so the model
+ * sees short aliases (n1, n2, ...) and the code maps them back. An alias the model invents
+ * maps to nothing and placeTree drops it, as with any unknown id.
+ */
+export function aliasIds(ids) {
+  const toAlias = new Map();
+  const toId = new Map();
+  ids.forEach((id, i) => {
+    toAlias.set(id, `n${i + 1}`);
+    toId.set(`n${i + 1}`, id);
+  });
+  return { toAlias, toId };
+}
+
+/** Renames every itemId in a tree, at any depth. Ids with no mapping become null. */
+export function mapTreeIds(themes = [], map) {
+  return (themes ?? []).map((t) => ({
+    ...t,
+    itemIds: t.itemIds ? t.itemIds.map((id) => map.get(String(id)) ?? null).filter(Boolean) : t.itemIds,
+    themes: t.themes ? mapTreeIds(t.themes, map) : t.themes,
+  }));
+}
+
 /** One call: the whole ledger and the current themes in, a regrouped tree out. */
 async function proposeThemes({ ledger, added, report, config, env, logger, today }) {
-  const items = Object.values(ledger.items)
-    .sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")))
-    .map(itemForModel);
+  const sorted = Object.values(ledger.items).sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
+  const { toAlias, toId } = aliasIds(sorted.map((i) => i.id));
+  const items = sorted.map((i) => ({ ...itemForModel(i), id: toAlias.get(i.id) }));
   const rocks = rocksForAdvice(report?.detail?.leadership?.queue ?? []).map(({ title, state, status, owner, kpi }) => ({ title, state, status, owner, kpi }));
   const standups = await fetchStandups({ config, token: env.SLACK_BOT_TOKEN, logger, days: 3 })
     .then((s) => s.days.map((d) => ({ date: d.dateKey, posts: d.posts.map(({ name, yesterday }) => ({ name, yesterday })) })))
@@ -222,13 +247,13 @@ async function proposeThemes({ ledger, added, report, config, env, logger, today
     env,
     logger,
     effort: "medium",
-    maxTokens: 24000,
+    maxTokens: 64000,
     outputFormat: betaJSONSchemaOutputFormat(IMPACT_SCHEMA, "impact"),
     messages: [
       {
         role: "user",
         content: [
-          `Today is ${today}. Regroup Alex's impact record. ${added.length} new item(s) today: ${added.join(", ") || "none"}.`,
+          `Today is ${today}. Regroup Alex's impact record. ${added.length} new item(s) today: ${added.map((id) => toAlias.get(id)).join(", ") || "none"}.`,
           "",
           "THE ROCKS (what leadership cares about this quarter)",
           JSON.stringify(rocks),
@@ -237,22 +262,24 @@ async function proposeThemes({ ledger, added, report, config, env, logger, today
           standups ? JSON.stringify(standups) : "Not available this run.",
           "",
           "THE CURRENT THEMES",
-          JSON.stringify(treeForModel(ledger.themes)),
+          JSON.stringify(mapTreeIds(treeForModel(ledger.themes), toAlias)),
           "",
           `EVERY ITEM (${items.length}), newest first`,
           JSON.stringify(items),
           "",
-          "Return the full tree. Every item id must appear exactly once.",
+          "Return the full tree. Every item id (n1, n2, ...) must appear exactly once.",
         ].join("\n"),
       },
     ],
   });
 
   if (result.refused) return { error: "The model declined to answer." };
-  if (result.response?.stop_reason === "max_tokens") return { error: "The regrouping ran past its length limit; yesterday's themes were kept." };
+  if (result.response?.stop_reason === "max_tokens") {
+    return { error: `The regrouping ran past its length limit (${result.response?.usage?.output_tokens ?? "?"} output tokens); yesterday's themes were kept.` };
+  }
   if (!result.parsed?.themes) return { error: "The regrouping did not come back in the expected shape; yesterday's themes were kept." };
   return {
-    themes: result.parsed.themes,
+    themes: mapTreeIds(result.parsed.themes, toId),
     changeNote: result.parsed.changeNote,
     model: result.response?.model ?? null,
     usage: { inputTokens: result.response?.usage?.input_tokens ?? null, outputTokens: result.response?.usage?.output_tokens ?? null },
