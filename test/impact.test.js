@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyLedger, harvest, itemsFromSources, placeDeterministic, placeTree, placedIds, UNSORTED } from "../src/impact/ledger.js";
-import { buildsFromCommits, massageImpact } from "../src/agents/impact.js";
+import { buildsFromCommits, massageImpact, reportKeysByDay } from "../src/agents/impact.js";
 import { Store } from "../src/lib/storage.js";
 
 const task = (id, over = {}) => ({ id, name: `Ticket ${id}`, status: "complete", url: `https://app.clickup.com/t/${id}`, assignees: [{ username: "Robson Lopes" }], dateClosed: 1_761_000_000_000, ...over });
@@ -101,4 +101,35 @@ test("without an Anthropic key the pass still harvests, places, and stores a dat
   assert.match(run.error, /ANTHROPIC_API_KEY/);
   assert.deepEqual(placedIds(ledger.themes), ["ticket:a"]);
   assert.ok(await store.backend.get("impact/history/2026-11-02.json"));
+});
+
+test("report keys: one per day, the last of the day, oldest first; pointers skipped", () => {
+  const keys = [
+    "reports/2026-10-02-refresh-run_b.json",
+    "reports/latest.json",
+    "reports/2026-10-01-official-run_a.json",
+    "reports/2026-10-02-official-run_a.json",
+    "reports/sent/2026-10-01.json",
+    "reports/latest-official.json",
+  ];
+  assert.deepEqual(reportKeysByDay(keys), ["reports/2026-10-01-official-run_a.json", "reports/2026-10-02-refresh-run_b.json"]);
+});
+
+test("the first pass backfills from every stored report, once, and concludes tests that ended", async () => {
+  const store = await Store.open({ mode: "memory", config: { system: {} } });
+  const config = { system: { timezone: "America/Chicago" }, people: {} };
+  await store.putReport({ dateKey: "2026-10-01", mode: "official", runId: "a", generatedAt: "2026-10-01T13:00:00Z", ...report([task("old")], [{ id: "t1", name: "Ended test" }]) });
+  await store.putReport({ dateKey: "2026-10-15", mode: "official", runId: "b", generatedAt: "2026-10-15T13:00:00Z", ...report([task("mid")]) });
+  await store.putReport({ dateKey: "2026-11-02", mode: "official", runId: "c", generatedAt: "2026-11-02T13:00:00Z", ...report([task("new")]) });
+
+  const first = await massageImpact({ store, config, env: {}, now: new Date("2026-11-02T15:00:00Z") });
+  assert.deepEqual(Object.keys(first.ledger.items).sort(), ["test:t1", "ticket:mid", "ticket:new", "ticket:old"]);
+  assert.equal(first.run.backfilled, 4);
+  assert.equal(first.ledger.items["ticket:old"].firstSeen, "2026-10-01T13:00:00.000Z");
+  assert.equal(first.ledger.items["test:t1"].status, "concluded");
+  assert.ok(first.ledger.backfilledAt);
+
+  const second = await massageImpact({ store, config, env: {}, now: new Date("2026-11-03T15:00:00Z") });
+  assert.equal(second.run.backfilled, undefined, "backfill runs once");
+  assert.equal(Object.keys(second.ledger.items).length, 4);
 });

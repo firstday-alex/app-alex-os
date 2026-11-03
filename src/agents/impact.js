@@ -122,9 +122,14 @@ export async function massageImpact({ store, config, env = process.env, logger, 
   const report = await store.getLatestReport();
   const builds = await fetchBuilds({ config, env, logger, fetchImpl, now });
 
+  // Once, on the first pass: walk every report already in storage, oldest first, so the
+  // record starts as far back as the readout does rather than from today.
+  const backfilled = ledger.backfilledAt ? [] : await backfill({ ledger, store, config, logger });
+  if (!ledger.backfilledAt) ledger.backfilledAt = now.toISOString();
+
   const incoming = itemsFromSources({ report, builds, config });
-  const added = harvest(ledger, incoming, { now, testsCollected: Boolean(report?.sections?.intelligems?.present) });
-  const run = { at: now.toISOString(), dateKey: today, added: added.length, reportRunId: report?.runId ?? null, reorganized: false, error: null };
+  const added = [...backfilled, ...harvest(ledger, incoming, { now, testsCollected: Boolean(report?.sections?.intelligems?.present) })];
+  const run = { at: now.toISOString(), dateKey: today, added: added.length, backfilled: backfilled.length || undefined, reportRunId: report?.runId ?? null, reorganized: false, error: null };
 
   // Place new items in plain code first, so the tab is complete even if the call fails.
   ledger.themes = placeDeterministic(ledger, added);
@@ -164,6 +169,41 @@ export async function massageImpact({ store, config, env = process.env, logger, 
   await store.backend.set(historyKey(today), { at: ledger.updatedAt, changeNote: ledger.changeNote, themes: ledger.themes });
   logger?.info?.("impact.stored", { items: total, added: added.length, reorganized: run.reorganized });
   return { ledger, run };
+}
+
+/**
+ * The stored reports, one per day (the last of the day), oldest first. Keys are
+ * reports/<YYYY-MM-DD>-<mode>-<runId>.json; latest pointers and the sent guard are skipped.
+ */
+export function reportKeysByDay(keys, prefix = "reports") {
+  const re = new RegExp(`^${prefix}/(\\d{4}-\\d{2}-\\d{2})-[^/]+\\.json$`);
+  const byDay = new Map();
+  for (const key of [...keys].sort()) {
+    const m = key.match(re);
+    if (m) byDay.set(m[1], key); // sorted, so the last write of a day wins
+  }
+  return [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, key]) => key);
+}
+
+/** Harvests every stored report into the ledger, oldest first. Returns the ids added. */
+export async function backfill({ ledger, store, config, logger }) {
+  const prefix = config.system?.storage?.reportPrefix ?? "reports";
+  let keys = [];
+  try {
+    keys = reportKeysByDay(await store.backend.keys(`${prefix}/`), prefix);
+  } catch (err) {
+    logger?.warn?.("impact.backfill_list_failed", { err: err.message });
+    return [];
+  }
+  const added = [];
+  for (const key of keys) {
+    const old = await store.backend.get(key).catch(() => null);
+    if (!old) continue;
+    const at = new Date(old.generatedAt ?? `${key.slice(prefix.length + 1, prefix.length + 11)}T13:00:00Z`);
+    added.push(...harvest(ledger, itemsFromSources({ report: old, config }), { now: at, testsCollected: Boolean(old.sections?.intelligems?.present) }));
+  }
+  logger?.info?.("impact.backfilled", { reports: keys.length, added: added.length });
+  return added;
 }
 
 /** One call: the whole ledger and the current themes in, a regrouped tree out. */
