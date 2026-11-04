@@ -64,3 +64,14 @@ test("posters with no name stay separate, labelled without their id", () => {
   assert.deepEqual(day.posts.map((p) => p.name).sort(), ["Unnamed poster 1", "Unnamed poster 2"]);
   assert.ok(!JSON.stringify(day).includes("UA"));
 });
+
+test("labels in code or bold count without a colon; a bare 'Today I' sentence does not", () => {
+  const post = "`Yesterday` Hero Personalization Work + Puzzle POC\n`Today` hero personalization + qr code seal + gtm \n`Blockers`  ready to pour LPs";
+  assert.deepEqual(parseStandup(post), {
+    yesterday: ["Hero Personalization Work + Puzzle POC"],
+    today: ["hero personalization + qr code seal + gtm"],
+    blockers: ["ready to pour LPs"],
+  });
+  assert.deepEqual(parseStandup("*Today* ship it").today, ["ship it"]);
+  assert.equal(parseStandup("Today I finally fixed the cart"), null);
+});

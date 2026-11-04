@@ -19,7 +19,9 @@ import { httpJson } from "../lib/http.js";
 import { zonedParts } from "../lib/time.js";
 
 const SLACK_API = "https://slack.com/api";
-const SECTION = /^[\s`*_>•-]*(yesterday|today|blockers?)[\s`*_]*:[\s`*_]*(.*)$/i;
+// "Yesterday:" with a colon, or a label set off in code or bold with no colon ("`Yesterday`
+// shipped X"). A bare "Today I..." with neither is ordinary prose, not a section.
+const SECTION = /^[\s>•-]*(?:[`*_]+\s*(yesterday|today|blockers?)\s*[`*_]+\s*:?|[`*_]*(yesterday|today|blockers?)[\s`*_]*:)[\s`*_]*(.*)$/i;
 const NOTHING = /^(none|nope|no|n\/?a|nothing|-+|—|no blockers?\.?|none\.?)$/i;
 
 export const SETUP_HINTS = {
@@ -64,10 +66,11 @@ export function parseStandup(rawText) {
   for (const line of text.split("\n")) {
     const m = line.match(SECTION);
     if (m) {
-      const key = m[1].toLowerCase().startsWith("blocker") ? "blockers" : m[1].toLowerCase();
+      const label = (m[1] ?? m[2]).toLowerCase();
+      const key = label.startsWith("blocker") ? "blockers" : label;
       current = key;
       found = true;
-      if (m[2]) sections[key].push(m[2]);
+      if (m[3]) sections[key].push(m[3]);
     } else if (current && line.trim()) {
       sections[current].push(line);
     }
