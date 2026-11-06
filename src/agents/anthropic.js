@@ -2,7 +2,7 @@
 //
 // Expected token spend on a normal day is one call: the Alex's Impact regrouping each
 // working morning. Beyond that, this module runs when Alex clicks the button on a flagged
-// item, replies to a readout with feedback, presses the button on the Ideation tab, or
+// item, replies to a readout with feedback, presses the button on the Ideation or Daily Speech tab, or
 // presses "Reorganize now" on the Impact tab. The readout never invokes it.
 
 import Anthropic from "@anthropic-ai/sdk";

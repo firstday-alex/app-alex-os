@@ -36,6 +36,7 @@
       <button class="tab" role="tab" data-view="standup">Stand-up</button>
       <button class="tab" role="tab" data-view="ideation">Ideation</button>
       <button class="tab" role="tab" data-view="impact">Alex's Impact</button>
+      <button class="tab" role="tab" data-view="speech">Daily Speech</button>
     </nav>
     <strong id="view-title" hidden></strong>
     <span class="grow"></span>
@@ -55,6 +56,7 @@
     <button class="nav" data-view="standup">Stand-up</button>
     <button class="nav" data-view="ideation">Ideation</button>
     <button class="nav" data-view="impact">Alex's Impact</button>
+    <button class="nav" data-view="speech">Daily Speech</button>
     <p class="drawer-label nav-label">More</p>
     <button class="nav" data-view="readout">Daily readout</button>
     <button class="nav" data-view="tests">Tests</button>
@@ -205,6 +207,13 @@
       <h2>Stand-up</h2>
       <p class="sub">What each person posted in #ecomm-team: yesterday, today and blockers. Read live from Slack each time this opens; nothing is stored.</p>
       <div id="standup"></div>
+    </section>
+
+    <!-- ------------------------------- daily speech ------------------------------ -->
+    <section class="view hidden" id="view-speech">
+      <h2>Daily Speech</h2>
+      <p class="sub">The day's storyline to give the team: one headline, the win, the stakes, today, and a line to close. Written from the latest readout, the last three days of stand-ups and what Alex's Impact recorded as shipped this week. Every figure is checked against that data and any it can't find is flagged before you say it. Runs only when you press the button, as one call to Claude.</p>
+      <div id="speech"></div>
     </section>
 
     <!-- ---------------------------------- ideation -------------------------------- -->

@@ -36,6 +36,7 @@ reports the delta. The **dashboard** reads the same storage and can re-pull on d
 | The **Strategic Advisor**, when Alex clicks the button on a flagged item | **one Anthropic call** | Judgement is the product. |
 | The **Learning Skill**, when Alex replies with feedback in Slack | **one Anthropic call** | Same. |
 | **Ideation**, when Alex presses the button on the Ideation tab | **one Anthropic call** over the whole sprint | Same. |
+| **Daily Speech**, when Alex presses the button on the Daily Speech tab | **one Anthropic call** (effort medium), then a plain-code check of every figure in it | The story is judgement. Whether its numbers are real is not: code flags any figure it cannot find in the data. |
 | **Alex's Impact**, each working morning at 9 Central (and on "Reorganize now") | plain-code harvest, then **one Anthropic call** (effort medium) to regroup the themes | Grouping work into outcomes is judgement. What gets recorded is not: the harvest is code, and code enforces that no item is ever dropped. |
 
 **Expected token spend on a normal day: one regrouping call for Alex's Impact.** Every
@@ -78,7 +79,7 @@ src/
   pipeline.js      collector -> delta -> render -> send
 netlify/functions/ the 8 AM trigger, the pipeline, the dashboard API, the Slack endpoints
 public/            the dashboard
-test/              117 tests, no network, no API keys needed
+test/              463 tests, no network, no API keys needed
 scripts/           run the pipeline locally, and a syntax check
 ```
 
@@ -92,7 +93,7 @@ testable, and it is why the tests need no network and no credentials.
 
 ```bash
 npm install
-npm test                    # 117 tests. no network, no keys.
+npm test                    # 463 tests. no network, no keys.
 npm run check               # parses every source and config file
 
 cp .env.example .env        # then fill in the tokens you have
@@ -245,6 +246,7 @@ Three tabs across the top. Sprint opens by default.
 | **Update + Stand-up** | The Update, with each person's latest #ecomm-team stand-up folded in. A stand-up line sits under a ticket when it clearly names one of that person's tickets (or a ticket nobody is on): shared words, a word on three or more tickets counting half, or an acronym of the name such as FBB; lines joined with " + " are matched piece by piece. A ticket named in stand-up is added even if ClickUp was not touched. Unmatched lines go under "Also from stand-up", then blockers. Built in `public/update-text.js`, no model. |
 | **Accomplishments** | Every sprint ticket in complete or done (this sprint) over the last 30 days (or 7), by the date it was done, in the same format, newest first. |
 | **Stand-up** | What each person posted in #ecomm-team (Yesterday, Today, Blockers), one day at a time with the last two weeks to flip through. Blockers are pulled to the top, and anyone who usually posts but has not yet is named. Read live from Slack (`conversations.history`, read only) each time the tab opens, since most people post after the 8 AM run; nothing is stored, and posters are matched to the roster by name, not Slack id. The bot must be a member of the channel. |
+| **Daily Speech** | The day's top-line storyline to give the team, ready to say or paste: a headline under 15 words, three beats (the win, the stakes, today) and a closing line. On a button press it reads the latest readout (rocks, store numbers, tests, sprint, week in review), the last three days of stand-ups and what Alex's Impact recorded as shipped in the last 7 days, and makes one Claude call (`skills/daily-speech/SKILL.md`). Every figure in the speech is then checked in code against that data, allowing for spoken rounding (12% matches 11.8), and any it cannot find is flagged above the speech with "Check before you say it". "What it rests on" lists each claim and its source. Stored at `speech/latest.json`, with a copy per day under `speech/history/`. |
 | **Ideation** | Every sprint ticket except complete: successful, unsuccessful or too early to call, the root cause of why with the evidence it rests on, and three other ways to approach it. On a button press it reads each ticket's description and comment thread from ClickUp (read only), the last week of stand-ups, the Intelligems tests and the rocks, and makes one Claude call (`skills/ideation/SKILL.md`). The answer is stored and shown until the next run. |
 
 The menu (☰) holds the rest:

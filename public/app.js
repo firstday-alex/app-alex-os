@@ -4260,6 +4260,117 @@ document.addEventListener("click", async (event) => {
   renderIdeation();
 });
 
+/* ------------------------------- daily speech -------------------------------
+   The day's storyline for the team: a headline, three beats and a close. Written by one
+   Claude call on the server, only when the button is pressed; every figure in it was
+   checked against the data, and any it could not find is listed above the speech. */
+
+const speech = { latest: null, status: null, loaded: false, polling: null, error: null };
+
+async function loadSpeech() {
+  const res = await fetch(`${FN}/speech`).then((r) => r.json()).catch(() => null);
+  speech.loaded = true;
+  if (res) {
+    speech.latest = res.latest;
+    speech.status = res.status;
+  }
+  renderSpeech();
+  if (speech.status?.running) pollSpeech();
+}
+
+function pollSpeech() {
+  if (speech.polling) return;
+  speech.polling = setInterval(async () => {
+    const res = await fetch(`${FN}/speech`).then((r) => r.json()).catch(() => null);
+    if (!res) return;
+    speech.latest = res.latest;
+    speech.status = res.status;
+    if (!res.status?.running) {
+      clearInterval(speech.polling);
+      speech.polling = null;
+    }
+    renderSpeech();
+  }, 4000);
+}
+
+function renderSpeech() {
+  const root = $("speech");
+  if (!root) return;
+  if (!speech.loaded) {
+    root.innerHTML = `<p class="sub">Loading…</p>`;
+    return;
+  }
+  const { latest, status } = speech;
+  const running = Boolean(status?.running);
+  const failed = status?.state === "failed" && !running;
+  const stale = latest?.dateKey && state.report?.dateKey && latest.dateKey !== state.report.dateKey;
+  const missed = latest ? [!latest.readStandups && "stand-ups", !latest.readImpact && "the Impact record", !latest.readStore && "store numbers"].filter(Boolean) : [];
+
+  root.innerHTML = `
+    <div class="bar up-bar">
+      <button type="button" id="speech-run"${running ? " disabled" : ""}>${running ? "Writing…" : latest ? "Write a new one" : "Write today's speech"}</button>
+      ${latest ? `<button type="button" class="ghost" id="speech-copy">Copy</button>` : ""}
+      <span class="meta" data-copy-note="speech">${
+        running
+          ? `Started ${esc(new Date(status.startedAt).toLocaleTimeString())}. Reading the readout, stand-ups and this week's wins, then one call to Claude; usually under a minute.`
+          : latest
+            ? `Written ${esc(new Date(latest.generatedAt).toLocaleString())}, from the readout pulled ${esc(latest.dateKey ?? "")}.`
+            : "Not written yet."
+      }</span>
+    </div>
+    ${failed ? `<div class="missing">The last run failed. ${esc(status.error ?? "")}</div>` : ""}
+    ${speech.error ? `<div class="missing">${esc(speech.error)}</div>` : ""}
+    ${stale ? `<p class="meta">This was written from the ${esc(latest.dateKey)} readout. Today's is ${esc(state.report.dateKey)}: write a new one.</p>` : ""}
+    ${
+      latest?.unverified?.length
+        ? `<div class="missing"><strong>Check before you say it.</strong> ${esc(plural(latest.unverified.length, "figure", "figures"))} in this speech could not be found in the data: ${esc(latest.unverified.join(", "))}. Cut or correct ${latest.unverified.length === 1 ? "it" : "them"}, or write a new one.</div>`
+        : ""
+    }
+    ${missed.length ? `<p class="meta">Not available when this was written: ${esc(missed.join(", "))}.</p>` : ""}
+    ${
+      latest
+        ? `<article class="ds-speech">
+      <p class="ds-headline">${esc(latest.headline)}</p>
+      ${latest.beats.map((b) => `<section class="ds-beat"><span class="ds-beat-label">${esc(b.label)}</span><p>${esc(b.text)}</p></section>`).join("")}
+      ${latest.close ? `<p class="ds-close">${esc(latest.close)}</p>` : ""}
+    </article>
+    ${
+      latest.facts?.length
+        ? `<details class="ds-facts"><summary>What it rests on (${esc(latest.facts.length)})</summary><ul>${latest.facts
+            .map((f) => `<li>${esc(f.claim)} <span class="meta">· ${esc(f.source)}</span></li>`)
+            .join("")}</ul></details>`
+        : ""
+    }`
+        : ""
+    }`;
+}
+
+document.addEventListener("click", async (event) => {
+  if (event.target.closest("#speech-copy")) {
+    const note = document.querySelector('[data-copy-note="speech"]');
+    try {
+      await navigator.clipboard.writeText(speech.latest?.text ?? "");
+      note.textContent = "Copied.";
+    } catch {
+      note.textContent = "The browser would not copy. Select the text and copy it by hand.";
+    }
+    return;
+  }
+  const button = event.target.closest("#speech-run");
+  if (!button) return;
+  button.disabled = true;
+  speech.error = null;
+  const res = await fetch(`${FN}/speech`, { method: "POST" }).catch((err) => ({ ok: false, json: async () => ({ reason: err.message }) }));
+  const body = await res.json().catch(() => ({}));
+  if (res.ok || res.status === 409) {
+    speech.status = { state: "running", startedAt: body.startedAt ?? body.status?.startedAt ?? new Date().toISOString(), running: true };
+    pollSpeech();
+  } else {
+    speech.error = `Could not start writing. ${body.reason ?? body.error ?? ""}`;
+  }
+  renderSpeech();
+});
+
 /* ---------------------------------- impact ----------------------------------
    Alex's Impact: the append-only record of what Alex and the team shipped, in themes.
    The server harvests and regroups it each working morning; this draws it and can start
@@ -4468,7 +4579,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 
 // Sprint, Rocks and 1:1 are the tabs. The rest live in the menu and name themselves in
 // the top bar when open.
-const TAB_VIEWS = new Set(["sprint", "backlog", "rocks", "people", "update", "upsu", "wins", "standup", "ideation", "impact"]);
+const TAB_VIEWS = new Set(["sprint", "backlog", "rocks", "people", "update", "upsu", "wins", "standup", "ideation", "impact", "speech"]);
 const VIEW_TITLES = { readout: "Daily readout", tests: "Tests", setup: "Setup" };
 
 /* --------------------------------- 1:1 prep ---------------------------------
@@ -4838,6 +4949,7 @@ function showView(name) {
   if (name === "people") renderPeople();
   if (name === "ideation" && !ideation.loaded) loadIdeation();
   if (name === "impact" && !impact.loaded) loadImpact();
+  if (name === "speech" && !speech.loaded) loadSpeech();
   if (name === "standup" && !standup.data && !standup.loading) loadStandup();
   if (name === "upsu") {
     if (!standup.data && !standup.loading) loadStandup();

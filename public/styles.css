@@ -694,6 +694,17 @@ ul.plain { margin: 0; padding-left: 18px; }
 .ix-ideas { margin: 6px 0 0; padding-left: 20px; }
 .ix-ideas li { margin: 4px 0; }
 
+/* ------------------------------- daily speech ------------------------------- */
+.ds-speech { border: 1px solid var(--line); border-left: 4px solid var(--green); border-radius: 4px; background: var(--panel); padding: 16px 18px; margin-top: 12px; max-width: 760px; }
+.ds-headline { font-size: 1.35rem; font-weight: 700; line-height: 1.3; margin: 0 0 12px; }
+.ds-beat { margin: 12px 0 0; }
+.ds-beat p { margin: 2px 0 0; font-size: 1.05rem; line-height: 1.5; }
+.ds-beat-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.ds-close { margin: 16px 0 0; font-size: 1.05rem; font-weight: 600; }
+.ds-facts { margin-top: 10px; max-width: 760px; }
+.ds-facts > summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+.ds-facts ul { margin: 6px 0 0; padding-left: 18px; font-size: 14px; }
+
 /* -------------------------------- next steps -------------------------------- */
 /* Compact cards: the message already names the ticket and the person. */
 .ns .flag { padding: 8px 12px; margin-bottom: 6px; }
