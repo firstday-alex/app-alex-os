@@ -4327,6 +4327,7 @@ function renderSpeech() {
         : ""
     }
     ${missed.length ? `<p class="meta">Not available when this was written: ${esc(missed.join(", "))}.</p>` : ""}
+    ${(latest?.xf?.notes ?? []).map((n) => `<div class="missing">${esc(n)}</div>`).join("")}
     ${
       latest
         ? `<article class="ds-speech">
@@ -4342,7 +4343,32 @@ function renderSpeech() {
         : ""
     }`
         : ""
-    }`;
+    }
+    ${latest ? xfSection(latest.xf) : ""}`;
+}
+
+/** The cross-functional list the speech was written from, each item linked to where it was said. */
+function xfSection(xf) {
+  if (!xf) return "";
+  const items = xf.items ?? [];
+  const since = xf.since ? new Date(xf.since).toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" }) : "the previous working day";
+  const where = xf.channelsRead?.length ? ` Slack channels read: ${xf.channelsRead.join(", ")}.` : "";
+  return `<section class="ds-xf">
+    <div class="sp-group-head"><h3>Cross-functional (XF)</h3><span class="meta">${esc(plural(items.length, "item", "items"))} since ${esc(since)}</span></div>
+    <p class="meta">What people outside the team said to you or the team: Slack @mentions and thread replies, and ClickUp comments on sprint tickets.${esc(where)}</p>
+    ${
+      items.length
+        ? `<ul class="ds-xf-list">${items
+            .map(
+              (i) => `<li>
+          <div><strong>${esc(i.from)}</strong> <span class="meta">${esc(i.how)} ${esc(i.to.map((n) => String(n).split(/\s+/)[0]).join(", "))} · ${esc(i.where)} · ${esc(new Date(i.at).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }))}</span>${i.url ? ` <a href="${esc(i.url)}" target="_blank" rel="noreferrer">Open</a>` : ""}</div>
+          <div class="ds-xf-text">${esc(i.text)}</div>
+        </li>`,
+            )
+            .join("")}</ul>`
+        : `<p class="meta">Nothing from outside the team in this window. To widen it, invite the bot to more channels in Slack (/invite @turnpups_mos_claude).</p>`
+    }
+  </section>`;
 }
 
 document.addEventListener("click", async (event) => {

@@ -1,9 +1,11 @@
 // Daily Speech. Agentic. On demand only: one Anthropic call when Alex presses the button
 // on the Daily Speech tab. Nothing else invokes it.
 //
-// Writes the day's top-line storyline Alex says out loud to the team: a headline, three
-// beats (the win, the stakes, today) and a closing line. The model sees what the latest
-// readout, the last few days of stand-ups and the Impact record hold, and nothing else.
+// Writes the day's top-line storyline Alex says out loud to the team: a headline, the
+// beats (the win, across the business, the stakes, today) and a closing line. The model
+// sees what the latest readout, the last few days of stand-ups, the Impact record and the
+// cross-functional (XF) list hold, and nothing else. XF is what people outside the team
+// said to Alex or the team since the previous working day (src/collectors/xf.js).
 //
 // The model's story is judgement. Whether its numbers are real is not: code checks every
 // figure in the speech against the context it was given and lists any it cannot find, so
@@ -14,6 +16,7 @@ import { ask, readSkill } from "./anthropic.js";
 import { rocksForAdvice } from "./strategic-advisor.js";
 import { sprintTickets, testForIdeation } from "./ideation.js";
 import { fetchStandups } from "../collectors/standup.js";
+import { fetchXf } from "../collectors/xf.js";
 import { LEDGER_KEY } from "../impact/ledger.js";
 
 export const SPEECH_KEY = "speech/latest.json";
@@ -31,11 +34,11 @@ const SPEECH_SCHEMA = {
     headline: { type: "string", description: "the one line to remember, under 15 words" },
     beats: {
       type: "array",
-      description: "exactly three, in order: the win, the stakes, today",
+      description: "in order: the win, across the business (only when the XF list has something worth saying), the stakes, today",
       items: {
         type: "object",
         properties: {
-          label: { type: "string", enum: ["The win", "The stakes", "Today"] },
+          label: { type: "string", enum: ["The win", "Across the business", "The stakes", "Today"] },
           text: { type: "string", description: "two to four spoken sentences" },
         },
         required: ["label", "text"],
@@ -61,7 +64,8 @@ const SPEECH_SCHEMA = {
   additionalProperties: false,
 };
 
-const BEAT_ORDER = ["The win", "The stakes", "Today"];
+const BEAT_ORDER = ["The win", "Across the business", "The stakes", "Today"];
+const REQUIRED_BEATS = ["The win", "The stakes", "Today"];
 const firstNames = (list) => [...new Set((list ?? []).map((u) => String(u?.username ?? u?.name ?? "").split(/\s+/)[0]).filter(Boolean))];
 const iso = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : null);
 
@@ -141,7 +145,7 @@ export function cleanSpeech(parsed) {
   const close = String(parsed?.close ?? "").trim();
   const byLabel = new Map((parsed?.beats ?? []).filter((b) => b?.text?.trim()).map((b) => [b.label, b.text.trim()]));
   const beats = BEAT_ORDER.filter((l) => byLabel.has(l)).map((label) => ({ label, text: byLabel.get(label) }));
-  if (!headline || beats.length < BEAT_ORDER.length) return null;
+  if (!headline || !REQUIRED_BEATS.every((l) => byLabel.has(l))) return null;
   const facts = (parsed?.facts ?? []).filter((f) => f?.claim && f?.source).map((f) => ({ claim: String(f.claim), source: String(f.source) }));
   return { headline, beats, close, facts };
 }
@@ -166,6 +170,10 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
       logger?.warn?.("speech.standups_unavailable", { err: err.message });
       return null;
     });
+  const xf = await fetchXf({ config, token: env.SLACK_BOT_TOKEN, logger, now, report }).catch((err) => {
+    logger?.warn?.("speech.xf_unavailable", { err: err.message });
+    return { since: null, channelsRead: [], items: [], notes: [`Cross-functional mentions could not be read. ${err.message}`] };
+  });
 
   const context = {
     rocks: rocksForAdvice(detail.leadership?.queue ?? []),
@@ -174,6 +182,7 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
     shippedThisWeek: recentlyShipped(ledger, now),
     weekInReview: detail.weekly?.lines ?? null,
     sprint: sprintTickets(detail.clickup?.tasks ?? []).map(ticketForSpeech),
+    xf: xf.items.map(({ url, ...item }) => item),
   };
   const contextText = JSON.stringify(context, null, 2) + JSON.stringify(standups ?? []);
 
@@ -202,6 +211,9 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
           "",
           `SHIPPED IN THE LAST ${SHIPPED_LOOKBACK_DAYS} DAYS (from Alex's Impact record)`,
           context.shippedThisWeek.length ? JSON.stringify(context.shippedThisWeek, null, 2) : "Nothing recorded.",
+          "",
+          `CROSS-FUNCTIONAL (XF): what people outside the team said to Alex or the team since ${xf.since ? xf.since.slice(0, 10) : "the previous working day"}, newest first`,
+          context.xf.length ? JSON.stringify(context.xf, null, 2) : "Nothing from outside the team in this window.",
           "",
           "THE WEEK IN REVIEW",
           context.weekInReview?.length ? context.weekInReview.join("\n") : "Not available.",
@@ -232,9 +244,10 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
     readStandups: Boolean(standups),
     readImpact: Boolean(ledger),
     readStore: Boolean(context.store),
+    xf: { since: xf.since, channelsRead: xf.channelsRead, items: xf.items, notes: xf.notes },
   };
   await store.backend.set(SPEECH_KEY, stored);
   if (stored.dateKey) await store.backend.set(speechHistoryKey(stored.dateKey), stored);
-  logger?.info?.("speech.written", { unverified: stored.unverified.length });
+  logger?.info?.("speech.written", { unverified: stored.unverified.length, xf: xf.items.length });
   return stored;
 }

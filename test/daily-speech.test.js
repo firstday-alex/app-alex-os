@@ -73,3 +73,11 @@ test("a sprint ticket is reduced to what, who and where it stands", () => {
   const t = ticketForSpeech({ name: "Fix cart", status: "qa", assignees: [{ username: "Blake Tucker" }], taskOwners: [{ username: "Robson Lopes" }], bigSwing: { label: "Checkout" }, dueDate: Date.UTC(2026, 10, 7) });
   assert.deepEqual(t, { name: "Fix cart", status: "qa", who: ["Blake"], bigSwing: "Checkout", signal: null, due: "2026-11-07", closed: null });
 });
+
+test("the XF beat is optional, and slots in after the win when present", () => {
+  const xf = { label: "Across the business", text: "In #marketing, Sam asked about the holiday offer." };
+  const s = cleanSpeech({ headline: "H", beats: [...beats, xf], close: "", facts: [] });
+  assert.deepEqual(s.beats.map((b) => b.label), ["The win", "Across the business", "The stakes", "Today"]);
+  assert.ok(cleanSpeech({ headline: "H", beats, close: "", facts: [] }), "a speech with nothing XF is still a speech");
+  assert.equal(cleanSpeech({ headline: "H", beats: [beats[0], xf, beats[2]], close: "", facts: [] }), null, "XF does not stand in for the stakes");
+});

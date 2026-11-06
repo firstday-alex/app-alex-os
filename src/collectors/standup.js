@@ -143,7 +143,7 @@ export function buildStandups(messages, { roster, timeZone, nameOf }) {
     .map(([dateKey, posts]) => ({ dateKey, posts: [...posts.values()].sort((a, b) => a.postedAt - b.postedAt) }));
 }
 
-async function slackGet(method, params, { token, config, logger, fetchImpl }) {
+export async function slackGet(method, params, { token, config, logger, fetchImpl }) {
   const http = config.system.http ?? {};
   const qs = new URLSearchParams(params).toString();
   const { body } = await httpJson(`${SLACK_API}/${method}?${qs}`, {

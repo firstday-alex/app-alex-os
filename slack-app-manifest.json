@@ -18,7 +18,10 @@
         "chat:write",
         "chat:write.public",
         "channels:history",
-        "groups:history"
+        "groups:history",
+        "channels:read",
+        "groups:read",
+        "users:read"
       ]
     }
   },

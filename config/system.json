@@ -57,6 +57,13 @@
       "channelId": "C09DZE9AVS7",
       "lookbackDays": 14,
       "_comment": "#ecomm-team, where the team posts Yesterday / Today / Blockers each morning. Read only, live when the Stand-up tab opens and when Ideation runs. The bot must be a member: it is a private channel. Who is expected to post is everyone on the roster who posted at least once in the lookback."
+    },
+    "xf": {
+      "channelIds": [],
+      "excludeChannelIds": [],
+      "teamGroupIds": [],
+      "maxThreads": 40,
+      "_comment": "Cross-functional mentions for the Daily Speech: messages since the start of the previous working day, from someone not on the roster, that @mention Alex or a teammate, @mention a team user group (teamGroupIds, Slack ids starting with S), or reply in a thread a teammate started. Read only. With channelIds empty it reads every channel the bot is a member of except the stand-up channel and excludeChannelIds, which needs the channels:read and groups:read scopes; invite the bot to a channel to include it. Names need users:read. Slack ids are used in memory only and never stored."
     }
   },
   "anthropic": {

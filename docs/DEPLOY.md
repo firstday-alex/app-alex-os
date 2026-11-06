@@ -163,6 +163,8 @@ manifest and rejects it if they do not answer. Do step 3 before this one.
 | `chat:write.public` | posting to a public channel the bot has not been invited to. Drop it if you always invite the bot. |
 | `channels:history` | **required** to receive `message.channels`. Subscribing to that event without this scope silently delivers nothing, which is a miserable thing to debug. |
 | `groups:history` | the same, for a private readout channel. Drop it if the channel is public. |
+| `channels:read`, `groups:read` | list the channels the bot is in, for the Daily Speech's cross-functional (XF) mentions. Without them, list channels under `system.slack.xf.channelIds`. |
+| `users:read` | names for stand-up posters and XF mentions, so teammates are recognized. Ids are used in memory only. |
 
 The manifest subscribes to both `message.channels` and `message.groups`. Delete whichever
 does not match your readout channel rather than carrying a scope you do not use.
