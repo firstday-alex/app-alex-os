@@ -4265,10 +4265,40 @@ document.addEventListener("click", async (event) => {
    Claude call on the server, only when the button is pressed; every figure in it was
    checked against the data, and any it could not find is listed above the speech. */
 
-const speech = { latest: null, status: null, loaded: false, polling: null, error: null };
+const speech = { latest: null, status: null, loaded: false, polling: null, error: null, notes: [], notesFrom: null, notesError: null, draft: "" };
+
+async function loadDayNotes() {
+  const res = await fetch(`${FN}/day-notes`).then((r) => r.json()).catch(() => null);
+  if (res?.notes) {
+    speech.notes = res.notes;
+    speech.notesFrom = res.from;
+  }
+}
+
+/** The notes box: what came in today, from other teams or anywhere. The next speech reads all of it. */
+function notesSection() {
+  const { notes, latest } = speech;
+  const newer = latest ? notes.filter((n) => n.at > latest.generatedAt).length : 0;
+  const from = speech.notesFrom ? new Date(`${speech.notesFrom}T12:00:00`).toLocaleDateString(undefined, { weekday: "long" }) : "the previous working day";
+  return `<section class="ds-notes">
+    <div class="sp-group-head"><h3>Notes from the day</h3><span class="meta">${esc(plural(notes.length, "note", "notes"))} since ${esc(from)}, all read by the next speech</span></div>
+    <textarea id="ds-note-text" rows="3" placeholder="Paste a Slack message, a meeting takeaway, an ask from another team…">${esc(speech.draft)}</textarea>
+    <div class="bar"><button type="button" id="ds-note-add">Add note</button>${speech.notesError ? `<span class="meta bad">${esc(speech.notesError)}</span>` : ""}${newer ? `<span class="meta">${esc(plural(newer, "note", "notes"))} added since the speech below was written. Write a new one to use ${newer === 1 ? "it" : "them"}.</span>` : ""}</div>
+    ${
+      notes.length
+        ? `<ul class="ds-note-list">${[...notes]
+            .reverse()
+            .map(
+              (n) => `<li><span class="meta">${esc(new Date(n.at).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }))}</span> <button type="button" class="ghost ds-note-del" data-id="${esc(n.id)}" data-date="${esc(n.dateKey)}" aria-label="Remove note">Remove</button><div class="ds-xf-text">${esc(n.text)}</div></li>`,
+            )
+            .join("")}</ul>`
+        : ""
+    }
+  </section>`;
+}
 
 async function loadSpeech() {
-  const res = await fetch(`${FN}/speech`).then((r) => r.json()).catch(() => null);
+  const [res] = await Promise.all([fetch(`${FN}/speech`).then((r) => r.json()).catch(() => null), loadDayNotes()]);
   speech.loaded = true;
   if (res) {
     speech.latest = res.latest;
@@ -4307,6 +4337,7 @@ function renderSpeech() {
   const missed = latest ? [!latest.readStandups && "stand-ups", !latest.readImpact && "the Impact record", !latest.readStore && "store numbers"].filter(Boolean) : [];
 
   root.innerHTML = `
+    ${notesSection()}
     <div class="bar up-bar">
       <button type="button" id="speech-run"${running ? " disabled" : ""}>${running ? "Writing…" : latest ? "Write a new one" : "Write today's speech"}</button>
       ${latest ? `<button type="button" class="ghost" id="speech-copy">Copy</button>` : ""}
@@ -4355,7 +4386,7 @@ function xfSection(xf) {
   const where = xf.channelsRead?.length ? ` Slack channels read: ${xf.channelsRead.join(", ")}.` : "";
   return `<section class="ds-xf">
     <div class="sp-group-head"><h3>Cross-functional (XF)</h3><span class="meta">${esc(plural(items.length, "item", "items"))} since ${esc(since)}</span></div>
-    <p class="meta">What people outside the team said to you or the team: Slack @mentions and thread replies, and ClickUp comments on sprint tickets.${esc(where)}</p>
+    <p class="meta">ClickUp comments on sprint tickets from people outside the team${xf.channelsRead?.length ? ", and Slack @mentions and thread replies" : ""}. Your notes above are read too.${esc(where)}</p>
     ${
       items.length
         ? `<ul class="ds-xf-list">${items
@@ -4366,12 +4397,35 @@ function xfSection(xf) {
         </li>`,
             )
             .join("")}</ul>`
-        : `<p class="meta">Nothing from outside the team in this window. To widen it, invite the bot to more channels in Slack (/invite @turnpups_mos_claude).</p>`
+        : `<p class="meta">No ClickUp comments from outside the team in this window.</p>`
     }
   </section>`;
 }
 
+document.addEventListener("input", (event) => {
+  if (event.target.id === "ds-note-text") speech.draft = event.target.value;
+});
+
 document.addEventListener("click", async (event) => {
+  if (event.target.closest("#ds-note-add")) {
+    const text = speech.draft.trim();
+    if (!text) return;
+    speech.notesError = null;
+    const res = await fetch(`${FN}/day-notes`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) }).catch(() => null);
+    const body = await res?.json().catch(() => ({}));
+    if (res?.ok) speech.draft = "";
+    else speech.notesError = `Not saved. ${body?.error ?? "Could not reach the server."}`;
+    await loadDayNotes();
+    renderSpeech();
+    return;
+  }
+  const del = event.target.closest(".ds-note-del");
+  if (del) {
+    await fetch(`${FN}/day-notes`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: del.dataset.id, dateKey: del.dataset.date }) }).catch(() => null);
+    await loadDayNotes();
+    renderSpeech();
+    return;
+  }
   if (event.target.closest("#speech-copy")) {
     const note = document.querySelector('[data-copy-note="speech"]');
     try {

@@ -132,7 +132,11 @@ export async function fetchXf({ config, token, logger, fetchImpl, now = new Date
 
   items.push(...xfFromClickUp(report?.detail?.clickup?.tasks ?? [], { roster, since }));
 
-  if (!token) notes.push(SETUP_HINTS.not_authed);
+  // Off unless system.slack.xf.enabled is true: reading Slack this way needs the bot in
+  // every channel worth reading. Alex's notes from the day cover it instead.
+  if (cfg.enabled !== true) {
+    // Nothing to say: off by choice is not a problem to flag.
+  } else if (!token) notes.push(SETUP_HINTS.not_authed);
   else {
     const ctx = { token, config, logger, fetchImpl };
     try {

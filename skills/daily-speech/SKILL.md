@@ -16,9 +16,14 @@ that leaves the quarter, and what matters today.
 You get the rocks (the quarter's goals and how each is rated), the store numbers, the
 Intelligems tests, what the team shipped in the last week (from Alex's Impact record),
 the sprint as it stands, the week in review, the stand-ups from the last few days, and
-the **cross-functional (XF)** list: what people outside the team said to Alex or the
-team since the previous working day, in Slack and in ClickUp comments, with who said it,
-to whom, and where.
+**Alex's notes from the day**, and the **cross-functional (XF)** list: ClickUp comments
+from people outside the team since the previous working day.
+
+The notes are what Alex typed or pasted since the previous working day: a Slack message
+from another team, a meeting takeaway, a hallway comment. They are usually the best XF
+material there is, because Alex picked them. Treat a note as true to what it says and no
+further: a pasted message is what that person wrote, a shorthand note is Alex's own
+summary. Don't expand shorthand into detail it doesn't contain.
 
 ## The shape
 
@@ -28,7 +33,8 @@ to whom, and where.
   1. **The win.** What got done that moves a rock, and who did it. Give credit by first
      name. Pick the one or two things that matter most, not a list.
   2. **Across the business.** The XF beat, and often the one the room leans in for: it
-     shows the team's work landing outside the team. Pick the one to three XF items that
+     shows the team's work landing outside the team. Draw on Alex's notes first, then the
+     XF list. Pick the one to three items that
      matter most: another team praising or using something we shipped, a request or ask
      aimed at us, a question we owe an answer, a dependency on another team, a heads-up
      that changes our plans. Say who, where, and what they need or said ("In
@@ -37,7 +43,8 @@ to whom, and where.
      only when the channel or the message itself says it. Tie it to our work or a rock where the item makes the link. Skip routine
      chatter, FYIs with nothing to act on, and anything personal, HR, compensation or
      customer-private. Leave this beat out entirely when the XF list is empty or has
-     nothing worth saying out loud. Never invent one.
+     nothing worth saying out loud, and there are no notes about other teams. Never
+     invent one. A note that isn't about another team can feed the other beats.
   3. **The stakes.** Where that leaves us: a rock's status, a test's result, a store
      number. The thing that makes the win matter, or the gap still open.
   4. **Today.** The one or two things that move the story forward today, and who has

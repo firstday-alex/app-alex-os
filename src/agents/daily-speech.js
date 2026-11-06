@@ -18,6 +18,7 @@ import { sprintTickets, testForIdeation } from "./ideation.js";
 import { fetchStandups } from "../collectors/standup.js";
 import { fetchXf } from "../collectors/xf.js";
 import { LEDGER_KEY } from "../impact/ledger.js";
+import { notesForSpeech } from "../store/day-notes.js";
 
 export const SPEECH_KEY = "speech/latest.json";
 export const SPEECH_STATUS_KEY = "speech/status.json";
@@ -170,6 +171,10 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
       logger?.warn?.("speech.standups_unavailable", { err: err.message });
       return null;
     });
+  const dayNotes = await notesForSpeech(store.backend, { now, config }).catch((err) => {
+    logger?.warn?.("speech.notes_unavailable", { err: err.message });
+    return [];
+  });
   const xf = await fetchXf({ config, token: env.SLACK_BOT_TOKEN, logger, now, report }).catch((err) => {
     logger?.warn?.("speech.xf_unavailable", { err: err.message });
     return { since: null, channelsRead: [], items: [], notes: [`Cross-functional mentions could not be read. ${err.message}`] };
@@ -183,6 +188,7 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
     weekInReview: detail.weekly?.lines ?? null,
     sprint: sprintTickets(detail.clickup?.tasks ?? []).map(ticketForSpeech),
     xf: xf.items.map(({ url, ...item }) => item),
+    notes: dayNotes.map((n) => ({ at: n.at, text: n.text })),
   };
   const contextText = JSON.stringify(context, null, 2) + JSON.stringify(standups ?? []);
 
@@ -211,6 +217,9 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
           "",
           `SHIPPED IN THE LAST ${SHIPPED_LOOKBACK_DAYS} DAYS (from Alex's Impact record)`,
           context.shippedThisWeek.length ? JSON.stringify(context.shippedThisWeek, null, 2) : "Nothing recorded.",
+          "",
+          "ALEX'S NOTES FROM THE DAY (typed or pasted by Alex, oldest first; often what other teams said)",
+          context.notes.length ? JSON.stringify(context.notes, null, 2) : "No notes.",
           "",
           `CROSS-FUNCTIONAL (XF): what people outside the team said to Alex or the team since ${xf.since ? xf.since.slice(0, 10) : "the previous working day"}, newest first`,
           context.xf.length ? JSON.stringify(context.xf, null, 2) : "Nothing from outside the team in this window.",
@@ -244,6 +253,7 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
     readStandups: Boolean(standups),
     readImpact: Boolean(ledger),
     readStore: Boolean(context.store),
+    notesUsed: dayNotes.length,
     xf: { since: xf.since, channelsRead: xf.channelsRead, items: xf.items, notes: xf.notes },
   };
   await store.backend.set(SPEECH_KEY, stored);

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { fetchXf, namedText, xfFromClickUp, xfFromMessages, xfSince } from "../src/collectors/xf.js";
 
 const config = {
-  system: { timezone: "America/Chicago", schedule: { workingWeekdays: [1, 2, 3, 4, 5] }, http: { maxAttempts: 1 }, slack: { standup: { channelId: "CSTAND" }, xf: {} } },
+  system: { timezone: "America/Chicago", schedule: { workingWeekdays: [1, 2, 3, 4, 5] }, http: { maxAttempts: 1 }, slack: { standup: { channelId: "CSTAND" }, xf: { enabled: true } } },
   people: {
     alex: { name: "Alex Turney", clickupUserId: "1", slackUserId: "UALEX" },
     team: [
@@ -87,4 +87,11 @@ test("with no Slack token, the note says so", async () => {
   const out = await fetchXf({ config, token: undefined, now: new Date("2026-11-06T14:00:00Z") });
   assert.deepEqual(out.items, []);
   assert.match(out.notes[0], /SLACK_BOT_TOKEN/);
+});
+
+test("with Slack XF switched off, nothing is read from Slack and nothing is flagged", async () => {
+  const off = { ...config, system: { ...config.system, slack: { xf: { enabled: false } } } };
+  const fetchImpl = async () => assert.fail("Slack must not be called");
+  const out = await fetchXf({ config: off, token: "xoxb-test", fetchImpl, now: new Date("2026-11-06T14:00:00Z") });
+  assert.deepEqual([out.items, out.notes], [[], []]);
 });
