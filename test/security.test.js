@@ -187,7 +187,7 @@ test("every dashboard function gates on isAuthorized before doing anything", asy
   // hourly trigger is the same shape, and its worker skips any run within half an hour of
   // the last snapshot, so a stray call costs at most one ClickUp crawl. impact-scheduled is
   // the same shape as the readout's: outside 9 AM Central on a working day it does nothing.
-  const ungated = new Set(["slack-events.mjs", "slack-interactive.mjs", "login.mjs", "scheduled-readout.mjs", "snapshot-hourly.mjs", "impact-scheduled.mjs"]);
+  const ungated = new Set(["slack-events.mjs", "slack-interactive.mjs", "slack-command.mjs", "login.mjs", "scheduled-readout.mjs", "snapshot-hourly.mjs", "impact-scheduled.mjs"]);
 
   for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".mjs"))) {
     const src = fs.readFileSync(path.join(dir, file), "utf8");

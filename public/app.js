@@ -4289,7 +4289,7 @@ function notesSection() {
         ? `<ul class="ds-note-list">${[...notes]
             .reverse()
             .map(
-              (n) => `<li><span class="meta">${esc(new Date(n.at).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }))}</span> <button type="button" class="ghost ds-note-del" data-id="${esc(n.id)}" data-date="${esc(n.dateKey)}" aria-label="Remove note">Remove</button><div class="ds-xf-text">${esc(n.text)}</div></li>`,
+              (n) => `<li><span class="meta">${esc(new Date(n.at).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }))}</span> ${n.source?.via?.startsWith("slack") ? `<span class="meta">· from Slack</span>` : ""}${n.source?.link ? ` <a href="${esc(n.source.link)}" target="_blank" rel="noreferrer">Open</a>` : ""} <button type="button" class="ghost ds-note-del" data-id="${esc(n.id)}" data-date="${esc(n.dateKey)}" aria-label="Remove note">Remove</button><div class="ds-xf-text">${esc(n.text)}</div></li>`,
             )
             .join("")}</ul>`
         : ""

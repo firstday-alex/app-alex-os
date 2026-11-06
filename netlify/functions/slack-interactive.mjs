@@ -1,4 +1,7 @@
-// Slack's interactivity endpoint. Two kinds of click land here.
+// Slack's interactivity endpoint. Three kinds of click land here.
+//
+// "Save to daily notes", the message shortcut: saves the message to the Daily Speech's
+// notes (src/send/slack-notes.js). Alex only.
 //
 // "Ask for recommendation". Slack expects an acknowledgement within three seconds and an
 // Anthropic call takes longer, so this verifies the signature, hands off to the
@@ -17,6 +20,7 @@ import { dateKey } from "../../src/lib/time.js";
 import { FlagLedger, keyForRef } from "../../src/store/flag-ledger.js";
 import { SLACK_TRIAGE } from "../../src/render/report.js";
 import { verifySlackSignature, IDENTITY_LINE } from "../../src/send/slack.js";
+import { handleSaveShortcut, SAVE_NOTE_CALLBACK } from "../../src/send/slack-notes.js";
 
 /** Replies through the response_url, the only way a block action can change its message. */
 async function respond(payload, body, logger) {
@@ -108,6 +112,18 @@ export default async (req) => {
 
   const action = (payload.actions ?? [])[0];
   const config = loadConfig();
+
+  if (payload.type === "message_action" && payload.callback_id === SAVE_NOTE_CALLBACK) {
+    try {
+      const store = await Store.open({ config, logger });
+      const body = await handleSaveShortcut({ payload, config, backend: store.backend, token: process.env.SLACK_BOT_TOKEN, logger });
+      if (body) await respond(payload, body, logger);
+    } catch (err) {
+      logger.error("notes.shortcut_failed", { err });
+      if (payload.user?.id && payload.user.id === config.people?.alex?.slackUserId) await respond(payload, ephemeral(`I could not save that: ${err.message}`), logger);
+    }
+    return new Response("", { status: 200 });
+  }
 
   // Every button here is Alex's. Anyone else's click gets no reply at all, because the
   // system only communicates with Alex.

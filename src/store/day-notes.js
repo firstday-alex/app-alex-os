@@ -18,13 +18,13 @@ export function noteKeysForSpeech(now, config) {
   return keys;
 }
 
-export async function addNote(backend, { text, now = new Date(), config }) {
+export async function addNote(backend, { text, source = null, now = new Date(), config }) {
   const clean = String(text ?? "").trim();
   if (!clean) throw new DayNoteError("The note is empty.");
   if (clean.length > MAX_NOTE) throw new DayNoteError(`A note can be at most ${MAX_NOTE} characters.`);
   const key = dateKey(now, config.system.timezone);
   const doc = (await backend.get(dayNotesKey(key))) ?? { dateKey: key, items: [] };
-  const note = { id: `${now.getTime().toString(36)}${Math.random().toString(36).slice(2, 6)}`, at: now.toISOString(), text: clean };
+  const note = { id: `${now.getTime().toString(36)}${Math.random().toString(36).slice(2, 6)}`, at: now.toISOString(), text: clean, ...(source ? { source } : {}) };
   doc.items.push(note);
   await backend.set(dayNotesKey(key), doc);
   return { ...note, dateKey: key };

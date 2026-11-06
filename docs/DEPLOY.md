@@ -165,6 +165,16 @@ manifest and rejects it if they do not answer. Do step 3 before this one.
 | `groups:history` | the same, for a private readout channel. Drop it if the channel is public. |
 | `channels:read`, `groups:read` | list the channels the bot is in, for the Daily Speech's cross-functional (XF) mentions. Without them, list channels under `system.slack.xf.channelIds`. |
 | `users:read` | names for stand-up posters and XF mentions, so teammates are recognized. Ids are used in memory only. |
+| `commands` | the `/note` slash command and the **Save to daily notes** message shortcut, which save to the Daily Speech's notes. Alex only; both need `alex.slackUserId` set. |
+
+**Adding `/note` and Save to daily notes to an app that is already installed.** In
+api.slack.com/apps → the app → **App Manifest**, add the `slash_commands` and `shortcuts`
+blocks and the `commands` scope from `slack-app-manifest.json` (with your site name in the
+URLs), save, then **Install App → Reinstall**. Or by hand: **Slash Commands → Create**,
+`/note`, request URL `https://<site>/.netlify/functions/slack-command`; **Interactivity &
+Shortcuts → Create New Shortcut → On messages**, name *Save to daily notes*, callback id
+`save_day_note` (it posts to the interactivity URL already set). If `/note` is taken by
+another app in the workspace, rename it in both places and in `slack-command.mjs`.
 
 The manifest subscribes to both `message.channels` and `message.groups`. Delete whichever
 does not match your readout channel rather than carrying a scope you do not use.
