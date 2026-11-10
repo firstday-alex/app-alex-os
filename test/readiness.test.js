@@ -56,6 +56,18 @@ test("a disagreement between our gate and theirs is surfaced, and the conservati
   assert.ok(result.disagreement, "a silent disagreement is the bug this catches");
   assert.equal(result.disagreement.ours, "ready");
   assert.equal(result.disagreement.theirs, "not_ready");
+  assert.equal(result.disagreement.days, 30);
+  assert.equal(result.disagreement.orders, 5000);
+});
+
+test("a disagreement names a variant switched to 0% traffic", () => {
+  const groups = [
+    { name: "Control", isControl: true, percentage: 50 },
+    { name: "A", isControl: false, percentage: 50 },
+    { name: "B", isControl: false, percentage: 0 },
+  ];
+  const result = recommendFor(makeTest({ daysRunning: 25, minOrdersPerGroup: 1243, verdict: "not_ready", groups }), config);
+  assert.deepEqual(result.disagreement.pausedGroups, ["B"]);
 });
 
 test("a passed gate maps the platform verdict through config", () => {
@@ -149,4 +161,25 @@ test("passing the gate alone raises nothing; a clear result after it raises read
   const nowClear = flagsBetween(withVariant(unclear), withVariant(clear));
   const flag = nowClear.find((f) => f.rule === "intelligems.ready_for_call");
   assert.match(flag.message, /is ready for a call: CVR \+4\.1% for "Variant A" \(a clear win\), after 21 days and 412 orders in the smallest group\. The recommendation is Iterate\./);
+});
+
+test("past our gate but not_ready on the platform: numbers in the message, and Hygiene unless it holds back a result", () => {
+  const unclear = { conversion_rate: makeMetric(0.058, { uplift: 0.024, upliftInterval: [-0.036, 0.09], probBeatControl: 0.78 }) };
+  const clear = { conversion_rate: makeMetric(0.034, { uplift: 0.041, upliftInterval: [0.012, 0.07], probBeatControl: 0.97 }) };
+  const held = (metrics) => ({
+    ...withVariant(metrics),
+    daysRunning: 25,
+    minOrdersPerGroup: 1243,
+    verdict: "not_ready",
+    groups: [makeGroup(), makeGroup({ id: "g_v", name: "Variant A", isControl: false, metrics }), makeGroup({ id: "g_off", name: "Choose Package", isControl: false, percentage: 0 })],
+  });
+
+  const quiet = flagsBetween(held(unclear), held(unclear)).find((f) => f.rule === "intelligems.gate_disagreement");
+  assert.equal(quiet.severity, "info", "Keep Running either way, so it does not need Alex");
+  assert.match(quiet.message, /past our readiness gate \(25 days and 1,243 orders in the smallest group\) but Intelligems still reports not_ready/);
+  assert.match(quiet.message, /Variant "Choose Package" is at 0% traffic/);
+
+  const loud = flagsBetween(held(clear), held(clear)).find((f) => f.rule === "intelligems.gate_disagreement");
+  assert.equal(loud.severity, "attention");
+  assert.match(loud.message, /holding back a result: CVR \+4\.1% for "Variant A"/);
 });

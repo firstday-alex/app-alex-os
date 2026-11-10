@@ -224,14 +224,30 @@ function intelligemsFlags(delta, { config, dateKey, testNotes = null }) {
     }
 
     if (test.recommendation.disagreement) {
+      const d = test.recommendation.disagreement;
+      const at = `${d.days} days and ${Number(d.orders).toLocaleString("en-US")} orders in the smallest group`;
+      const paused = d.pausedGroups?.length
+        ? ` Variant ${d.pausedGroups.map((n) => `"${n}"`).join(", ")} is at 0% traffic; a variant switched off mid-test may be what holds the platform's verdict. Ending that variant, or relaunching without it, should clear this.`
+        : "";
+      // Only worth Alex's attention when the answer depends on it: a clear result on a
+      // decision metric that the platform's not_ready is holding back. Otherwise it is
+      // Keep Running either way, so it sits in Hygiene and never escalates.
+      const matters = d.ours === "not ready" || (d.clearResults ?? []).length > 0;
       add({
         layer: 3,
         rule: "intelligems.gate_disagreement",
-        severity: "attention",
+        severity: matters ? "attention" : "info",
         advisable: false,
         subject: { ...subject, id: `${test.id}:disagreement` },
-        message: `"${test.name}": our readiness gate says ${test.recommendation.disagreement.ours} but the platform reports ${test.recommendation.disagreement.theirs}. Taking the conservative answer.`,
-        values: test.recommendation.disagreement,
+        message:
+          d.ours === "ready"
+            ? `"${test.name}" is past our readiness gate (${at}) but Intelligems still reports ${d.theirs}, so it stays Keep Running.${
+                matters
+                  ? ` That is holding back a result: ${d.clearResults.map(describeResult).join("; ")}.`
+                  : " No decision metric has a clear result yet, so the answer would be Keep Running either way."
+              }${paused}`
+            : `"${test.name}" is short of our readiness gate (${test.recommendation.gate.reasons.join("; ")}) but Intelligems already reports ${d.theirs}. Taking the conservative answer: Keep Running.`,
+        values: d,
       });
     }
 

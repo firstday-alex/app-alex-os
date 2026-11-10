@@ -86,11 +86,21 @@ export function recommendFor(test, config, { thresholds } = {}) {
   const verdict = test.verdict ?? null;
 
   const theirGateSaysNotReady = verdict === "not_ready";
+  const decisionMetrics = config.intelligems.decisionMetrics?.metrics ?? null;
+  // A variant switched to 0% traffic mid-test still carries its orders, so it passes our
+  // gate while the platform may hold its verdict. Named so the flag can say so.
+  const pausedGroups = (test.groups ?? []).filter((g) => !g.isControl && g.percentage === 0).map((g) => g.name);
   const disagreement =
     verdict != null && !gate.unknown && gate.ready === theirGateSaysNotReady
       ? {
           ours: gate.ready ? "ready" : "not ready",
           theirs: theirGateSaysNotReady ? "not_ready" : verdict,
+          days: gate.days,
+          orders: gate.orders,
+          pausedGroups,
+          // Whether it changes anything: with no clear result on a decision metric the
+          // answer is Keep Running whichever gate is right.
+          clearResults: decisionMetrics ? clearResults(test, decisionMetrics, thresholds) : null,
         }
       : null;
 
@@ -133,7 +143,6 @@ export function recommendFor(test, config, { thresholds } = {}) {
 
   // Enough data is not a result. With decision metrics configured, a call needs a clear
   // win or loss on one of them; otherwise the test keeps running.
-  const decisionMetrics = config.intelligems.decisionMetrics?.metrics ?? null;
   const results = decisionMetrics ? clearResults(test, decisionMetrics, thresholds) : null;
   if (results && results.length === 0 && mapped !== "Keep Running") {
     const names = decisionMetrics.map((d) => d.label);
