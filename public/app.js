@@ -2201,8 +2201,8 @@ function renderNextSteps() {
           ${first.map(card).join("")}
           ${rest.length ? `<details class="ns-more"><summary>${esc(rest.length)} more</summary>${rest.map(card).join("")}</details>` : ""}
         </section>`;
-      }).join("") + (handled ? `<p class="meta">${esc(plural(handled, "handled item is", "handled items are"))} under Waiting and Parked in the Daily readout.</p>` : "")
-    : `<p class="sub">Nothing to do on the sprint right now.${handled ? ` ${esc(plural(handled, "handled item is", "handled items are"))} under Waiting and Parked in the Daily readout.` : ""}</p>`;
+      }).join("") + (handled ? `<p class="meta">${esc(plural(handled, "handled item is", "handled items are"))} under Waiting and Parked on What needs you (Today).</p>` : "")
+    : `<p class="sub">Nothing to do on the sprint right now.${handled ? ` ${esc(plural(handled, "handled item is", "handled items are"))} under Waiting and Parked on What needs you (Today).` : ""}</p>`;
   const shown = root.querySelectorAll(".flag").length;
   $("next-steps-count").textContent = shown ? `${shown} open` : "nothing open";
 }

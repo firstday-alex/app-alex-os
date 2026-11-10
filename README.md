@@ -253,7 +253,7 @@ The menu (☰) holds the rest:
 
 | Where | What it is for |
 |---|---|
-| **Daily readout** | Today's 3, the week in review, store numbers, and every flag to triage: Done, Snooze, Waiting on, Not a problem, Draft a nudge, and quick fixes on rock flags. |
+| **What needs you** (Today) | The landing page. Today's 3, the week in review, store numbers, and every flag to triage: Done, Snooze, Waiting on, Not a problem, Draft a nudge, and quick fixes on rock flags. |
 | **Tests** | Each test's readout, with the 12 month value projection. `#tests/<experience id>` opens one. |
 | **Setup** | The LTV multipliers and the decisions still open. |
 
