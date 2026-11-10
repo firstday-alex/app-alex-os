@@ -28,6 +28,7 @@ import { parseStandupRocks, planRockImport } from "../../src/store/rock-import.j
 import { parseStandupTactics, matchTacticsToTickets } from "../../src/store/tactic-match.js";
 import { RockLinksStore } from "../../src/store/rock-links.js";
 import { supabaseQueue } from "../../src/collectors/leadership.js";
+import { linkByName } from "../../src/collectors/clickup-names.js";
 
 const FROM_SUPABASE = "Rocks and tactics come from Supabase now. Change them in the standup app; this app only reads them.";
 
@@ -119,8 +120,14 @@ export default async (req) => {
     if (supabase && req.method === "GET" && url.searchParams.get("audit") !== "true") {
       const read = await supabaseQueue({ config, env: process.env, rocksStore: rocks, rockLinksStore: links, logger, now: new Date() });
       const { snapshot: intelligems } = await store.getLatestSnapshot("intelligems");
-      const withReadouts = read.queue.map((rock) => ({ ...forDashboard(rock), readout: buildRockReadout(rock, intelligems, config) }));
+      const shared = await common();
+      // Linked to ClickUp's ROCK and TACTIC values by name, the same way the readout does.
+      const byName = shared.bigSwingOptions.available
+        ? linkByName(read.queue, { rockOptions: shared.bigSwingOptions.options, tacticOptions: shared.clickupOptions.available ? shared.clickupOptions.options : [] })
+        : { rocks: read.queue, names: null };
+      const withReadouts = byName.rocks.map((rock) => ({ ...forDashboard(rock), readout: buildRockReadout(rock, intelligems, config) }));
       return json({
+        names: byName.names,
         source: "supabase",
         supabase: { team: read.source.team?.name ?? null, quarter: read.source.quarter, takenAt: read.source.takenAt, stale: read.stale },
         version: read.links.version,
@@ -130,7 +137,7 @@ export default async (req) => {
         queue: withReadouts,
         backlog: [],
         intelligemsSnapshotAt: intelligems?.takenAt ?? null,
-        ...(await common()),
+        ...shared,
       });
     }
 

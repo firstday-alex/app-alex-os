@@ -1919,12 +1919,15 @@ const swingKey = (t) => (t.bigSwing?.label ? String(t.bigSwing.label) : NO_SWING
 /** The rock a ticket serves, through its Big Swing option, else by Big Swing label. */
 function rockForTask(task) {
   const swing = task?.bigSwing;
-  if (!swing?.optionId && !swing?.label) return null;
   const rocks = (state.rocks?.rocks ?? []).filter((r) => r.state !== "shipped" || swingIdsOf(r).length);
+  // A TACTIC naming one of a rock's open tactics links the ticket too (linkByName, server side).
+  const tacticId = task?.leadershipPriority?.optionId;
+  const byTactic = tacticId != null ? rocks.find((r) => (r.clickupTacticOptionIds ?? []).map(String).includes(String(tacticId))) ?? null : null;
+  if (!swing?.optionId && !swing?.label) return byTactic;
   return (
     rocks.find((r) => ownsSwing(r, swing.optionId)) ??
     rocks.find((r) => swing.label && String(r.title).trim().toLowerCase() === String(swing.label).trim().toLowerCase()) ??
-    null
+    byTactic
   );
 }
 
@@ -3239,7 +3242,7 @@ async function loadRocks() {
     // Nothing to create, import or file by queue when the rocks are read from Supabase.
     for (const id of ["new-rock-btn", "import-rocks-btn", "rock-state-filter"]) $(id)?.classList.toggle("hidden", fromSupabase());
     $("rocks-sub").textContent = fromSupabase()
-      ? "Each rock, the tactics under it, and the sprint and backlog tickets that reach each tactic through its ClickUp Big Swing."
+      ? "Each rock, the tactics under it, and the sprint and backlog tickets that reach them through ClickUp: a ROCK value with the rock's name, or a TACTIC value with a tactic's name."
       : $("rocks-sub").dataset.storeText;
     renderRocks();
     // The flags' quick fixes and the sprint's rock links are drawn from the rocks, so
@@ -3264,9 +3267,70 @@ function rocksError(message) {
 
 const STATUS_TONE = { on_track: "on_track", at_risk: "at_risk", off_track: "off_track", done: "done" };
 
+/* ------------------------- ClickUp names vs the standup -------------------------
+   ROCK and TACTIC in ClickUp should carry the standup's rock and tactic names, 1:1.
+   Tickets link by those names (src/collectors/clickup-names.js), so this lists what
+   lines up and what to rename, as a checklist to work through in ClickUp. */
+
+function namesChecklist(data) {
+  const n = data.names;
+  if (!n) return "";
+  const lines = [];
+  for (const r of (data.rocks ?? []).filter((r) => !r.bau)) {
+    lines.push(`${r.rockMatch ? "✓" : "✗"} ROCK "${r.title}"${r.rockMatch ? (r.rockMatch.match === "exact" ? "" : ` (close: "${r.rockMatch.label}", rename to match)`) : " – no ROCK value names it"}`);
+    for (const t of (r.tactics ?? []).filter((t) => t.status !== "done")) {
+      lines.push(`    ${t.tacticMatch ? "✓" : "✗"} TACTIC "${t.title}"${t.tacticMatch ? (t.tacticMatch.match === "exact" ? "" : ` (close: "${t.tacticMatch.label}", rename to match)`) : " – no TACTIC value names it"}`);
+    }
+  }
+  if (n.staleRockOptions.length) lines.push("", "Old ROCK values (name no rock): rename or remove", ...n.staleRockOptions.map((o) => `    ${o.label}`));
+  if (n.staleTacticOptions.length) lines.push("", "Old TACTIC values (name no open tactic): rename or remove", ...n.staleTacticOptions.map((o) => `    ${o.label}`));
+  return lines.join("\n");
+}
+
+function renderNames(data) {
+  const host = $("rocks-names");
+  if (!host) return;
+  const n = data.names;
+  if (!n) {
+    host.innerHTML = "";
+    return;
+  }
+  const rocks = (data.rocks ?? []).filter((r) => !r.bau);
+  const tactics = rocks.flatMap((r) => (r.tactics ?? []).filter((t) => t.status !== "done"));
+  const rocksOk = rocks.filter((r) => r.rockMatch?.match === "exact").length;
+  const tacticsOk = tactics.filter((t) => t.tacticMatch?.match === "exact").length;
+  const todo = rocks.length - rocksOk + tactics.length - tacticsOk + n.staleRockOptions.length + n.staleTacticOptions.length;
+  const mark = (m) => (m ? (m.match === "exact" ? `<span class="nm-ok">✓</span>` : `<span class="nm-close">≈</span>`) : `<span class="nm-bad">✗</span>`);
+  const said = (m, kind) => (m ? (m.match === "exact" ? "" : ` <span class="meta">close: "${esc(m.label)}", rename to match</span>`) : ` <span class="meta">no ${kind} value names it</span>`);
+  host.innerHTML = `<details class="nm-box"${todo ? " open" : ""}>
+    <summary><strong>ClickUp ROCK and TACTIC vs the standup</strong> <span class="meta">${rocksOk} of ${rocks.length} rocks and ${tacticsOk} of ${tactics.length} open tactics match exactly${todo ? ` · ${todo} to fix in ClickUp` : ""}</span></summary>
+    <p class="sub">Tickets reach a rock through a ROCK value with the rock's name, or a TACTIC value with one of its tactic's names. Rename the values in ClickUp to match these exactly; this updates on the next load.</p>
+    <div class="bar"><button type="button" class="ghost sm" id="nm-copy">Copy as a checklist</button><span class="meta" id="nm-note"></span></div>
+    <ul class="nm-list">${rocks
+      .map(
+        (r) => `<li>${mark(r.rockMatch)} <strong>${esc(r.title)}</strong> <span class="meta">ROCK</span>${said(r.rockMatch, "ROCK")}
+          <ul>${(r.tactics ?? []).filter((t) => t.status !== "done").map((t) => `<li>${mark(t.tacticMatch)} ${esc(t.title)} <span class="meta">TACTIC</span>${said(t.tacticMatch, "TACTIC")}</li>`).join("")}</ul></li>`,
+      )
+      .join("")}</ul>
+    ${n.staleRockOptions.length ? `<p class="nm-head">Old ROCK values in ClickUp <span class="meta">name no rock: rename or remove</span></p><p class="nm-chips">${n.staleRockOptions.map((o) => `<span class="chip">${esc(o.label)}</span>`).join(" ")}</p>` : ""}
+    ${n.staleTacticOptions.length ? `<p class="nm-head">Old TACTIC values in ClickUp <span class="meta">name no open tactic: rename or remove</span></p><p class="nm-chips">${n.staleTacticOptions.map((o) => `<span class="chip">${esc(o.label)}</span>`).join(" ")}</p>` : ""}
+  </details>`;
+}
+
+document.addEventListener("click", async (event) => {
+  if (event.target.id !== "nm-copy" || !state.rocks) return;
+  try {
+    await navigator.clipboard.writeText(namesChecklist(state.rocks));
+    $("nm-note").textContent = "Copied.";
+  } catch {
+    $("nm-note").textContent = "The browser would not copy.";
+  }
+});
+
 function renderRocks() {
   const data = state.rocks;
   if (!data) return;
+  renderNames(data);
   const label = (id) => (data.statusLabels ?? {})[id] ?? id;
   const peopleById = new Map((data.people ?? []).map((p) => [p.id, p.name]));
   const cuById = new Map((data.clickupOptions?.options ?? []).map((o) => [o.id, o.label]));

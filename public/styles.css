@@ -835,3 +835,15 @@ ul.plain { margin: 0; padding-left: 18px; }
 .lw-person { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
 .lw-person-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; margin-bottom: 4px; }
 .lw-person ul { font-size: 13px; }
+
+/* ClickUp ROCK / TACTIC names vs the standup */
+.nm-box { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; margin: 10px 0 16px; }
+.nm-box > summary { cursor: pointer; }
+.nm-list { list-style: none; padding-left: 0; margin: 8px 0; }
+.nm-list > li { margin: 8px 0; }
+.nm-list ul { list-style: none; padding-left: 22px; margin: 4px 0 0; font-size: 14px; }
+.nm-ok { color: var(--green); font-weight: 700; }
+.nm-close { color: var(--amber-ink); font-weight: 700; }
+.nm-bad { color: var(--red); font-weight: 700; }
+.nm-head { margin: 12px 0 4px; font-weight: 600; }
+.nm-chips .chip { margin: 2px 0; }

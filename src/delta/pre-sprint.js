@@ -13,6 +13,7 @@
 
 import { accountableFor } from "./crosslayer.js";
 import { ownsSwing } from "../collectors/leadership.js";
+import { ownsTactic } from "../collectors/clickup-names.js";
 
 export function preSprintCheck({ backlogReady, sprintTasks = [], leadership, config, error = null }) {
   if (!Array.isArray(backlogReady)) {
@@ -25,11 +26,12 @@ export function preSprintCheck({ backlogReady, sprintTasks = [], leadership, con
   const activeRocks = (leadership?.queue ?? []).filter((r) => r.state === "active");
   const rockFor = (task) => {
     const swing = task.bigSwing;
-    if (!swing?.optionId) return null;
+    const byTactic = activeRocks.find((r) => ownsTactic(r, task)) ?? null;
+    if (!swing?.optionId) return byTactic;
     return (
       activeRocks.find((r) => ownsSwing(r, swing.optionId)) ??
       activeRocks.find((r) => String(r.title).trim().toLowerCase() === String(swing.label ?? "").trim().toLowerCase()) ??
-      null
+      byTactic
     );
   };
 

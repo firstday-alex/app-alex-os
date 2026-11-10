@@ -79,7 +79,7 @@ src/
   pipeline.js      collector -> delta -> render -> send
 netlify/functions/ the 8 AM trigger, the pipeline, the dashboard API, the Slack endpoints
 public/            the dashboard
-test/              484 tests, no network, no API keys needed
+test/              486 tests, no network, no API keys needed
 scripts/           run the pipeline locally, and a syntax check
 ```
 
@@ -93,7 +93,7 @@ testable, and it is why the tests need no network and no credentials.
 
 ```bash
 npm install
-npm test                    # 484 tests. no network, no keys.
+npm test                    # 486 tests. no network, no keys.
 npm run check               # parses every source and config file
 
 cp .env.example .env        # then fill in the tokens you have
@@ -239,6 +239,7 @@ Three tabs across the top. Sprint opens by default.
 |---|---|
 | **Sprint** | The week's commitment: every open ticket, grouped by person or by what it waits on, worst first. Each shows its status, how long it has sat there, its rock, what it is waiting on, and the last ClickUp comment with who said it and when. "Waiting on" is worked out in order: someone you marked waiting on, then someone the last comment @mentions, then a stall, then the status read as a stage (QA, deploy, to start). Done this week (tickets in "done (this sprint)", never "complete") and what changed sit collapsed below. |
 | **Rocks** | The Web team's rocks for this quarter, **read only from the marketing standup's Supabase project** (`system.supabase`, key `SUPABASE_SERVICE_KEY`; the app only ever sends GET there, and `test/supabase-rocks.test.js` fails otherwise). Each rock shows its latest green / amber / red status and why, its milestones, its tactics, and the sprint and backlog tickets that reach it through the Big Swings on it and its tactics. The owner and Big Swing on each rock and tactic are this app's own (`rocks/links.json`), set right on the row. If Supabase cannot be read, the last good copy is shown, labelled. Remove `system.supabase` to go back to the dashboard's own rocks store, planned by month. `#rocks/<id>` opens one. |
+| **Rocks: ClickUp ROCK and TACTIC vs the standup** | ClickUp's ROCK field (formerly Big Swing) should carry each rock's name and TACTIC (formerly Rock Reference) each open tactic's name, 1:1 with the standup. Tickets link by those names every run (`src/collectors/clickup-names.js`), on top of links set by hand; a ticket with only a TACTIC reaches the tactic's rock. A checklist at the top of Rocks shows what matches, what is close (rename to match), and the old values that name nothing, with Copy as a checklist. |
 | **Next steps** | At the top of the Sprint tab: every ticket check that ends in something you do, under four actions. **Reply**: someone @mentioned you; you own it and it sits in QA or ready for deploy; you own a stalled or stuck ticket. **Nudge**: a question to someone else unanswered 2+ days; sent back from QA or deploy in the last 3 days; due within 2 days and not started; stalled or stuck in its status. **Decide**: overdue; Wednesday onward and still not started (per person); carried over from before this sprint (per person); 3+ in progress at once; a rock due this month with nothing in progress; a rock with no sprint ticket. **Fix**: no assignee; no owner; no Big Swing; in progress with no due date (once 3+ open tickets have one). Same buttons as the readout. Rules live in `src/delta/next-steps.js`; thresholds can be set under `clickup.nextSteps` in `config/clickup.json`. |
 | **Who to ask** | Every sprint ticket names who to reach out to. The Task Owner keeps a ticket moving and is who you go to with questions; the assignee does the work in the current stage. In order: someone the ticket is waiting on (marked by you, or @mentioned in the last comment); "Reply to" whoever @mentioned you; the owner; and, when you own it or nobody does, the assignee. The Sprint tab groups by owner or by assignee. |
 | **1:1** | One person: talking points to copy, their rocks and target months, each sprint ticket with what it waits on, what is queued for them in the backlog, done this week, tests they own, and open flags. `#people/<clickup id>` links to a person. |

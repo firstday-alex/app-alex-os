@@ -18,6 +18,7 @@
 
 import { makeFlag } from "./flags.js";
 import { ownsSwing, swingIdsOf } from "../collectors/leadership.js";
+import { ownsTactic, tacticIdsOf } from "../collectors/clickup-names.js";
 
 /** The person accountable for a ticket: the Task Owner field, falling back to assignees. */
 export function accountableFor(task) {
@@ -34,7 +35,7 @@ export function accountableFor(task) {
  * Swing is tied to no rock, whatever its Leadership Priority says, except that a BAU
  * marker there makes it expected work.
  */
-export function classifyTicketLink(task, { activeTitles, activeBigSwingIds, bauMarkers }) {
+export function classifyTicketLink(task, { activeTitles, activeBigSwingIds, activeTacticIds = new Set(), bauMarkers }) {
   const priority = task.leadershipPriority;
   const swing = task.bigSwing;
   const priorityLabel = String(priority?.label ?? "").toLowerCase();
@@ -48,7 +49,13 @@ export function classifyTicketLink(task, { activeTitles, activeBigSwingIds, bauM
     return { link: "bau", label: swing.label };
   }
 
-  if (!swing?.optionId) return { link: "none", label: priority?.label ?? null };
+  if (!swing?.optionId) {
+    // No ROCK, but a TACTIC that names an open tactic of a live rock: that rock's work.
+    if (priority?.optionId != null && activeTacticIds.has(String(priority.optionId))) {
+      return { link: "bigSwing", swing: priority.label ?? priority.optionId, swingId: null, label: priority.label ?? null, untethered: false, linkedBy: "tactic" };
+    }
+    return { link: "none", label: priority?.label ?? null };
+  }
 
   const swingLabel = String(swing.label ?? "").toLowerCase();
   const byId = activeBigSwingIds.has(String(swing.optionId));
@@ -80,6 +87,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   // that has not been linked yet, and it breaks the moment somebody renames the option.
   const activeTitles = new Set(claimingItems.map((i) => String(i.title).trim().toLowerCase()));
   const activeBigSwingIds = new Set(claimingItems.flatMap(swingIdsOf));
+  const activeTacticIds = new Set(claimingItems.flatMap(tacticIdsOf));
 
   // For an unclaimed big swing, the rock it would have matched if that rock were live, so
   // the readout can say "its rock is in the backlog" rather than "nothing tracks this".
@@ -117,7 +125,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   }
 
   for (const task of openTasks) {
-    const link = classifyTicketLink(task, { activeTitles, activeBigSwingIds, bauMarkers });
+    const link = classifyTicketLink(task, { activeTitles, activeBigSwingIds, activeTacticIds, bauMarkers });
     const accountable = accountableFor(task);
     if (accountable.length === 0) continue; // no owner and no assignee: Layer 2's problem, not this check's
 
@@ -237,6 +245,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
   const stalledAfter = lc.rockStalledAfterDays ?? 7;
   for (const item of activeItems) {
     const tickets = openTasks.filter((t) => {
+      if (ownsTactic(item, t)) return true;
       if (!t.bigSwing?.optionId) return false;
       if (swingIdsOf(item).length) return ownsSwing(item, t.bigSwing.optionId);
       return String(t.bigSwing.label ?? "").trim().toLowerCase() === String(item.title).trim().toLowerCase();

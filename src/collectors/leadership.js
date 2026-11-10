@@ -13,6 +13,7 @@
 // app's own links laid over them. The store and config path below is what runs without it.
 
 import { fetchSupabaseRocks, rocksFromSupabase } from "./supabase-rocks.js";
+import { linkByName } from "./clickup-names.js";
 
 const SUPABASE_LAST_KEY = "rocks/supabase-last.json";
 
@@ -137,8 +138,6 @@ export async function collectLeadership({
     }
   }
 
-  // Supabase rocks are already in shape, and carry fields mapItem does not know about.
-  const queue = supabase ? rawQueue : rawQueue.map((item) => mapItem(item, "active"));
   const backlog = rawBacklog.map((item) => mapItem(item, "backlog"));
 
   // The dropdown options currently offered in ClickUp, so the sync check can compare them
@@ -158,6 +157,18 @@ export async function collectLeadership({
   const bigSwingFieldId = clickupSnapshot?.fieldMap?.bigSwing?.id ?? null;
   const dropdownOptions = uniqueOptions(priorityFieldId);
   const bigSwingOptions = uniqueOptions(bigSwingFieldId);
+
+  // Supabase rocks are already in shape, and carry fields mapItem does not know about.
+  // They are linked to ClickUp's ROCK and TACTIC values by name, every run.
+  let names = null;
+  let queue;
+  if (supabase) {
+    const byName = linkByName(rawQueue, { rockOptions: bigSwingOptions, tacticOptions: dropdownOptions });
+    queue = byName.rocks;
+    names = clickupSnapshot?.fieldMap ? byName.names : null;
+  } else {
+    queue = rawQueue.map((item) => mapItem(item, "active"));
+  }
 
   const roster = (people.team ?? [])
     .filter((p) => p.clickupUserId != null && p.countsTowardCapacity !== false)
@@ -184,6 +195,7 @@ export async function collectLeadership({
     roster: roster.length ? roster : rosterFallback,
     dropdownOptions,
     bigSwingOptions,
+    names,
     meta: {
       source,
       version,

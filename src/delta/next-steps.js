@@ -21,6 +21,7 @@
 import { makeFlag } from "./flags.js";
 import { zonedParts, shiftDateKey } from "../lib/time.js";
 import { ownsSwing, swingIdsOf } from "../collectors/leadership.js";
+import { ownsTactic } from "../collectors/clickup-names.js";
 
 const DAY_MS = 86_400_000;
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -287,6 +288,7 @@ export function nextStepFlags({ tasks = [], statusLedger = null, leadership = nu
   const monthKey = today.dateKey.slice(0, 7);
   for (const rock of (leadership?.queue ?? []).filter((r) => r.state === "active" && r.targetMonth === monthKey)) {
     const linked = open.filter((t) => {
+      if (ownsTactic(rock, t)) return true;
       const swing = t.bigSwing;
       if (!swing) return false;
       if (swingIdsOf(rock).length && swing.optionId) return ownsSwing(rock, swing.optionId);

@@ -14,6 +14,7 @@
 import { ask, readSkill } from "./anthropic.js";
 import { SettingsStore } from "../store/settings.js";
 import { ownsSwing } from "../collectors/leadership.js";
+import { ownsTactic } from "../collectors/clickup-names.js";
 
 const LTV_KEYS = [
   "subscriptionLtvMultiplier",
@@ -61,11 +62,12 @@ export function rocksForAdvice(queue = []) {
 /** The rock a ticket serves, through its Big Swing option, else by Big Swing label. */
 function rockForTask(task, queue) {
   const swing = task?.bigSwing;
-  if (!swing?.optionId && !swing?.label) return null;
+  const byTactic = queue.find((r) => ownsTactic(r, task)) ?? null;
+  if (!swing?.optionId && !swing?.label) return byTactic;
   return (
     queue.find((r) => ownsSwing(r, swing.optionId)) ??
     queue.find((r) => swing.label && String(r.title).trim().toLowerCase() === String(swing.label).trim().toLowerCase()) ??
-    null
+    byTactic
   );
 }
 
