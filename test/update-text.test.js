@@ -103,3 +103,26 @@ test("update + stand-up: a line goes under the poster's ticket it names, pulls i
   assert.match(text, /\*\*Blockers\*\*\n@Cristobal – need admin$/);
   assert.doesNotMatch(standupUpdateText(built, handleFor, new Set(["fbb", "blocker:0"])), /Family Bundle|need admin/);
 });
+
+/* ------------------------------ last week's wins ------------------------------ */
+
+test("last week's wins: only complete tickets, by Rock Reference, then kudos by person", async () => {
+  const { buildLastWeekWins, lastWeekText } = await import("../public/update-text.js");
+  const u = (id, username) => ({ id, username });
+  const tasks = [
+    { id: 1, name: "[DEV] Bundle page", status: "complete", dateClosed: Date.parse("2026-11-04"), assignees: [u(1, "Robson Lopes")], leadershipPriority: { label: "Bundles" } },
+    { id: 2, name: "Gift box", status: "complete", dateClosed: Date.parse("2026-11-05"), assignees: [u(1, "Robson Lopes"), u(2, "Blake Tucker")], leadershipPriority: { label: "Bundles" } },
+    { id: 3, name: "Footer", status: "complete", dateClosed: Date.parse("2026-11-03"), assignees: [u(2, "Blake Tucker")] },
+    { id: 4, name: "This sprint", status: "done (this sprint)", assignees: [u(2, "Blake Tucker")], leadershipPriority: { label: "Bundles" } },
+    { id: 5, name: "Archived", status: "complete", archived: true, assignees: [u(2, "Blake Tucker")] },
+  ];
+  const wins = buildLastWeekWins(tasks, { handleFor: (x) => x.username.split(" ")[0] });
+  assert.equal(wins.count, 3);
+  assert.deepEqual(wins.rocks.map((r) => [r.label, r.tasks.length]), [["Bundles", 2], ["No rock", 1]]);
+  assert.deepEqual(wins.kudos.map((p) => [p.who, p.tasks.length]), [["Blake", 2], ["Robson", 2]]);
+  assert.equal(
+    lastWeekText(wins),
+    "**Last week's wins, by rock**\n**Bundles** – 2 wins (@Robson, @Blake): Gift box; Bundle page\n**No rock** – 1 win (@Blake): Footer\n\n**Kudos**\n🙌 @Blake – 2 wins across Bundles: Gift box, Footer\n🙌 @Robson – 2 wins across Bundles: Gift box, Bundle page",
+  );
+  assert.equal(lastWeekText(wins, new Set(["3"])).includes("Footer"), false, "an unticked ticket leaves both sections");
+});

@@ -828,3 +828,10 @@ ul.plain { margin: 0; padding-left: 18px; }
   .flag.q-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "sev acts" "msg msg" "meta meta"; }
   .q-msg { white-space: normal; }
 }
+
+/* Last week's wins */
+.lw-head { margin: 24px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.lw-kudos { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-top: 8px; }
+.lw-person { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.lw-person-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; margin-bottom: 4px; }
+.lw-person ul { font-size: 13px; }

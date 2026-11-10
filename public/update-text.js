@@ -120,6 +120,79 @@ export function buildAccomplishments(tasks, { since, handleFor }) {
   return groupBySwing(picked, (a, b) => doneDate(b) - doneDate(a), handleFor);
 }
 
+/* ------------------------------ last week's wins ------------------------------
+   The "complete" tickets (last sprint's work, moved there at rollover), summarised by
+   Rock Reference, then kudos by person. Every line is a ticket ClickUp holds; nothing is
+   written by a model. */
+
+const NO_ROCK = "No rock";
+const who = (task) => (task.assignees?.length ? task.assignees : task.taskOwners ?? []);
+
+/** A name list as people say it: "A", "A and B", "A, B and C". */
+export function listed(items) {
+  const xs = [...items];
+  return xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
+}
+
+export function buildLastWeekWins(tasks, { handleFor }) {
+  const done = (tasks ?? []).filter((t) => !t.archived && statusKey(t) === "complete");
+  const dates = done.map(doneDate).filter(Boolean);
+
+  const rocks = new Map();
+  const people = new Map();
+  for (const t of done) {
+    const rock = t.leadershipPriority?.label || NO_ROCK;
+    if (!rocks.has(rock)) rocks.set(rock, { label: rock, tasks: [], people: new Set() });
+    const r = rocks.get(rock);
+    r.tasks.push(t);
+    for (const u of who(t)) {
+      const handle = handleFor(u);
+      r.people.add(handle);
+      if (!people.has(handle)) people.set(handle, { who: handle, tasks: [], rocks: new Set() });
+      people.get(handle).tasks.push(t);
+      if (rock !== NO_ROCK) people.get(handle).rocks.add(rock);
+    }
+  }
+
+  const byDone = (a, b) => (doneDate(b) ?? 0) - (doneDate(a) ?? 0);
+  return {
+    count: done.length,
+    from: dates.length ? Math.min(...dates) : null,
+    to: dates.length ? Math.max(...dates) : null,
+    // Most wins first; "No rock" last, because work that ladders to nothing is the footnote.
+    rocks: [...rocks.values()]
+      .sort((a, b) => (a.label === NO_ROCK) - (b.label === NO_ROCK) || b.tasks.length - a.tasks.length || a.label.localeCompare(b.label))
+      .map((r) => ({ label: r.label, people: [...r.people], tasks: r.tasks.sort(byDone) })),
+    kudos: [...people.values()]
+      .sort((a, b) => b.tasks.length - a.tasks.length || a.who.localeCompare(b.who))
+      .map((p) => ({ who: p.who, rocks: [...p.rocks], tasks: p.tasks.sort(byDone) })),
+  };
+}
+
+/** "Bundles – 3 wins (@Robson, @Blake): Bundle page; Checkout fix; Gift box". */
+export function rockLine(r, excluded = new Set()) {
+  const tasks = r.tasks.filter((t) => !excluded.has(String(t.id)));
+  if (!tasks.length) return null;
+  const by = r.people.length ? ` (${r.people.map((h) => `@${h}`).join(", ")})` : "";
+  return `**${r.label}** – ${tasks.length} ${tasks.length === 1 ? "win" : "wins"}${by}: ${tasks.map((t) => cleanName(t.plainName ?? t.name)).join("; ")}`;
+}
+
+/** "🙌 @Robson – 3 wins across Bundles and Checkout: Bundle page, Checkout fix, Gift box". */
+export function kudosLine(p, excluded = new Set()) {
+  const tasks = p.tasks.filter((t) => !excluded.has(String(t.id)));
+  if (!tasks.length) return null;
+  const across = p.rocks.length ? ` across ${listed(p.rocks)}` : "";
+  return `🙌 @${p.who} – ${tasks.length} ${tasks.length === 1 ? "win" : "wins"}${across}: ${tasks.map((t) => cleanName(t.plainName ?? t.name)).join(", ")}`;
+}
+
+export function lastWeekText(wins, excluded = new Set()) {
+  const rocks = wins.rocks.map((r) => rockLine(r, excluded)).filter(Boolean);
+  const kudos = wins.kudos.map((p) => kudosLine(p, excluded)).filter(Boolean);
+  return [rocks.length ? ["**Last week's wins, by rock**", ...rocks].join("\n") : "", kudos.length ? ["**Kudos**", ...kudos].join("\n") : ""]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 /** The text to paste: **Big Swing**, then one ticket per line. */
 export function groupsText(groups, excluded = new Set()) {
   return groups

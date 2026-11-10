@@ -4,7 +4,7 @@
 // The refresh path polls rather than awaits: a background function returns 202 straight
 // away and the caller cannot wait for its result.
 
-import { buildAccomplishments, buildStandupUpdate, buildUpdate, groupsText, standupUpdateText, windowStart } from "./update-text.js";
+import { buildAccomplishments, buildLastWeekWins, buildStandupUpdate, buildUpdate, groupsText, lastWeekText, standupUpdateText, windowStart } from "./update-text.js";
 
 const $ = (id) => document.getElementById(id);
 const layerLabel = (layer) => (layer === "cross" ? "CROSS" : layer === 0 ? "STORE" : `L${layer}`);
@@ -2342,8 +2342,74 @@ function handleFor(user) {
 function renderUpdate(report) {
   renderPasteView("update", report);
   renderPasteView("wins", report);
+  renderLastWeek(report);
   if (standup.data) renderUpsu();
 }
+
+/* ------------------------------ last week's wins ------------------------------ */
+
+const lastWeek = { excluded: new Set(), wins: null };
+
+function renderLastWeek(report) {
+  const root = $("lastweek");
+  if (!root) return;
+  const section = report.sections.clickup;
+  if (!section?.present) {
+    root.innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
+    return;
+  }
+  const wins = (lastWeek.wins = buildLastWeekWins(report.detail?.clickup?.tasks ?? [], { handleFor }));
+  if (!wins.count) {
+    root.innerHTML = `<p class="sub">No tickets are in "complete" right now.</p>`;
+    return;
+  }
+  const day = (ms) => new Date(ms).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const text = lastWeekText(wins, lastWeek.excluded);
+  const item = (t) => `<label class="up-item">
+      <input type="checkbox" data-lw-task="${esc(t.id)}"${lastWeek.excluded.has(String(t.id)) ? "" : " checked"}>
+      <span>${esc(t.plainName ?? t.name)}</span>
+      ${t.url ? `<a class="meta" href="${esc(t.url)}" target="_blank" rel="noreferrer">open</a>` : ""}
+    </label>`;
+  root.innerHTML = `
+    <p class="meta">${esc(plural(wins.count, "ticket", "tickets"))} done ${wins.from ? `${esc(day(wins.from))} to ${esc(day(wins.to))}` : ""} · ${esc(plural(wins.rocks.length, "rock", "rocks"))} · ${esc(plural(wins.kudos.length, "person", "people"))}. From ClickUp as pulled ${esc(new Date(report.generatedAt).toLocaleString())}.</p>
+    <div class="bar up-bar"><button type="button" id="lw-copy">Copy all</button><span class="meta" id="lw-note"></span></div>
+    <textarea class="up-text" id="lw-text" rows="${Math.min(20, text.split("\n").length + 1)}" readonly>${esc(text)}</textarea>
+    <h3 class="lw-head">By rock</h3>
+    ${wins.rocks
+      .map(
+        (r) => `<section class="up-group">
+        <div class="sp-group-head"><h3>${esc(r.label)}</h3><span class="meta">${esc(plural(r.tasks.length, "win", "wins"))}${r.people.length ? ` · ${esc(r.people.join(", "))}` : ""}</span></div>
+        ${r.tasks.map(item).join("")}
+      </section>`,
+      )
+      .join("")}
+    <h3 class="lw-head">Kudos</h3>
+    <div class="lw-kudos">${wins.kudos
+      .map(
+        (p) => `<div class="lw-person">
+        <div class="lw-person-head"><strong>🙌 ${esc(p.who)}</strong><span class="meta">${esc(plural(p.tasks.length, "win", "wins"))}${p.rocks.length ? ` · ${esc(p.rocks.join(", "))}` : ""}</span></div>
+        <ul class="plain">${p.tasks.map((t) => `<li>${esc(t.plainName ?? t.name)}</li>`).join("")}</ul>
+      </div>`,
+      )
+      .join("")}</div>`;
+}
+
+document.addEventListener("change", (event) => {
+  const id = event.target.dataset?.lwTask;
+  if (!id || !lastWeek.wins) return;
+  if (event.target.checked) lastWeek.excluded.delete(id);
+  else lastWeek.excluded.add(id);
+  $("lw-text").value = lastWeekText(lastWeek.wins, lastWeek.excluded);
+});
+document.addEventListener("click", async (event) => {
+  if (event.target.id !== "lw-copy") return;
+  try {
+    await navigator.clipboard.writeText($("lw-text").value);
+    $("lw-note").textContent = "Copied.";
+  } catch {
+    $("lw-note").textContent = "The browser would not copy. Select the text and copy it by hand.";
+  }
+});
 
 function renderPasteView(key, report) {
   const view = pasteViews[key];
@@ -4756,7 +4822,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 const NAV_GROUPS = [
   { id: "today", pages: [["readout", "What needs you"], ["speech", "Daily Speech"], ["standup", "Stand-up"]] },
   { id: "team", pages: [["sprint", "Sprint"], ["backlog", "Backlog"], ["rocks", "Rocks"], ["tests", "Tests"], ["people", "1:1"], ["ideation", "Ideation"]] },
-  { id: "writeups", pages: [["update", "Update"], ["upsu", "Update + Stand-up"], ["wins", "Accomplishments"], ["impact", "Alex's Impact"]] },
+  { id: "writeups", pages: [["update", "Update"], ["upsu", "Update + Stand-up"], ["lastweek", "Last week's wins"], ["wins", "Accomplishments"], ["impact", "Alex's Impact"]] },
 ];
 const groupOf = (view) => NAV_GROUPS.find((g) => g.pages.some(([v]) => v === view)) ?? null;
 // The page last open in each area, so going back to an area lands where you were.
