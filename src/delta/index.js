@@ -365,7 +365,7 @@ function intelligemsFlags(delta, { config, dateKey, testNotes = null }) {
     });
   }
 
-  // P1 on a test means a variant is losing significantly on RPV, CVR or AOV (Alex,
+  // P1 on a test means a variant is losing significantly on RPV, CVR, AOV or Sub opt-in (Alex,
   // 2026-11-09). Anything else about a test is P2 at most, and does not escalate to P1
   // with age (flag-ledger reads `losing`). The loss is named on every P1 so the reason
   // for the severity is never a mystery.

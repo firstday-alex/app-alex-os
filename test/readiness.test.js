@@ -203,3 +203,10 @@ test("a test P1 needs a significant loss on RPV, CVR or AOV; otherwise it is P2"
   const [b3, n3] = verdictMove("not_ready", "mixed_signals", unclear);
   assert.equal(flagsBetween(b3, n3).find((f) => f.rule === "intelligems.verdict_changed").severity, "attention", "flat is P2");
 });
+
+test("a significant loss on Sub opt-in is a P1 too", () => {
+  const subLoss = { pct_subscription_orders: makeMetric(0.62, { uplift: -0.09, upliftInterval: [-0.14, -0.04], probBeatControl: 0.01 }) };
+  const flag = flagsBetween({ ...withVariant(subLoss), verdict: "not_ready" }, { ...withVariant(subLoss), verdict: "strong_loss" }).find((f) => f.rule === "intelligems.verdict_changed");
+  assert.equal(flag.severity, "p1");
+  assert.match(flag.message, /Losing: Sub opt-in -9\.0% for "Variant A" \(a clear loss\)\./);
+});

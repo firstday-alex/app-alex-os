@@ -173,6 +173,7 @@ const DEFAULT_LOSS_METRICS = [
   { metric: "net_revenue_per_visitor", label: "RPV" },
   { metric: "conversion_rate", label: "CVR" },
   { metric: "net_revenue_per_order", label: "AOV" },
+  { metric: "pct_subscription_orders", label: "Sub opt-in" },
 ];
 export const lossMetricsFor = (config) => config.intelligems?.p1LossMetrics?.metrics ?? DEFAULT_LOSS_METRICS;
 
@@ -240,7 +241,7 @@ export function intelligemsDelta(baseline, current, { config, logger, settings =
     const notable = verdictChanged || readyJustNow || p0.length > 0 || p0Split.controlSwings.length > 0 || p1.variants.length > 0 || p1.controlSwings.length > 0 || crossings.length > 0;
 
     // Alex, 2026-11-09: a test is a P1 only while a variant is losing significantly on
-    // RPV, CVR or AOV. Winning, flat or close to positive is P2 (attention) at most.
+    // RPV, CVR, AOV or Sub opt-in. Winning, flat or close to positive is P2 (attention) at most.
     const losses = clearResults(test, lossMetricsFor(config), thresholds).filter((r) => r.direction === "loss");
     tests.push({
       ...test,
