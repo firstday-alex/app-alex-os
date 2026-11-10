@@ -489,7 +489,7 @@ function flagTiles(flags) {
   const open = flags.filter((f) => viewOf(f) === "open");
   return [
     tile(open.filter((f) => f.severity === "p1").length, "P1"),
-    tile(open.filter((f) => f.severity === "attention").length, "Attention"),
+    tile(open.filter((f) => f.severity === "attention").length, "P2"),
     tile(open.filter((f) => f.severity === "prompt").length, "Decisions due"),
   ].join("");
 }
@@ -547,7 +547,7 @@ function topFlags(flags, n = 3) {
    what was hidden or handled, so × never makes a flag disappear without a way back. */
 
 const QUEUE_ROWS = 10;
-const SEV_SHORT = { p1: "P1", attention: "Attention", prompt: "Decision" };
+const SEV_SHORT = { p1: "P1", attention: "P2", prompt: "Decision" };
 const queue = { all: false, open: new Set(), trayOpen: false };
 
 function rankedFlags(flags) {
@@ -594,7 +594,7 @@ function renderTopThree(flags) {
   const count = (sev) => ranked.filter((f) => f.severity === sev).length;
   const chip = (n, label, cls = "") => (n ? `<span class="chip ${cls}">${n} ${esc(label)}</span>` : "");
   const summary = ranked.length
-    ? `${chip(count("p1"), "P1", "bad")}${chip(count("attention"), "attention", "warn")}${chip(count("prompt"), count("prompt") === 1 ? "decision due" : "decisions due")}${chip(flagsForView("waiting").length, "waiting on someone")}`
+    ? `${chip(count("p1"), "P1", "bad")}${chip(count("attention"), "P2", "warn")}${chip(count("prompt"), count("prompt") === 1 ? "decision due" : "decisions due")}${chip(flagsForView("waiting").length, "waiting on someone")}`
     : `<span class="meta">Nothing open that needs you.</span>`;
 
   const top = ranked.slice(0, 3);
@@ -926,7 +926,7 @@ function renderAttentionTools(flags) {
     ? `<div class="dod-windows" role="group" aria-label="Show">${Object.entries(ATTN_VIEWS)
         .map(([k, l]) => `<button type="button" class="ghost dod-window" data-view-attn="${k}">${esc(l)} <span data-count="${k}"></span></button>`)
         .join("")}</div>
-       <div class="dod-windows" role="group" aria-label="Severity">${[["", "All"], ["p1", "P1"], ["attention", "Attention"]]
+       <div class="dod-windows" role="group" aria-label="Severity">${[["", "All"], ["p1", "P1"], ["attention", "P2"]]
          .map(([k, l]) => `<button type="button" class="ghost dod-window" data-sev="${k}">${esc(l)}</button>`)
          .join("")}</div>
        <select id="attn-area" aria-label="Area">${option("", "All areas", a.area)}${areas.map((k) => option(k, AREA_LABEL[k] ?? k, a.area)).join("")}</select>

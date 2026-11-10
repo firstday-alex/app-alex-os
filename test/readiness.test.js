@@ -183,3 +183,23 @@ test("past our gate but not_ready on the platform: numbers in the message, and H
   assert.equal(loud.severity, "attention");
   assert.match(loud.message, /holding back a result: CVR \+4\.1% for "Variant A"/);
 });
+
+test("a test P1 needs a significant loss on RPV, CVR or AOV; otherwise it is P2", () => {
+  const unclear = { conversion_rate: makeMetric(0.032, { uplift: 0.03, upliftInterval: [-0.01, 0.07], probBeatControl: 0.88 }) };
+  const losing = { net_revenue_per_visitor: makeMetric(2.1, { uplift: -0.08, upliftInterval: [-0.12, -0.03], probBeatControl: 0.02 }) };
+  const winning = { conversion_rate: makeMetric(0.034, { uplift: 0.041, upliftInterval: [0.012, 0.07], probBeatControl: 0.97 }) };
+  const verdictMove = (from, to, metrics) => [{ ...withVariant(metrics), verdict: from }, { ...withVariant(metrics), verdict: to }];
+
+  const [b1, n1] = verdictMove("not_ready", "directional_win", winning);
+  const up = flagsBetween(b1, n1).find((f) => f.rule === "intelligems.verdict_changed");
+  assert.equal(up.severity, "attention", "a winning test is P2");
+  assert.equal(up.losing, undefined);
+
+  const [b2, n2] = verdictMove("not_ready", "strong_loss", losing);
+  const down = flagsBetween(b2, n2).find((f) => f.rule === "intelligems.verdict_changed");
+  assert.equal(down.severity, "p1");
+  assert.match(down.message, /Losing: RPV -8\.0% for "Variant A" \(a clear loss\)\./);
+
+  const [b3, n3] = verdictMove("not_ready", "mixed_signals", unclear);
+  assert.equal(flagsBetween(b3, n3).find((f) => f.rule === "intelligems.verdict_changed").severity, "attention", "flat is P2");
+});

@@ -365,6 +365,22 @@ function intelligemsFlags(delta, { config, dateKey, testNotes = null }) {
     });
   }
 
+  // P1 on a test means a variant is losing significantly on RPV, CVR or AOV (Alex,
+  // 2026-11-09). Anything else about a test is P2 at most, and does not escalate to P1
+  // with age (flag-ledger reads `losing`). The loss is named on every P1 so the reason
+  // for the severity is never a mystery.
+  const lossesById = new Map((delta.tests ?? []).map((t) => [String(t.id), t.losses ?? []]));
+  for (const flag of flags) {
+    if (flag.layer !== 3 || flag.subject?.type !== "test") continue;
+    const losses = lossesById.get(String(flag.subject.id).split(":")[0]) ?? [];
+    if (losses.length) {
+      flag.losing = losses.map(describeResult);
+      if (flag.severity === "p1" && !flag.message.includes("(a clear loss)")) flag.message += ` Losing: ${flag.losing.join("; ")}.`;
+    } else if (flag.severity === "p1") {
+      flag.severity = "attention";
+    }
+  }
+
   return flags;
 }
 

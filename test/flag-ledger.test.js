@@ -323,3 +323,11 @@ test("the readout opens with Today's 3, in the text and in Slack", () => {
   assert.deepEqual(r.summary.topThree, ["b", "a"]);
   assert.match(JSON.stringify(r.slackBlocks), /Today's 3\* · start here\\n1\. The P1\./);
 });
+
+test("a test flag escalates to P1 only while the test is losing on RPV, CVR or AOV", () => {
+  const testFlag = (over = {}) => flag({ id: "2026-10-19:intelligems.gate_disagreement:e1:disagreement", key: "intelligems.gate_disagreement:e1:disagreement", layer: 3, rule: "intelligems.gate_disagreement", subject: { type: "test", id: "e1:disagreement" }, ...over });
+  const entries = { "intelligems.gate_disagreement:e1:disagreement": { firstSeen: "2026-10-01", layer: 3 } };
+  const opts = { dateKey: "2026-10-19", sections: present, escalateAfterWorkingDays: 5 };
+  assert.equal(annotateFlags([testFlag()], entries, opts).flags[0].severity, "attention", "old but not losing stays P2");
+  assert.equal(annotateFlags([testFlag({ losing: ['RPV -6.0% for "A" (a clear loss)'] })], entries, opts).flags[0].severity, "p1");
+});

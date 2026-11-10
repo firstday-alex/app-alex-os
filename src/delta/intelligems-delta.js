@@ -7,7 +7,7 @@
 // Both are produced here. The second one is not a non-event: a quiet test still needs a
 // human to say what happens next.
 
-import { recommendFor } from "./readiness.js";
+import { recommendFor, clearResults } from "./readiness.js";
 import { checkTestP1Bands } from "./p1band.js";
 import { buildMetricTree, treeHeadline } from "./metric-tree.js";
 import { projectFutureValue } from "./future-value.js";
@@ -169,6 +169,13 @@ export function tradeOffs(test, config, futureValue = null) {
   return analysis;
 }
 
+const DEFAULT_LOSS_METRICS = [
+  { metric: "net_revenue_per_visitor", label: "RPV" },
+  { metric: "conversion_rate", label: "CVR" },
+  { metric: "net_revenue_per_order", label: "AOV" },
+];
+export const lossMetricsFor = (config) => config.intelligems?.p1LossMetrics?.metrics ?? DEFAULT_LOSS_METRICS;
+
 export function intelligemsDelta(baseline, current, { config, logger, settings = null, now = new Date() } = {}) {
   const thresholds = {
     strong: settings?.significanceStrong ?? 0.95,
@@ -232,8 +239,12 @@ export function intelligemsDelta(baseline, current, { config, logger, settings =
 
     const notable = verdictChanged || readyJustNow || p0.length > 0 || p0Split.controlSwings.length > 0 || p1.variants.length > 0 || p1.controlSwings.length > 0 || crossings.length > 0;
 
+    // Alex, 2026-11-09: a test is a P1 only while a variant is losing significantly on
+    // RPV, CVR or AOV. Winning, flat or close to positive is P2 (attention) at most.
+    const losses = clearResults(test, lossMetricsFor(config), thresholds).filter((r) => r.direction === "loss");
     tests.push({
       ...test,
+      losses,
       before: before ? { verdict: before.verdict, daysRunning: before.daysRunning, minOrdersPerGroup: before.minOrdersPerGroup } : null,
       recommendation,
       changes: { verdictChanged, gateJustMet, readyJustNow, p0Moves: p0, p1OutOfBand: p1.variants, p1ControlSwings: p1.controlSwings, p0ControlSwings: p0Split.controlSwings, probabilityCrossings: crossings },

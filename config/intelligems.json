@@ -50,6 +50,14 @@
     "minOrdersPerGroup": 300,
     "_comment": "Confirmed against a live test: '[KCM-PDP] Price per Gummy' at 42 runtime_days with 254/238 orders per variant returns verdict not_ready. Days met, orders not, so not ready. 300 is per group. The platform returns runtime_days and orders_per_variant inside the testResult block, so the gate is read rather than recomputed, and any disagreement with our own arithmetic is flagged."
   },
+  "p1LossMetrics": {
+    "_decided": "Alex, 2026-11-09: a test flag is a P1 only while a variant is losing significantly (a Strong loss) on one of these. Winning, flat or close to positive is P2 (Attention) at most, and test flags do not escalate to P1 with age.",
+    "metrics": [
+      { "metric": "net_revenue_per_visitor", "label": "RPV" },
+      { "metric": "conversion_rate", "label": "CVR" },
+      { "metric": "net_revenue_per_order", "label": "AOV" }
+    ]
+  },
   "decisionMetrics": {
     "metrics": [
       {

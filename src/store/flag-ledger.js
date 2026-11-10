@@ -103,7 +103,9 @@ export function annotateFlags(flags, entries, { dateKey, sections = {}, escalate
     // Something left at Attention for a week has stopped being something to keep an eye
     // on. It goes to P1, and says so, so the change in severity is never a mystery.
     // Context (a store move) is not something left undone, so it never escalates.
-    if (flag.severity === "attention" && !isContext(flag) && escalateAfterWorkingDays > 0 && openDays >= escalateAfterWorkingDays) {
+    // A test only becomes a P1 while it is losing on RPV, CVR or AOV, never by age alone.
+    const testNotLosing = flag.layer === 3 && flag.subject?.type === "test" && !flag.losing?.length;
+    if (flag.severity === "attention" && !isContext(flag) && !testNotLosing && escalateAfterWorkingDays > 0 && openDays >= escalateAfterWorkingDays) {
       out.severity = "p1";
       out.escalated = true;
       out.originalSeverity = "attention";
