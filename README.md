@@ -253,7 +253,7 @@ The menu (☰) holds the rest:
 
 | Where | What it is for |
 |---|---|
-| **What needs you** (Today) | The landing page. Today's 3, the week in review, store numbers, and every flag to triage: Done, Snooze, Waiting on, Not a problem, Draft a nudge, and quick fixes on rock flags. |
+| **What needs you** (Today) | The landing page. Your queue: everything open, ranked, the top 3 in full and the rest one line each, with a Hidden or handled tray so × never loses anything (Undo for 8 seconds too). Then the week in review, store numbers, and every flag to triage: Done, Snooze, Waiting on, Not a problem, Draft a nudge, and quick fixes on rock flags. |
 | **Tests** | Each test's readout, with the 12 month value projection. `#tests/<experience id>` opens one. |
 | **Setup** | The LTV multipliers and the decisions still open. |
 

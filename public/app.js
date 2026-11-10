@@ -536,24 +536,97 @@ function priorityScore(flag) {
   const rock = flag.layer === 1 || flag.subject?.type === "priority" || flag.rule === "intelligems.ready_for_call" ? 15 : 0;
   return base + age + escalated + rock;
 }
+// Today's 3 is the top of the queue (rankedFlags, below).
 function topFlags(flags, n = 3) {
+  return rankedFlags(flags).slice(0, n);
+}
+
+/* ---------------------------------- queue ----------------------------------
+   Everything open that needs Alex, ranked the same way as Today's 3, on one screen: the
+   top 3 as full cards, the rest one line each (click a line to open it), and a tray of
+   what was hidden or handled, so × never makes a flag disappear without a way back. */
+
+const QUEUE_ROWS = 10;
+const SEV_SHORT = { p1: "P1", attention: "Attention", prompt: "Decision" };
+const queue = { all: false, open: new Set(), trayOpen: false };
+
+function rankedFlags(flags) {
   return flags
     .map((flag, index) => ({ flag, index, score: triageOf(flag) || isContextFlag(flag) ? null : priorityScore(flag) }))
     .filter((x) => x.score != null)
     .sort((a, b) => b.score - a.score || a.index - b.index)
-    .slice(0, n)
     .map((x) => x.flag);
+}
+
+function triageShort(t) {
+  if (!t) return "";
+  if (t.status === "snoozed") return t.note === "hidden for today" ? "Hidden today" : `Snoozed to ${fmtDay(t.until)}`;
+  if (t.status === "waiting") return `Waiting on ${t.waitingOn} to ${fmtDay(t.until)}`;
+  return TRIAGE_LABEL[t.status] ?? t.status;
+}
+
+/** One line: severity, what, who and how long, the main link, and Done / × (or Bring back). */
+function queueRow(flag) {
+  const ctx = flagContext(flag);
+  const t = triageOf(flag);
+  const link = ctx.links.find((l) => l.clickup) ?? ctx.links.find((l) => l.external) ?? ctx.links.find((l) => !l.more);
+  const age = flag.isNew ? "new today" : flag.openDays ? `${plural(flag.openDays, "day", "days")} open` : "";
+  const meta = [ctx.owners.join(", "), age, flag.escalated ? "escalated" : "", t ? triageShort(t) : ""].filter(Boolean).join(" · ");
+  return `<div class="flag q-row sev-${esc(flag.severity)}"${t ? " data-triaged" : ""} data-flag="${esc(flag.id)}" data-key="${esc(keyOf(flag))}" data-layer="${esc(flag.layer)}">
+      <span class="q-sev">${esc(SEV_SHORT[flag.severity] ?? flag.severity)}</span>
+      <button type="button" class="q-msg" data-q-open="${esc(flag.id)}" title="Open the full card">${esc(flag.message)}</button>
+      <span class="q-meta">${esc(meta)}</span>
+      <span class="q-acts">
+        ${link ? `<a class="ql" href="${esc(link.href)}"${link.external ? ' target="_blank" rel="noreferrer"' : ""}>${esc(link.label)}${link.external ? " ↗" : ""}</a>` : ""}
+        ${t
+          ? `<button type="button" class="ghost sm" data-triage="clear">Bring back</button>`
+          : `<button type="button" class="ghost sm" data-triage="done" title="Handled. Hidden until the condition clears and comes back.">Done</button>
+             <button type="button" class="q-x" data-triage="hide-today" title="Hide for today. It goes to Hidden or handled below, and is back tomorrow if it still holds." aria-label="Hide for today">×</button>`}
+      </span>
+    </div>`;
 }
 
 function renderTopThree(flags) {
   const host = $("start-here");
   if (!host) return;
-  const top = topFlags(flags);
-  host.innerHTML = top.length
-    ? `<div class="start-here-head"><h2>Today's 3</h2><span class="meta">start here: ranked by severity, how long each has been open, and whether it touches a rock</span></div>
-       ${top.map(flagCard).join("")}`
-    : `<div class="start-here-head"><h2>Today's 3</h2><span class="meta">nothing open that needs you. The full lists are below.</span></div>`;
+  const ranked = rankedFlags(flags);
+  const set = flags.filter((f) => !isContextFlag(f) && viewOf(f) !== "open");
+  const count = (sev) => ranked.filter((f) => f.severity === sev).length;
+  const chip = (n, label, cls = "") => (n ? `<span class="chip ${cls}">${n} ${esc(label)}</span>` : "");
+  const summary = ranked.length
+    ? `${chip(count("p1"), "P1", "bad")}${chip(count("attention"), "attention", "warn")}${chip(count("prompt"), count("prompt") === 1 ? "decision due" : "decisions due")}${chip(flagsForView("waiting").length, "waiting on someone")}`
+    : `<span class="meta">Nothing open that needs you.</span>`;
+
+  const top = ranked.slice(0, 3);
+  const rest = ranked.slice(3);
+  const shown = queue.all ? rest : rest.slice(0, QUEUE_ROWS);
+  const line = (f) => (queue.open.has(f.id) ? `<div class="q-opened">${flagCard(f)}<button type="button" class="link-btn" data-q-open="${esc(f.id)}">Close</button></div>` : queueRow(f));
+
+  host.innerHTML = `
+    <div class="start-here-head"><h2>Your queue</h2><span class="q-summary">${summary}</span></div>
+    ${top.length ? `<p class="q-label">Do first</p>${top.map((f) => flagCard(f)).join("")}` : ""}
+    ${rest.length ? `<p class="q-label">Then <span class="meta">${rest.length} more, highest first. Click one to open it.</span></p>
+      <div class="q-list">${shown.map(line).join("")}</div>
+      ${rest.length > shown.length ? `<button type="button" class="ghost sm" data-q-more>Show all ${rest.length}</button>` : queue.all && rest.length > QUEUE_ROWS ? `<button type="button" class="ghost sm" data-q-more>Show fewer</button>` : ""}` : ""}
+    ${set.length ? `<details class="q-tray"${queue.trayOpen ? " open" : ""}>
+        <summary>Hidden or handled <span class="meta">${set.length} · nothing is lost: bring any back</span></summary>
+        <div class="q-list">${set.map(queueRow).join("")}</div>
+      </details>` : ""}`;
 }
+
+$("start-here").addEventListener("click", (event) => {
+  const more = event.target.closest("[data-q-more]");
+  const open = event.target.closest("[data-q-open]");
+  if (more) queue.all = !queue.all;
+  else if (open) {
+    const id = open.dataset.qOpen;
+    queue.open.has(id) ? queue.open.delete(id) : queue.open.add(id);
+  } else return;
+  renderTopThree(state.report?.flags ?? []);
+});
+$("start-here").addEventListener("toggle", (event) => {
+  if (event.target.classList?.contains("q-tray")) queue.trayOpen = event.target.open;
+}, true);
 
 /**
  * This week: the Friday roll-up, any day. The same lines the Friday readout leads with,
@@ -1399,6 +1472,22 @@ document.addEventListener("click", (event) => {
 
 /* ------------------------------ triage actions ------------------------------ */
 
+/** After ×: a few seconds to take it back, and a pointer to where it went. */
+function undoToast(flagId, key, layer) {
+  document.getElementById("undo-toast")?.remove();
+  const bar = document.createElement("div");
+  bar.id = "undo-toast";
+  bar.innerHTML = `Hidden for today. It is under <strong>Hidden or handled</strong>. <button type="button" class="link-btn">Undo</button>`;
+  bar.querySelector("button").addEventListener("click", async () => {
+    bar.remove();
+    const holder = document.createElement("div");
+    Object.assign(holder.dataset, { flag: flagId, key, layer });
+    await saveTriage(holder, { status: null });
+  });
+  document.body.append(bar);
+  setTimeout(() => bar.remove(), 8000);
+}
+
 const findFlag = (card) => (state.report?.flags ?? []).find((f) => f.id === card.dataset.flag);
 
 async function saveTriage(card, payload) {
@@ -1554,7 +1643,11 @@ document.addEventListener("click", async (event) => {
   el.closest("details.act-menu")?.removeAttribute("open");
 
   if (action === "done") return saveTriage(card, { status: "done" });
-  if (action === "hide-today") return saveTriage(card, { status: "snoozed", calendarDays: 1, note: "hidden for today" });
+  if (action === "hide-today") {
+    const { key, layer, flag } = card.dataset;
+    await saveTriage(card, { status: "snoozed", calendarDays: 1, note: "hidden for today" });
+    return undoToast(flag, key, layer);
+  }
   if (action === "snooze") return saveTriage(card, { status: "snoozed", workingDays: Number(el.dataset.days) });
   if (action === "fix-toggle") return card.classList.toggle("open");
   if (action === "clear") return saveTriage(card, { status: null });

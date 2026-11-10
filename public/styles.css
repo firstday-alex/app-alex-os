@@ -791,3 +791,40 @@ ul.plain { margin: 0; padding-left: 18px; }
 .im-item { margin: 4px 0; overflow-wrap: anywhere; }
 .im-name a { font-weight: 600; }
 .im-changes ul { margin: 2px 0 6px; padding-left: 18px; }
+
+/* ---------------------------------- queue ---------------------------------- */
+.q-summary { display: flex; flex-wrap: wrap; gap: 6px; }
+.q-summary .chip { font-size: 12px; }
+.chip.warn { background: var(--amber-bg); border-color: var(--amber); color: var(--amber-ink); }
+.q-label { margin: 14px 0 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.q-label .meta { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }
+.q-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.flag.q-row {
+  display: grid; grid-template-columns: 78px minmax(0, 1fr) auto; grid-template-areas: "sev msg acts" "sev meta acts";
+  align-items: center; column-gap: 10px; padding: 7px 10px; margin: 0;
+}
+.q-sev { grid-area: sev; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.sev-p1 .q-sev { color: var(--red); }
+.sev-attention .q-sev { color: var(--amber-ink); }
+.q-msg {
+  grid-area: msg; background: none; border: 0; padding: 0; font: inherit; color: var(--ink); text-align: left; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.q-msg:hover { text-decoration: underline; }
+.q-meta { grid-area: meta; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-acts { grid-area: acts; display: flex; align-items: center; gap: 6px; }
+.q-x { background: none; border: 0; font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 4px; color: var(--muted); cursor: pointer; }
+.q-x:hover { background: var(--code); color: var(--ink); }
+.q-row[data-triaged] { opacity: .75; background: var(--panel); }
+.q-opened { margin-bottom: 6px; }
+.q-tray { margin: 12px 0 4px; }
+.q-tray > summary { cursor: pointer; font-weight: 600; color: var(--green); padding: 4px 0 8px; }
+#undo-toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 60;
+  background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 6px; font-size: 14px; box-shadow: 0 4px 14px rgba(0,0,0,.2);
+}
+#undo-toast .link-btn { color: #fff; text-decoration: underline; margin-left: 6px; }
+@media (max-width: 640px) {
+  .flag.q-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "sev acts" "msg msg" "meta meta"; }
+  .q-msg { white-space: normal; }
+}
