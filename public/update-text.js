@@ -122,7 +122,8 @@ export function buildAccomplishments(tasks, { since, handleFor }) {
 
 /* ------------------------------ last week's wins ------------------------------
    The "complete" tickets (last sprint's work, moved there at rollover), summarised by
-   Rock Reference, then kudos by person. Every line is a ticket ClickUp holds; nothing is
+   the ClickUp ROCK field (field f9135883, `bigSwing` in code: it was named Big Swing
+   until it was renamed in ClickUp), then kudos by person. Every line is a ticket ClickUp holds; nothing is
    written by a model. */
 
 const NO_ROCK = "No rock";
@@ -141,7 +142,7 @@ export function buildLastWeekWins(tasks, { handleFor }) {
   const rocks = new Map();
   const people = new Map();
   for (const t of done) {
-    const rock = t.leadershipPriority?.label || NO_ROCK;
+    const rock = t.bigSwing?.label || NO_ROCK;
     if (!rocks.has(rock)) rocks.set(rock, { label: rock, tasks: [], people: new Set() });
     const r = rocks.get(rock);
     r.tasks.push(t);

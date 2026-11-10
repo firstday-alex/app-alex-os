@@ -25,18 +25,22 @@
     "leadershipPriority": {
       "id": "de6b3171-e1ed-4078-ac4c-f1f1c9a4fd4b",
       "matchName": [
+        "TACTIC",
         "Rock Reference",
         "Leadership Priority"
       ],
       "type": "drop_down",
-      "_comment": "Rock Reference. The quarterly outcome a ticket ladders up to."
+      "_comment": "Rock Reference. The quarterly outcome a ticket ladders up to.",
+      "_renamed": "Read live 2026-11-09: this field (same id) is now named TACTIC in ClickUp, with options like ncAOV, CVR, LTV, Sub opt-in for NC. Matched by id, so the rename changes no data."
     },
     "bigSwing": {
       "id": "f9135883-30f4-42ab-89af-69173768c248",
       "matchName": [
+        "ROCK",
         "Big Swing"
       ],
       "type": "drop_down",
+      "_renamed": "Read live 2026-11-09: this field (same id) is now named ROCK in ClickUp, with options like Family Bundle Builder, All-in-1 Bundle, Bundles / Upsells 2.0. Matched by id, so the rename changes no data.",
       "_comment": "Created 2026-09-10. This is the field the cross layer rule is actually about: 'at least one, and really only one, big swing tied to a leadership priority'. Rock Reference says which quarterly outcome a ticket serves; Big Swing says which project it belongs to. They are different questions and the system reads both."
     },
     "readyToStart": {

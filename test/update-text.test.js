@@ -106,14 +106,14 @@ test("update + stand-up: a line goes under the poster's ticket it names, pulls i
 
 /* ------------------------------ last week's wins ------------------------------ */
 
-test("last week's wins: only complete tickets, by Rock Reference, then kudos by person", async () => {
+test("last week's wins: only complete tickets, by the ClickUp ROCK field, then kudos by person", async () => {
   const { buildLastWeekWins, lastWeekText } = await import("../public/update-text.js");
   const u = (id, username) => ({ id, username });
   const tasks = [
-    { id: 1, name: "[DEV] Bundle page", status: "complete", dateClosed: Date.parse("2026-11-04"), assignees: [u(1, "Robson Lopes")], leadershipPriority: { label: "Bundles" } },
-    { id: 2, name: "Gift box", status: "complete", dateClosed: Date.parse("2026-11-05"), assignees: [u(1, "Robson Lopes"), u(2, "Blake Tucker")], leadershipPriority: { label: "Bundles" } },
+    { id: 1, name: "[DEV] Bundle page", status: "complete", dateClosed: Date.parse("2026-11-04"), assignees: [u(1, "Robson Lopes")], bigSwing: { label: "Bundles" } },
+    { id: 2, name: "Gift box", status: "complete", dateClosed: Date.parse("2026-11-05"), assignees: [u(1, "Robson Lopes"), u(2, "Blake Tucker")], bigSwing: { label: "Bundles" } },
     { id: 3, name: "Footer", status: "complete", dateClosed: Date.parse("2026-11-03"), assignees: [u(2, "Blake Tucker")] },
-    { id: 4, name: "This sprint", status: "done (this sprint)", assignees: [u(2, "Blake Tucker")], leadershipPriority: { label: "Bundles" } },
+    { id: 4, name: "This sprint", status: "done (this sprint)", assignees: [u(2, "Blake Tucker")], bigSwing: { label: "Bundles" } },
     { id: 5, name: "Archived", status: "complete", archived: true, assignees: [u(2, "Blake Tucker")] },
   ];
   const wins = buildLastWeekWins(tasks, { handleFor: (x) => x.username.split(" ")[0] });
