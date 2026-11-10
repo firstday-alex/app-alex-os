@@ -122,7 +122,7 @@ test("last week's wins: only complete tickets, by the ClickUp ROCK field, then k
   assert.deepEqual(wins.kudos.map((p) => [p.who, p.tasks.length]), [["Blake", 2], ["Robson", 2]]);
   assert.equal(
     lastWeekText(wins),
-    "**Last week's wins, by rock**\n**Bundles** – 2 wins (@Robson, @Blake): Gift box; Bundle page\n**No rock** – 1 win (@Blake): Footer\n\n**Kudos**\n🙌 @Blake – 2 wins across Bundles: Gift box, Footer\n🙌 @Robson – 2 wins across Bundles: Gift box, Bundle page",
+    "Last week's wins, by rock\nBundles: Gift box; Bundle page\nNo rock: Footer\n\nKudos\n🙌 Blake (Bundles): Gift box, Footer\n🙌 Robson (Bundles): Gift box, Bundle page",
   );
   assert.equal(lastWeekText(wins, new Set(["3"])).includes("Footer"), false, "an unticked ticket leaves both sections");
 });

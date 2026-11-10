@@ -170,26 +170,25 @@ export function buildLastWeekWins(tasks, { handleFor }) {
   };
 }
 
-/** "Bundles – 3 wins (@Robson, @Blake): Bundle page; Checkout fix; Gift box". */
+/** "Bundles 2.0: Bundle page; Checkout fix; Gift box". Plain text, so it pastes anywhere. */
 export function rockLine(r, excluded = new Set()) {
   const tasks = r.tasks.filter((t) => !excluded.has(String(t.id)));
   if (!tasks.length) return null;
-  const by = r.people.length ? ` (${r.people.map((h) => `@${h}`).join(", ")})` : "";
-  return `**${r.label}** – ${tasks.length} ${tasks.length === 1 ? "win" : "wins"}${by}: ${tasks.map((t) => cleanName(t.plainName ?? t.name)).join("; ")}`;
+  return `${r.label}: ${tasks.map((t) => cleanName(t.plainName ?? t.name)).join("; ")}`;
 }
 
-/** "🙌 @Robson – 3 wins across Bundles and Checkout: Bundle page, Checkout fix, Gift box". */
+/** "🙌 Robson (Bundles 2.0): Bundle page, Gift box". */
 export function kudosLine(p, excluded = new Set()) {
   const tasks = p.tasks.filter((t) => !excluded.has(String(t.id)));
   if (!tasks.length) return null;
-  const across = p.rocks.length ? ` across ${listed(p.rocks)}` : "";
-  return `🙌 @${p.who} – ${tasks.length} ${tasks.length === 1 ? "win" : "wins"}${across}: ${tasks.map((t) => cleanName(t.plainName ?? t.name)).join(", ")}`;
+  const across = p.rocks.length ? ` (${p.rocks.join(", ")})` : "";
+  return `🙌 ${p.who}${across}: ${tasks.map((t) => cleanName(t.plainName ?? t.name)).join(", ")}`;
 }
 
 export function lastWeekText(wins, excluded = new Set()) {
   const rocks = wins.rocks.map((r) => rockLine(r, excluded)).filter(Boolean);
   const kudos = wins.kudos.map((p) => kudosLine(p, excluded)).filter(Boolean);
-  return [rocks.length ? ["**Last week's wins, by rock**", ...rocks].join("\n") : "", kudos.length ? ["**Kudos**", ...kudos].join("\n") : ""]
+  return [rocks.length ? ["Last week's wins, by rock", ...rocks].join("\n") : "", kudos.length ? ["Kudos", ...kudos].join("\n") : ""]
     .filter(Boolean)
     .join("\n\n");
 }

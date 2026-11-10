@@ -2381,7 +2381,7 @@ function renderLastWeek(report) {
     ${wins.rocks
       .map(
         (r) => `<section class="up-group">
-        <div class="sp-group-head"><h3>${esc(r.label)}</h3><span class="meta">${esc(plural(r.tasks.length, "win", "wins"))}${r.people.length ? ` · ${esc(r.people.join(", "))}` : ""}</span></div>
+        <div class="sp-group-head"><h3>${esc(r.label)}</h3></div>
         ${r.tasks.map(item).join("")}
       </section>`,
       )
@@ -2390,7 +2390,7 @@ function renderLastWeek(report) {
     <div class="lw-kudos">${wins.kudos
       .map(
         (p) => `<div class="lw-person">
-        <div class="lw-person-head"><strong>🙌 ${esc(p.who)}</strong><span class="meta">${esc(plural(p.tasks.length, "win", "wins"))}${p.rocks.length ? ` · ${esc(p.rocks.join(", "))}` : ""}</span></div>
+        <div class="lw-person-head"><strong>🙌 ${esc(p.who)}</strong>${p.rocks.length ? `<span class="meta">${esc(p.rocks.join(", "))}</span>` : ""}</div>
         <ul class="plain">${p.tasks.map((t) => `<li>${esc(t.plainName ?? t.name)}</li>`).join("")}</ul>
       </div>`,
       )
