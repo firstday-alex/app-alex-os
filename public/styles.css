@@ -601,7 +601,19 @@ ul.plain { margin: 0; padding-left: 18px; }
 }
 #tabs .tab:hover { color: var(--ink); }
 #tabs .tab.active { color: var(--green); border-bottom-color: var(--green); }
+/* The open area's pages, a row under the areas. */
+#topbar { flex-wrap: wrap; }
+#subtabs { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px; padding-top: 8px; margin-top: 2px; border-top: 1px solid var(--line); }
+#subtabs[hidden] { display: none; }
+.subtab {
+  background: none; border: 1px solid transparent; border-radius: 999px; color: var(--muted);
+  padding: 4px 12px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.subtab:hover { color: var(--ink); background: var(--code); }
+.subtab.active { color: #fff; background: var(--green); border-color: var(--green); }
+.preview-line { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
 .nav-label { margin-top: 14px; }
+#drawer .drawer-label + .nav { margin-top: 0; }
 @media (max-width: 560px) {
   #topbar { gap: 6px; padding: 8px 10px; }
   #topbar #chip-mode { display: none; }

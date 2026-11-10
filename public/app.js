@@ -106,7 +106,7 @@ function render() {
   const banners = [];
   if (report.mode !== "official") {
     banners.push(
-      `<div class="note"><strong>Live preview.</strong> The baseline is pinned to the previous working day's 8 AM snapshot, so this is what tomorrow's 8 AM readout would say if nothing else changed. The scheduled send is still the official readout.</div>`,
+      `<p class="meta preview-line">Live preview against the previous working day's 8 AM snapshot. The 8 AM send is still the official readout.</p>`,
     );
   }
   for (const missing of report.missing ?? []) {
@@ -4657,10 +4657,28 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 
 /* ----------------------------------- nav ----------------------------------- */
 
-// Sprint, Rocks and 1:1 are the tabs. The rest live in the menu and name themselves in
-// the top bar when open.
-const TAB_VIEWS = new Set(["sprint", "backlog", "rocks", "people", "update", "upsu", "wins", "standup", "ideation", "impact", "speech"]);
-const VIEW_TITLES = { readout: "Daily readout", tests: "Tests", setup: "Setup" };
+// Three areas, each a row of pages. Today is what to act on now, Team is the work itself,
+// Write-ups is what gets sent or kept. Setup is only in the menu, and names itself in the
+// top bar when open. The drawer lists the same groups (index.html).
+const NAV_GROUPS = [
+  { id: "today", pages: [["readout", "What needs you"], ["speech", "Daily Speech"], ["standup", "Stand-up"]] },
+  { id: "team", pages: [["sprint", "Sprint"], ["backlog", "Backlog"], ["rocks", "Rocks"], ["tests", "Tests"], ["people", "1:1"], ["ideation", "Ideation"]] },
+  { id: "writeups", pages: [["update", "Update"], ["upsu", "Update + Stand-up"], ["wins", "Accomplishments"], ["impact", "Alex's Impact"]] },
+];
+const groupOf = (view) => NAV_GROUPS.find((g) => g.pages.some(([v]) => v === view)) ?? null;
+// The page last open in each area, so going back to an area lands where you were.
+const lastInGroup = {};
+const VIEW_TITLES = { setup: "Setup" };
+
+function renderSubtabs(name) {
+  const group = groupOf(name);
+  $("subtabs").innerHTML = group
+    ? group.pages
+        .map(([v, label]) => `<button type="button" class="subtab${v === name ? " active" : ""}" data-view="${v}" aria-current="${v === name ? "page" : "false"}">${esc(label)}</button>`)
+        .join("")
+    : "";
+  $("subtabs").hidden = !group;
+}
 
 /* --------------------------------- 1:1 prep ---------------------------------
    One person at a time, built entirely from what the dashboard already holds: the
@@ -4978,9 +4996,10 @@ $("settings-audit-wrap")?.addEventListener("toggle", async (event) => {
    as tests start and end. */
 
 function parseHash(hash) {
-  const [raw, ...rest] = (hash || "#sprint").slice(1).split("/");
+  const [raw, ...rest] = (hash || "#readout").slice(1).split("/");
   // Staleness folded into the Sprint view; an old link to it still lands somewhere useful.
-  const name = raw === "staleness" ? "sprint" : raw || "sprint";
+  // A bare address opens Today's "What needs you": what to act on, first.
+  const name = raw === "staleness" ? "sprint" : raw || "readout";
   return { name, target: rest.join("/") ? decodeURIComponent(rest.join("/")) : null };
 }
 
@@ -5014,12 +5033,16 @@ function showView(name) {
   for (const section of document.querySelectorAll(".view")) {
     section.classList.toggle("hidden", section.id !== `view-${name}`);
   }
-  for (const button of document.querySelectorAll(".nav, .tab")) {
-    button.classList.toggle("active", button.dataset.view === name);
-    if (button.classList.contains("tab")) button.setAttribute("aria-selected", String(button.dataset.view === name));
+  const group = groupOf(name);
+  if (group) lastInGroup[group.id] = name;
+  for (const button of document.querySelectorAll(".nav")) button.classList.toggle("active", button.dataset.view === name);
+  for (const button of document.querySelectorAll("#tabs .tab")) {
+    button.classList.toggle("active", button.dataset.group === group?.id);
+    button.setAttribute("aria-selected", String(button.dataset.group === group?.id));
   }
-  $("view-title").textContent = TAB_VIEWS.has(name) ? "" : VIEW_TITLES[name] ?? name;
-  $("view-title").hidden = TAB_VIEWS.has(name);
+  renderSubtabs(name);
+  $("view-title").textContent = group ? "" : VIEW_TITLES[name] ?? name;
+  $("view-title").hidden = Boolean(group);
   // Keep an existing deep-link target: showView is also called on boot from the hash,
   // and overwriting it there would drop the very test we were asked to open.
   if (parseHash(location.hash).name !== name) location.hash = name;
@@ -5136,9 +5159,19 @@ $("menu-toggle").addEventListener("click", () =>
   $("drawer").classList.contains("open") ? closeDrawer() : openDrawer(),
 );
 $("scrim").addEventListener("click", closeDrawer);
-for (const button of document.querySelectorAll(".nav, .tab")) {
+for (const button of document.querySelectorAll(".nav")) {
   button.addEventListener("click", () => showView(button.dataset.view));
 }
+for (const button of document.querySelectorAll("#tabs .tab")) {
+  button.addEventListener("click", () => {
+    const group = NAV_GROUPS.find((g) => g.id === button.dataset.group);
+    showView(lastInGroup[group.id] ?? group.pages[0][0]);
+  });
+}
+$("subtabs").addEventListener("click", (event) => {
+  const button = event.target.closest(".subtab");
+  if (button) showView(button.dataset.view);
+});
 /**
  * `#rocks/<id>` opens that rock in the editor. Anything else after `#rocks/` is taken as
  * filter text, which is how a person's flag links to their rocks. Waits for the rocks to load.
