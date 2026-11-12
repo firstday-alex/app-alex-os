@@ -70,9 +70,9 @@
   },
   "changelog": {
     "spreadsheetId": "1jxXy1jEsAfBAK5oy-SgtmBvq_cN2AUcq-LLIJJ3BLSU",
-    "gid": 1384691948,
+    "gid": null,
     "lookbackDays": 14,
-    "_comment": "The firstday.com changelog sheet: what changed on the site in production. Read only (spreadsheets.readonly) by src/collectors/changelog.js, as a Google service account: GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY in Netlify, and the sheet shared with that email as a Viewer. gid is the tab (the number after #gid= in its URL); columns are found by header (Date, Change, Details, url, Test Link, Test Promoted, Additional Monthly Revenue). Feeds the Update's 'Changes to production' and the Daily Speech. Remove this block to stop reading it."
+    "_comment": "The firstday.com changelog sheet: what changed on the site in production. Read only (spreadsheets.readonly) by src/collectors/changelog.js, as a Google service account: GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY in Netlify, and the sheet shared with that email as a Viewer. With gid null every tab that reads as a changelog (a Date column and a Change column, e.g. site_changelog and Web Changelog Flow) is read and merged, and the test and backlog tabs are passed over; set gid (the number after #gid= in a tab's URL) to read only that tab. Columns are found by header (Date, Change, Details, url, Test Link, Test Promoted, Additional Monthly Revenue). Feeds the Update's 'Changes to production' and the Daily Speech. Remove this block to stop reading it."
   },
   "anthropic": {
     "model": "claude-opus-5",

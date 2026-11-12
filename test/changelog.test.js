@@ -112,7 +112,11 @@ function fakeGoogle({ valuesStatus = 200, rows = ROWS, tabs = [{ sheetId: 0, tit
     calls.push({ url, init });
     const json = (status, body) => new Response(JSON.stringify(body), { status });
     if (url.startsWith("https://oauth2.googleapis.com/token")) return json(200, { access_token: "ya29.x", expires_in: 3600 });
-    if (url.includes("/values/")) return valuesStatus === 200 ? json(200, { values: rows }) : json(valuesStatus, { error: { message: "denied" } });
+    if (url.includes("/values:batchGet")) {
+      if (valuesStatus !== 200) return json(valuesStatus, { error: { message: "denied" } });
+      const titles = [...new URL(url).searchParams.getAll("ranges")].map((r) => r.slice(1, -1));
+      return json(200, { valueRanges: titles.map((title) => ({ range: title, values: (typeof rows === "function" ? rows(title) : rows) })) });
+    }
     return json(200, { properties: { title: "firstday.com changelog" }, sheets: tabs.map((properties) => ({ properties })) });
   };
   return { calls, fetchImpl };
@@ -130,6 +134,7 @@ test("collect: the tab is found by gid, read unformatted, and only GETs touch th
   const sheetCalls = g.calls.filter((c) => c.url.startsWith("https://sheets.googleapis.com"));
   assert.ok(sheetCalls.every((c) => (c.init?.method ?? "GET") === "GET"));
   assert.match(sheetCalls[1].url, /Web%20Changelog%20Flow/);
+  assert.doesNotMatch(sheetCalls[1].url, /site_changelog/, "with a gid, only that tab");
   assert.match(sheetCalls[1].url, /valueRenderOption=UNFORMATTED_VALUE/);
   assert.equal(sheetCalls[0].init.headers.authorization, "Bearer ya29.x");
 });
@@ -162,4 +167,21 @@ test("the speech reads the sheet live, and falls back to the readout's copy", as
   const fallback = await changesForSpeech({ config, env: {}, now, report });
   assert.deepEqual(fallback.map((c) => c.change), ["From the readout"]);
   assert.equal(await changesForSpeech({ config, env: {}, now, report: {} }), null);
+});
+
+test("collect: without a gid, every changelog tab is read and merged; other tabs are passed over", async () => {
+  clearGoogleTokenCache();
+  const byTab = {
+    site_changelog: [["Day", "Date", "", "", "", ""], ["Mon", "11/9/2026", "KDE buy box rolled out"], ["Tue", "11/10/2026", ""], ["Wed", "11/11/2026", "promoted new homepage"]],
+    "Web Changelog Flow": ROWS,
+    active_tests: [["start", "end", "will end by", "test"], ["11/1/2026", "", "", "Some test"]],
+  };
+  const g = fakeGoogle({ tabs: Object.keys(byTab).map((title, i) => ({ sheetId: i, title })), rows: (title) => byTab[title] });
+  const out = await collectChangelog({ config: { system: { ...config.system, changelog: { spreadsheetId: "SHEET", gid: null } } }, env, fetchImpl: g.fetchImpl, now: new Date("2026-11-12T15:00:00Z") });
+  assert.equal(out.sheet.tab, "site_changelog + Web Changelog Flow");
+  assert.deepEqual(out.entries.map((e) => [e.date, e.change, e.tab]), [
+    ["2026-11-11", "promoted new homepage", "site_changelog"],
+    ["2026-11-09", "KDE buy box rolled out", "site_changelog"],
+  ], "the same change on the same day in two tabs is one change");
+  assert.equal(new Set(out.entries.map((e) => e.row)).size, out.entries.length, "row keys are unique across tabs");
 });

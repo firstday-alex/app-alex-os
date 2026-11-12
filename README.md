@@ -64,8 +64,9 @@ Slack changelog workflow appends to: Date, Change, Details, url, Test Link, Test
 Promoted, Additional Monthly Revenue). `src/collectors/changelog.js` reads it read only
 (`spreadsheets.readonly`) as a Google service account, at every pipeline run into
 `detail.changelog` (the last `lookbackDays`, default 14), and live when the Daily Speech
-is written. The tab is found by its gid and the columns by their headers, so adding or
-moving a column changes nothing. Screenshot links are never read (they carry Slack ids).
+is written. Every tab with a Date and a Change column is read and merged (the same
+change on the same day in two tabs counts once); set `system.changelog.gid` to read one
+tab only. Columns are found by their headers, so adding or moving a column changes nothing. Screenshot links are never read (they carry Slack ids).
 It raises no flags and has no baseline; if it cannot be read, the Update says why and
 everything else goes out as normal. Settings in `system.changelog`; credentials
 `GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_PRIVATE_KEY` (see `docs/DEPLOY.md`).
@@ -92,7 +93,7 @@ src/
   pipeline.js      collector -> delta -> render -> send
 netlify/functions/ the 8 AM trigger, the pipeline, the dashboard API, the Slack endpoints
 public/            the dashboard
-test/              499 tests, no network, no API keys needed
+test/              500 tests, no network, no API keys needed
 scripts/           run the pipeline locally, and a syntax check
 ```
 
@@ -106,7 +107,7 @@ testable, and it is why the tests need no network and no credentials.
 
 ```bash
 npm install
-npm test                    # 499 tests. no network, no keys.
+npm test                    # 500 tests. no network, no keys.
 npm run check               # parses every source and config file
 
 cp .env.example .env        # then fill in the tokens you have

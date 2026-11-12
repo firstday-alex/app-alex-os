@@ -1,6 +1,7 @@
 // The site changelog: what changed on firstday.com in production. Read from the team's
-// Google Sheet (system.changelog), the tab the Slack "changelog" workflow appends a row
-// to: Date, Change, Details, URL, Test Link, Test Promoted, Additional Monthly Revenue.
+// Google Sheet (system.changelog): every tab with a Date and a Change column, such as the
+// one the Slack "changelog" workflow appends to (Date, Change, Details, URL, Test Link,
+// Test Promoted, Additional Monthly Revenue) and the older day-by-day site_changelog.
 //
 // Deterministic and read only (spreadsheets.readonly). Read by the pipeline into the
 // report, so the Update on the Write-ups tab carries "Changes to production", and read
@@ -154,9 +155,9 @@ export function changelogConfigured(config, env = process.env) {
 }
 
 /**
- * Reads the configured tab and returns the entries in the lookback window, newest first.
- * The tab is found by its gid (the number after #gid= in the sheet's URL), so renaming
- * it in the sheet changes nothing here.
+ * Reads the sheet and returns the entries in the lookback window, newest first. With
+ * system.changelog.gid set, only that tab (the number after #gid= in its URL); without,
+ * every tab that reads as a changelog, merged.
  */
 export async function collectChangelog({ config, env = process.env, fetchImpl, sleep, logger, now = new Date() }) {
   const cfg = config.system?.changelog ?? {};
@@ -176,15 +177,39 @@ export async function collectChangelog({ config, env = process.env, fetchImpl, s
 
   const meta = await call(`${SHEETS}/${encodeURIComponent(cfg.spreadsheetId)}?fields=properties.title,sheets.properties(sheetId,title)`, "sheets.meta");
   const tabs = (meta.body?.sheets ?? []).map((s) => s.properties);
-  const tab = cfg.gid != null ? tabs.find((t) => String(t.sheetId) === String(cfg.gid)) : tabs[0];
-  if (!tab) throw new Error(`The changelog sheet has no tab with gid ${cfg.gid}. Tabs: ${tabs.map((t) => t.title).join(", ")}.`);
+  // With a gid, that one tab. Without, every tab that reads as a changelog (a Date column
+  // and a change column); the others (test lists, backlog, scratch) are passed over.
+  const wanted = cfg.gid != null ? tabs.filter((t) => String(t.sheetId) === String(cfg.gid)) : tabs;
+  if (!wanted.length) throw new Error(`The changelog sheet has no tab with gid ${cfg.gid}. Tabs: ${tabs.map((t) => t.title).join(", ")}.`);
 
-  const range = encodeURIComponent(`'${tab.title.replace(/'/g, "''")}'`);
-  const values = await call(
-    `${SHEETS}/${encodeURIComponent(cfg.spreadsheetId)}/values/${range}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`,
+  const ranges = wanted.map((t) => `ranges=${encodeURIComponent(`'${t.title.replace(/'/g, "''")}'`)}`).join("&");
+  const batch = await call(
+    `${SHEETS}/${encodeURIComponent(cfg.spreadsheetId)}/values:batchGet?${ranges}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`,
     "sheets.values",
   );
-  const all = parseChangelog(values.body?.values ?? []);
+  const read = [];
+  const seen = new Set();
+  const all = [];
+  (batch.body?.valueRanges ?? []).forEach((vr, i) => {
+    const tab = wanted[i];
+    let parsed;
+    try {
+      parsed = parseChangelog(vr.values ?? []);
+    } catch (err) {
+      if (cfg.gid != null) throw err;
+      return;
+    }
+    read.push(tab);
+    for (const e of parsed) {
+      // The same change logged in two tabs on the same day is one change.
+      const same = `${e.date}|${e.change.toLowerCase()}`;
+      if (seen.has(same)) continue;
+      seen.add(same);
+      all.push({ ...e, row: `${tab.sheetId}:${e.row}`, tab: tab.title });
+    }
+  });
+  if (!read.length) throw new Error(`No tab in the changelog sheet has a Date and a Change column. Tabs: ${tabs.map((t) => t.title).join(", ")}.`);
+  all.sort((a, b) => `${b.date} ${b.time ?? ""}`.localeCompare(`${a.date} ${a.time ?? ""}`));
 
   const lookback = cfg.lookbackDays ?? 14;
   const tz = config.system?.timezone ?? "America/Chicago";
@@ -192,13 +217,13 @@ export async function collectChangelog({ config, env = process.env, fetchImpl, s
   const since = new Date(Date.parse(`${today}T00:00:00Z`) - lookback * 86_400_000).toISOString().slice(0, 10);
   const entries = all.filter((e) => e.date >= since && e.date <= today);
 
-  logger?.info?.("changelog.read", { tab: tab.title, rows: all.length, inWindow: entries.length });
+  logger?.info?.("changelog.read", { tabs: read.map((t) => t.title), rows: all.length, inWindow: entries.length });
   return {
     takenAt: now.toISOString(),
     sheet: {
       title: meta.body?.properties?.title ?? null,
-      tab: tab.title,
-      url: `https://docs.google.com/spreadsheets/d/${cfg.spreadsheetId}/edit#gid=${tab.sheetId}`,
+      tab: read.map((t) => t.title).join(" + "),
+      url: `https://docs.google.com/spreadsheets/d/${cfg.spreadsheetId}/edit${read.length === 1 ? `#gid=${read[0].sheetId}` : ""}`,
     },
     since,
     latest: all[0]?.date ?? null,
