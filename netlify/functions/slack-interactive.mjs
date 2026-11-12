@@ -20,7 +20,7 @@ import { dateKey } from "../../src/lib/time.js";
 import { FlagLedger, keyForRef } from "../../src/store/flag-ledger.js";
 import { SLACK_TRIAGE } from "../../src/render/report.js";
 import { verifySlackSignature, IDENTITY_LINE } from "../../src/send/slack.js";
-import { handleSaveShortcut, SAVE_NOTE_CALLBACK } from "../../src/send/slack-notes.js";
+import { handleSaveShortcut, SAVE_NOTE_CALLBACK, whoFields } from "../../src/send/slack-notes.js";
 
 /** Replies through the response_url, the only way a block action can change its message. */
 async function respond(payload, body, logger) {
@@ -113,7 +113,10 @@ export default async (req) => {
   const action = (payload.actions ?? [])[0];
   const config = loadConfig();
 
-  if (payload.type === "message_action" && payload.callback_id === SAVE_NOTE_CALLBACK) {
+  // Every message shortcut on this app saves a note, whatever its callback id, so one
+  // renamed in the Slack app still works rather than going silent.
+  if (payload.type === "message_action") {
+    logger.info("slack.shortcut_received", { callbackId: payload.callback_id, expected: SAVE_NOTE_CALLBACK, ...whoFields(payload.user?.id, config, payload.enterprise?.id) });
     try {
       const store = await Store.open({ config, logger });
       const body = await handleSaveShortcut({ payload, config, backend: store.backend, token: process.env.SLACK_BOT_TOKEN, logger });

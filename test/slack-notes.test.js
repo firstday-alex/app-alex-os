@@ -57,3 +57,11 @@ test("a thread reply links into its thread", () => {
   p.message.thread_ts = "1762440000.000100";
   assert.equal(messageLink(p), "https://firstday.slack.com/archives/C123/p1762441000000200?thread_ts=1762440000.000100&cid=C123");
 });
+
+test("the log says whether it was Alex and why not, never the id", async () => {
+  const { whoFields } = await import("../src/send/slack-notes.js");
+  const cfg = { people: { alex: { slackUserId: "UALEX" } } };
+  assert.deepEqual(whoFields("UALEX", cfg), { isAlex: true, alexIdSet: true, userIdKind: "U", enterprise: false });
+  assert.deepEqual(whoFields("W123", cfg, "E1"), { isAlex: false, alexIdSet: true, userIdKind: "W", enterprise: true });
+  assert.ok(!JSON.stringify(whoFields("W123", cfg)).includes("W123"));
+});

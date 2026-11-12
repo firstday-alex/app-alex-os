@@ -69,7 +69,10 @@ export function createLogger(options = {}) {
   const {
     level = process.env.MOS_LOG_LEVEL || "info",
     runId = null,
-    sink = (line) => process.stdout.write(`${line}\n`),
+    // console.log, not process.stdout.write: on Netlify a function that answers in a few
+    // milliseconds (a Slack command) is frozen before an async stdout write drains, and its
+    // log lines were lost. The runtime captures console.log synchronously.
+    sink = (line) => console.log(line),
     secrets = collectSecrets(),
     now = () => new Date().toISOString(),
     base = {},

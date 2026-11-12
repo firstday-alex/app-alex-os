@@ -19,6 +19,20 @@ const SAVED = "Saved to today's notes for the Daily Speech.";
 const reply = (text) => ({ response_type: "ephemeral", text: `${IDENTITY_LINE} ${text}` });
 const isAlex = (config, userId) => Boolean(config.people?.alex?.slackUserId) && userId === config.people.alex.slackUserId;
 
+/**
+ * For the log: was it Alex, and if not, why it may not have matched. Never the id itself,
+ * only its first letter (U for a workspace user, W for an Enterprise Grid one, which
+ * would mean config/people.json holds the wrong kind of id).
+ */
+export function whoFields(userId, config, enterpriseId) {
+  return {
+    isAlex: isAlex(config, userId),
+    alexIdSet: Boolean(config.people?.alex?.slackUserId),
+    userIdKind: userId ? String(userId)[0] : null,
+    enterprise: Boolean(enterpriseId),
+  };
+}
+
 /** A link to a message, from the workspace domain Slack sends with every payload. */
 export function messageLink(payload) {
   const domain = payload.team?.domain;
