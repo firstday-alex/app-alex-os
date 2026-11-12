@@ -65,3 +65,21 @@ test("the log says whether it was Alex and why not, never the id", async () => {
   assert.deepEqual(whoFields("W123", cfg, "E1"), { isAlex: false, alexIdSet: true, userIdKind: "W", enterprise: true });
   assert.ok(!JSON.stringify(whoFields("W123", cfg)).includes("W123"));
 });
+
+test("a bare mention is saved as the person's name, looked up once, never as an id", async () => {
+  const backend = await createBackend({ mode: "memory" });
+  const lookups = [];
+  const fetchImpl = async (url) => {
+    const user = new URL(url).searchParams.get("user");
+    lookups.push(user);
+    const body = user === "UGONE" ? { ok: false, error: "user_not_found" } : { ok: true, user: { real_name: { UAND: "Andrew Smith", USAM: "Sam Rivera" }[user] } };
+    return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const payload = shortcut("UALEX");
+  payload.message = { ...payload.message, user_profile: undefined, text: "<@UAND> and <@UAND> can you help? cc <@UGONE>" };
+  await handleSaveShortcut({ payload, config, backend, token: "xoxb-test", fetchImpl, now });
+  const [note] = await notesForSpeech(backend, { now, config });
+  assert.equal(note.text, 'Sam Rivera in #marketing: "@Andrew Smith and @Andrew Smith can you help? cc @someone"');
+  assert.deepEqual(lookups.filter((u) => u === "UAND").length, 1, "each person looked up once");
+  assert.ok(!JSON.stringify(note).match(/U(AND|GONE|SAM)\b/), "no Slack id stored");
+});

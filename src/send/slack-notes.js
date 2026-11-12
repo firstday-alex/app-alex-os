@@ -61,6 +61,33 @@ async function authorName(message, { token, config, logger, fetchImpl }) {
 /** Slack markup to plain text. A mention Slack sent without a name becomes @someone, never an id. */
 const plainText = (text) => slackToText(String(text ?? ""));
 
+const MAX_MENTION_LOOKUPS = 10;
+
+/**
+ * A message's bare mentions, <@U123>, given their names: "<@U123|Andrew Smith>", so the
+ * note reads "@Andrew Smith" rather than "@someone". Names come from users.info (the
+ * bot's users:read scope), at most ten per message; one that cannot be looked up stays
+ * @someone. The ids are used for the lookup only and never reach the note.
+ */
+export async function nameMentions(text, { token, config, logger, fetchImpl }) {
+  const raw = String(text ?? "");
+  const ids = [...new Set([...raw.matchAll(/<@([A-Z0-9]+)>/g)].map((m) => m[1]))].slice(0, MAX_MENTION_LOOKUPS);
+  if (!ids.length || !token) return raw;
+  const names = new Map();
+  await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const body = await slackGet("users.info", { user: id }, { token, config, logger, fetchImpl });
+        const name = body.user?.real_name || body.user?.profile?.real_name || body.user?.profile?.display_name || body.user?.name;
+        if (name) names.set(id, name.replace(/[<>|]/g, ""));
+      } catch (err) {
+        logger?.warn?.("notes.mention_unavailable", { err: err.slackError ?? err.message });
+      }
+    }),
+  );
+  return raw.replace(/<@([A-Z0-9]+)>/g, (whole, id) => (names.has(id) ? `<@${id}|${names.get(id)}>` : whole));
+}
+
 /** The message shortcut. Returns the body to send to the response_url, or null for no reply. */
 export async function handleSaveShortcut({ payload, config, backend, token, logger, fetchImpl, now = new Date() }) {
   if (!isAlex(config, payload.user?.id)) {
@@ -68,9 +95,12 @@ export async function handleSaveShortcut({ payload, config, backend, token, logg
     return null;
   }
   const message = payload.message ?? {};
-  const text = plainText(message.text).trim();
-  if (!text) return reply("That message has no text to save.");
-  const who = await authorName(message, { token, config, logger, fetchImpl });
+  if (!plainText(message.text).trim()) return reply("That message has no text to save.");
+  const [named, who] = await Promise.all([
+    nameMentions(message.text, { token, config, logger, fetchImpl }),
+    authorName(message, { token, config, logger, fetchImpl }),
+  ]);
+  const text = plainText(named).trim();
   const where = payload.channel?.name && payload.channel.name !== "directmessage" ? `#${payload.channel.name}` : "a direct message";
   const note = await addNote(backend, {
     text: `${who ?? "Someone"} in ${where}: "${text}"`.slice(0, 3990),

@@ -94,7 +94,7 @@ src/
   pipeline.js      collector -> delta -> render -> send
 netlify/functions/ the 8 AM trigger, the pipeline, the dashboard API, the Slack endpoints
 public/            the dashboard
-test/              504 tests, no network, no API keys needed
+test/              505 tests, no network, no API keys needed
 scripts/           run the pipeline locally, and a syntax check
 ```
 
@@ -108,7 +108,7 @@ testable, and it is why the tests need no network and no credentials.
 
 ```bash
 npm install
-npm test                    # 504 tests. no network, no keys.
+npm test                    # 505 tests. no network, no keys.
 npm run check               # parses every source and config file
 
 cp .env.example .env        # then fill in the tokens you have
