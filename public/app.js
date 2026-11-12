@@ -4,7 +4,7 @@
 // The refresh path polls rather than awaits: a background function returns 202 straight
 // away and the caller cannot wait for its result.
 
-import { buildAccomplishments, buildLastWeekWins, buildStandupUpdate, buildUpdate, groupsText, lastWeekText, standupUpdateText, windowStart } from "./update-text.js";
+import { buildAccomplishments, buildChanges, buildLastWeekWins, buildStandupUpdate, buildUpdate, changeLine, changesText, groupsText, lastWeekText, standupUpdateText, windowStart } from "./update-text.js";
 
 const $ = (id) => document.getElementById(id);
 const layerLabel = (layer) => (layer === "cross" ? "CROSS" : layer === 0 ? "STORE" : `L${layer}`);
@@ -2332,7 +2332,7 @@ const DAY_MS_UPD = 86_400_000;
 const WIN_WINDOWS = { 30: "Last 30 days", 7: "Last 7 days" };
 
 const pasteViews = {
-  update: { el: "update", excluded: new Set(), groups: [] },
+  update: { el: "update", excluded: new Set(), groups: [], changes: [] },
   wins: { el: "wins", excluded: new Set(), groups: [], days: 30 },
 };
 
@@ -2429,8 +2429,10 @@ function renderPasteView(key, report) {
   view.groups = wins ? buildAccomplishments(tasks, { since, handleFor }) : buildUpdate(tasks, { since, handleFor });
   const pulled = new Date(report.generatedAt);
   const stale = Date.now() - pulled.getTime() > 2 * 3600_000;
-  const text = groupsText(view.groups, view.excluded);
-  const count = view.groups.reduce((n, g) => n + g.tasks.length, 0);
+  // The Update also carries what changed on the site in production, from the changelog sheet.
+  view.changes = wins ? [] : buildChanges(report.detail?.changelog, { since });
+  const text = pasteText(view);
+  const count = view.groups.reduce((n, g) => n + g.tasks.length, 0) + view.changes.length;
   const sinceText = new Date(since).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 
   root.innerHTML = `
@@ -2444,7 +2446,7 @@ function renderPasteView(key, report) {
     <p class="meta">${wins ? "Done since" : "Since"} ${esc(sinceText)}. From ClickUp as pulled ${esc(pulled.toLocaleString())}${stale ? `: press <strong>Refresh</strong> to include today so far` : ""}.</p>
     ${
       count
-        ? `<div class="bar up-bar"><button type="button" data-copy-paste="${key}">Copy all</button><span class="meta" data-copy-note="${key}">${esc(plural(count, "ticket", "tickets"))} across ${esc(plural(view.groups.length, "Big Swing", "Big Swings"))}</span></div>
+        ? `<div class="bar up-bar"><button type="button" data-copy-paste="${key}">Copy all</button><span class="meta" data-copy-note="${key}">${esc(plural(count - view.changes.length, "ticket", "tickets"))} across ${esc(plural(view.groups.length, "Big Swing", "Big Swings"))}${view.changes.length ? ` · ${esc(plural(view.changes.length, "change", "changes"))} to production` : ""}</span></div>
       <textarea class="up-text" data-paste-text="${key}" rows="${Math.min(24, text.split("\n").length + 1)}" readonly>${esc(text)}</textarea>
       ${view.groups
         .map(
@@ -2461,9 +2463,40 @@ function renderPasteView(key, report) {
             .join("")}
         </section>`,
         )
-        .join("")}`
-        : `<p class="sub">${wins ? "Nothing was done in this window." : "Nothing on the sprint has been touched since then."}</p>`
-    }`;
+        .join("")}
+      ${view.changes.length ? changesSection(view, key) : ""}`
+        : `<p class="sub">${wins ? "Nothing was done in this window." : "Nothing on the sprint has been touched and nothing went to production since then."}</p>`
+    }
+    ${wins ? "" : changelogNote(report.detail?.changelog)}`;
+}
+
+/** Everything a paste view copies: the tickets, then for the Update the production changes. */
+function pasteText(view) {
+  return [groupsText(view.groups, view.excluded), changesText(view.changes ?? [], view.excluded)].filter(Boolean).join("\n\n");
+}
+
+/** The "Changes to production" group: one row per changelog entry, untickable like a ticket. */
+function changesSection(view, key) {
+  return `<section class="up-group">
+    <div class="sp-group-head"><h3>Changes to production</h3><span class="meta">from the changelog sheet</span></div>
+    ${view.changes
+      .map(
+        (e) => `<label class="up-item">
+        <input type="checkbox" data-paste-task="change:${esc(e.row)}" data-paste-view="${key}"${view.excluded.has(`change:${e.row}`) ? "" : " checked"}>
+        <span>${esc(changeLine(e))}</span>
+        ${e.testLink ? `<a class="meta" href="${esc(e.testLink)}" target="_blank" rel="noreferrer">test</a>` : ""}
+      </label>`,
+      )
+      .join("")}
+  </section>`;
+}
+
+/** Where the changelog was read from, or why it was not. */
+function changelogNote(changelog) {
+  if (!changelog) return "";
+  if (changelog.error) return `<p class="meta">Changes to production: not read. ${esc(changelog.error)}</p>`;
+  const link = changelog.sheet?.url ? `<a href="${esc(changelog.sheet.url)}" target="_blank" rel="noreferrer">${esc(changelog.sheet.tab ?? "changelog")}</a>` : "the changelog sheet";
+  return `<p class="meta">Changes to production from ${link}, read ${esc(new Date(changelog.takenAt).toLocaleString())}${changelog.latest ? `; latest row ${esc(changelog.latest)}` : ""}.</p>`;
 }
 
 document.addEventListener("change", (event) => {
@@ -2474,7 +2507,7 @@ document.addEventListener("change", (event) => {
   if (event.target.checked) view.excluded.delete(id);
   else view.excluded.add(id);
   // Only the text changes; redrawing everything would drop the scroll position.
-  document.querySelector(`[data-paste-text="${key}"]`).value = groupsText(view.groups, view.excluded);
+  document.querySelector(`[data-paste-text="${key}"]`).value = pasteText(view);
 });
 
 document.addEventListener("click", async (event) => {
@@ -4304,8 +4337,9 @@ function renderUpsu() {
   const since = windowStart();
   const tasks = report.detail?.clickup?.tasks ?? [];
   const built = buildStandupUpdate(tasks, standup.data.days, { since, handleFor: upsuHandle });
+  built.changes = buildChanges(report.detail?.changelog, { since });
   upsu.built = built;
-  const text = standupUpdateText(built, upsuHandle, upsu.excluded);
+  const text = upsuText(built);
   const sinceText = new Date(since).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
   const posted = built.posts.map((p) => String(p.name).split(/\s+/)[0]);
   const noted = built.groups.reduce((n, g) => n + g.tasks.filter((x) => x.notes.length).length, 0);
@@ -4347,7 +4381,19 @@ function renderUpsu() {
         ? `<section class="up-group"><div class="sp-group-head"><h3>Blockers</h3></div>
         ${built.blockers.map((b, i) => `<label class="up-item su-bad">${check(`blocker:${i}`)}<span>@${esc(upsuHandle({ username: b.who }))} – ${esc(b.text)}</span></label>`).join("")}</section>`
         : ""
-    }`;
+    }
+    ${
+      built.changes.length
+        ? `<section class="up-group"><div class="sp-group-head"><h3>Changes to production</h3><span class="meta">from the changelog sheet</span></div>
+        ${built.changes.map((e) => `<label class="up-item">${check(`change:${e.row}`)}<span>${esc(changeLine(e))}</span>${e.testLink ? `<a class="meta" href="${esc(e.testLink)}" target="_blank" rel="noreferrer">test</a>` : ""}</label>`).join("")}</section>`
+        : ""
+    }
+    ${changelogNote(report.detail?.changelog)}`;
+}
+
+/** The Update + Stand-up text, then the production changes. */
+function upsuText(built) {
+  return [standupUpdateText(built, upsuHandle, upsu.excluded), changesText(built.changes ?? [], upsu.excluded)].filter(Boolean).join("\n\n");
 }
 
 document.addEventListener("change", (event) => {
@@ -4355,7 +4401,7 @@ document.addEventListener("change", (event) => {
   if (!key || !upsu.built) return;
   if (event.target.checked) upsu.excluded.delete(key);
   else upsu.excluded.add(key);
-  document.querySelector("[data-upsu-text]").value = standupUpdateText(upsu.built, upsuHandle, upsu.excluded);
+  document.querySelector("[data-upsu-text]").value = upsuText(upsu.built);
 });
 
 document.addEventListener("click", async (event) => {
@@ -4557,7 +4603,7 @@ function renderSpeech() {
   const running = Boolean(status?.running);
   const failed = status?.state === "failed" && !running;
   const stale = latest?.dateKey && state.report?.dateKey && latest.dateKey !== state.report.dateKey;
-  const missed = latest ? [!latest.readStandups && "stand-ups", !latest.readImpact && "the Impact record", !latest.readStore && "store numbers"].filter(Boolean) : [];
+  const missed = latest ? [!latest.readStandups && "stand-ups", !latest.readImpact && "the Impact record", !latest.readStore && "store numbers", latest.readChangelog === false && "the changelog sheet"].filter(Boolean) : [];
 
   root.innerHTML = `
     ${notesSection()}

@@ -4,7 +4,7 @@
 // Writes the day's top-line storyline Alex says out loud to the team: a headline, the
 // beats (the win, across the business, the stakes, today) and a closing line. The model
 // sees what the latest readout, the last few days of stand-ups, the Impact record and the
-// cross-functional (XF) list hold, and nothing else. XF is what people outside the team
+// cross-functional (XF) list and the site changelog sheet hold, and nothing else. XF is what people outside the team
 // said to Alex or the team since the previous working day (src/collectors/xf.js).
 //
 // The model's story is judgement. Whether its numbers are real is not: code checks every
@@ -17,6 +17,7 @@ import { rocksForAdvice } from "./strategic-advisor.js";
 import { sprintTickets, testForIdeation } from "./ideation.js";
 import { fetchStandups } from "../collectors/standup.js";
 import { fetchXf } from "../collectors/xf.js";
+import { collectChangelog, changelogConfigured, changeForSpeech } from "../collectors/changelog.js";
 import { LEDGER_KEY } from "../impact/ledger.js";
 import { notesForSpeech } from "../store/day-notes.js";
 
@@ -69,6 +70,25 @@ const BEAT_ORDER = ["The win", "Across the business", "The stakes", "Today"];
 const REQUIRED_BEATS = ["The win", "The stakes", "Today"];
 const firstNames = (list) => [...new Set((list ?? []).map((u) => String(u?.username ?? u?.name ?? "").split(/\s+/)[0]).filter(Boolean))];
 const iso = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : null);
+
+/**
+ * What went to production in the last week, from the changelog sheet, newest first. Read
+ * live so a change logged after the 8 AM readout still makes the speech; the readout's own
+ * copy stands in when the sheet cannot be read.
+ */
+export async function changesForSpeech({ config, env, logger, now, report, fetchImpl }) {
+  let changelog = null;
+  if (config.system?.changelog?.spreadsheetId && changelogConfigured(config, env)) {
+    changelog = await collectChangelog({ config, env, logger, now, fetchImpl }).catch((err) => {
+      logger?.warn?.("speech.changelog_unavailable", { err: err.message });
+      return null;
+    });
+  }
+  changelog ??= report?.detail?.changelog?.entries ? report.detail.changelog : null;
+  if (!changelog) return null;
+  const since = new Date(now.getTime() - SHIPPED_LOOKBACK_DAYS * DAY_MS).toISOString().slice(0, 10);
+  return changelog.entries.filter((e) => e.date >= since).map(changeForSpeech);
+}
 
 /** The store tiles as plain facts: the number, and how it compares with each other window. */
 export function storeForSpeech(shopify) {
@@ -180,7 +200,10 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
     return { since: null, channelsRead: [], items: [], notes: [`Cross-functional mentions could not be read. ${err.message}`] };
   });
 
+  const production = await changesForSpeech({ config, env, logger, now, report });
+
   const context = {
+    production: production ?? [],
     rocks: rocksForAdvice(detail.leadership?.queue ?? []),
     store: storeForSpeech(detail.shopify),
     tests: (detail.intelligems?.tests ?? []).map(testForIdeation),
@@ -214,6 +237,9 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
           "",
           "THE INTELLIGEMS TESTS",
           JSON.stringify(context.tests, null, 2),
+          "",
+          `CHANGES TO PRODUCTION IN THE LAST ${SHIPPED_LOOKBACK_DAYS} DAYS (from the firstday.com changelog sheet, newest first; what actually changed on the live site)`,
+          production == null ? "Not available this run." : production.length ? JSON.stringify(production, null, 2) : "Nothing logged.",
           "",
           `SHIPPED IN THE LAST ${SHIPPED_LOOKBACK_DAYS} DAYS (from Alex's Impact record)`,
           context.shippedThisWeek.length ? JSON.stringify(context.shippedThisWeek, null, 2) : "Nothing recorded.",
@@ -253,6 +279,8 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
     readStandups: Boolean(standups),
     readImpact: Boolean(ledger),
     readStore: Boolean(context.store),
+    readChangelog: production != null,
+    productionChanges: production?.length ?? 0,
     notesUsed: dayNotes.length,
     xf: { since: xf.since, channelsRead: xf.channelsRead, items: xf.items, notes: xf.notes },
   };

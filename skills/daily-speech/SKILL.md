@@ -1,6 +1,6 @@
 ---
 name: daily-speech
-description: On demand. Writes the day's top-line storyline Alex says out loud to the team: one headline, short beats (the win, across the business, the stakes, today), and a closing line, built only from what the readout, the stand-ups, the Impact record and the cross-functional mentions hold.
+description: On demand. Writes the day's top-line storyline Alex says out loud to the team: one headline, short beats (the win, across the business, the stakes, today), and a closing line, built only from what the readout, the stand-ups, the Impact record, the site changelog and the cross-functional mentions hold.
 runs_as: agentic
 implemented_by: src/agents/daily-speech.js
 invoked_by: Alex pressing the button on the Daily Speech tab. Nothing else.
@@ -18,6 +18,15 @@ Intelligems tests, what the team shipped in the last week (from Alex's Impact re
 the sprint as it stands, the week in review, the stand-ups from the last few days, and
 **Alex's notes from the day**, and the **cross-functional (XF)** list: ClickUp comments
 from people outside the team since the previous working day.
+
+You also get the **changes to production**: the last week of rows from the firstday.com
+changelog sheet, what actually changed on the live site (a test launched or ended, a
+winner promoted, a template rolled out), with the result and added monthly revenue when
+the row records them. A change dated since the previous working day is news: it belongs
+in the win when it moves a rock, or in the stakes when it is a test now running. Name
+the change the way the row does. Only call it a win when the row says so ("Won +
+Promoted", a revenue figure); a launch is a launch, not a result. A change already told
+earlier in the week is background, not news.
 
 The notes are what Alex typed or pasted since the previous working day: a Slack message
 from another team, a meeting takeaway, a hallway comment. They are usually the best XF

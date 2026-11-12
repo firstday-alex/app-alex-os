@@ -22,6 +22,7 @@ import { collectClickUp } from "./collectors/clickup.js";
 import { collectIntelligems } from "./collectors/intelligems.js";
 import { collectLeadership } from "./collectors/leadership.js";
 import { collectShopify } from "./collectors/shopify.js";
+import { collectChangelog, changelogConfigured, CHANGELOG_SETUP } from "./collectors/changelog.js";
 import { computeFlags } from "./delta/index.js";
 import { sortFlags } from "./delta/flags.js";
 import { buildReport } from "./render/report.js";
@@ -168,6 +169,24 @@ export async function runPipeline(opts = {}) {
     }),
   );
 
+  /* ------------------------------- changelog -------------------------------
+     What changed on the site in production, from the team's changelog sheet. Context for
+     the Update and the Daily Speech, not a layer: it raises no flags, has no baseline, and
+     a failure here never costs the readout. Read after the others so it adds no wait. */
+  let changelog = null;
+  if (config.system.changelog?.spreadsheetId) {
+    if (!changelogConfigured(config, env)) {
+      changelog = { error: `Not connected. ${CHANGELOG_SETUP}` };
+    } else {
+      try {
+        changelog = await collectChangelog({ config, env, fetchImpl, sleep, logger: logger.child({ collector: "changelog" }), now });
+      } catch (err) {
+        logger.warn("changelog.unavailable", { err });
+        changelog = { error: err.message };
+      }
+    }
+  }
+
   /* --------------------------------- delta --------------------------------- */
 
   // How long each open ticket has been in its status. Folded from this run's snapshot
@@ -230,6 +249,7 @@ export async function runPipeline(opts = {}) {
     logger,
   });
   const { sections, detail } = computed;
+  if (changelog) detail.changelog = changelog;
 
   // Who owns each test. Chosen on the Tests view and kept in the test notes, which the
   // flags themselves know nothing about. Put on the test so a test's flags have an owner

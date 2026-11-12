@@ -370,3 +370,34 @@ export function standupUpdateText({ groups, extra, blockers }, handleFor, exclud
   return parts.join("\n\n");
 }
 
+/* --------------------------- changes to production ---------------------------
+   From the firstday.com changelog sheet, read into the report by the pipeline
+   (src/collectors/changelog.js). Each line is the sheet's own row: date, change, details,
+   and the test result and added monthly revenue when the row records them. */
+
+/** "YYYY-MM-DD" for a time, in the browser's own day. */
+export function localDateKey(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** The changelog entries dated on or after the day `since` falls on, newest first. */
+export function buildChanges(changelog, { since }) {
+  const from = localDateKey(since);
+  return (changelog?.entries ?? []).filter((e) => e.date >= from);
+}
+
+/** "🚀 11/11 – Promoted New Homepage – details – Won + Promoted, +$39,711/mo" */
+export function changeLine(e) {
+  const [, m, d] = String(e.date).split("-");
+  const revenue = e.monthlyRevenue != null ? `+$${Math.round(e.monthlyRevenue).toLocaleString("en-US")}/mo` : null;
+  const result = [e.promoted, revenue].filter(Boolean).join(", ");
+  return [`🚀 ${m}/${d}`, e.change, e.details, result || null].filter(Boolean).join(" – ");
+}
+
+/** The section to paste under the update. `excluded` holds "change:<row>" keys. */
+export function changesText(changes, excluded = new Set()) {
+  const lines = (changes ?? []).filter((e) => !excluded.has(`change:${e.row}`)).map(changeLine);
+  return lines.length ? ["**Changes to production**", ...lines].join("\n") : "";
+}
+
