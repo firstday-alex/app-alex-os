@@ -3,7 +3,8 @@
 //   "Save to daily notes"  a message shortcut (⋯ on any message). Saves what was said,
 //                          who said it, where, and a link. Works in any channel Alex can
 //                          see; the bot does not need to be a member.
-//   /note <text>           a slash command, for anything typed.
+//   /tpnote <text>         a slash command, for anything typed. (/tpnote in this
+//                          workspace, since /note is taken; any name works.)
 //
 // Anyone else gets no reply at all: the system only communicates with Alex. Every reply
 // says it came from Claude. Slack user ids are used to check who is asking and to look up
@@ -88,7 +89,7 @@ export async function handleNoteCommand({ params, config, backend, logger, now =
     return null;
   }
   const text = String(params.get("text") ?? "").trim();
-  if (!text) return reply("Add what to save after the command, like: /note Sam asked for the holiday offer on bundles");
+  if (!text) return reply(`Add what to save after the command, like: ${params.get("command") || "/tpnote"} Sam asked for the holiday offer on bundles`);
   const channel = params.get("channel_name");
   const note = await addNote(backend, {
     text: plainText(text),

@@ -45,7 +45,7 @@ test("anyone but Alex gets no reply and nothing is saved", async () => {
 test("/note saves the text; an empty one explains how to use it", async () => {
   const backend = await createBackend({ mode: "memory" });
   const empty = await handleNoteCommand({ params: new URLSearchParams({ user_id: "UALEX", text: " " }), config, backend, now });
-  assert.match(empty.text, /\/note Sam asked/);
+  assert.match(empty.text, /\/tpnote Sam asked/);
   await handleNoteCommand({ params: new URLSearchParams({ user_id: "UALEX", text: "Ops wants the bundle SKU list by Tue", channel_name: "directmessage" }), config, backend, now });
   const [note] = await notesForSpeech(backend, { now, config });
   assert.equal(note.text, "Ops wants the bundle SKU list by Tue");

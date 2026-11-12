@@ -185,7 +185,7 @@ manifest and rejects it if they do not answer. Do step 3 before this one.
 | `groups:history` | the same, for a private readout channel. Drop it if the channel is public. |
 | `channels:read`, `groups:read` | list the channels the bot is in, for the Daily Speech's cross-functional (XF) mentions. Without them, list channels under `system.slack.xf.channelIds`. |
 | `users:read` | names for stand-up posters and XF mentions, so teammates are recognized. Ids are used in memory only. |
-| `commands` | the `/note` slash command and the **Save to daily notes** message shortcut, which save to the Daily Speech's notes. Alex only; both need `alex.slackUserId` set. |
+| `commands` | the `/tpnote` slash command (any name works; `/note` is taken in this workspace) and the **Save to daily notes** message shortcut, which save to the Daily Speech's notes. Alex only; both need `alex.slackUserId` set. |
 
 **Adding `/note` and Save to daily notes to an app that is already installed.** In
 api.slack.com/apps → the app → **App Manifest**, add the `slash_commands` and `shortcuts`

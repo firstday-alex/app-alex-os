@@ -13,7 +13,7 @@
     },
     "slash_commands": [
       {
-        "command": "/note",
+        "command": "/tpnote",
         "url": "https://YOUR-SITE.netlify.app/.netlify/functions/slack-command",
         "description": "Save a note for Alex's Daily Speech (Claude)",
         "usage_hint": "what came in, e.g. Sam asked for the holiday offer on bundles",
