@@ -18,7 +18,7 @@ const SHEETS = "https://sheets.googleapis.com/v4/spreadsheets";
 const DETAIL_CHARS = 280;
 
 export const CHANGELOG_SETUP =
-  "Set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY in Netlify, and share the changelog sheet with that email as a Viewer.";
+  'List the tabs in system.changelog.tabs and share the sheet as "anyone with the link can view", or set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY and share the sheet with that email.';
 
 /* ------------------------------------------------------------------ parsing */
 
@@ -150,21 +150,71 @@ export function changeForSpeech(e) {
 
 /* -------------------------------------------------------------------- fetch */
 
-export function changelogConfigured(config, env = process.env) {
-  return Boolean(config.system?.changelog?.spreadsheetId) && Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL || env.GOOGLE_SERVICE_ACCOUNT_JSON);
+/** RFC 4180 CSV, as Google's export writes it: quoted fields, "" for a quote, newlines inside quotes. */
+export function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let quoted = false;
+  const t = String(text ?? "");
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (quoted) {
+      if (c === '"' && t[i + 1] === '"') (field += '"'), i++;
+      else if (c === '"') quoted = false;
+      else field += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") row.push(field), (field = "");
+    else if (c === "\n") row.push(field), rows.push(row), (row = []), (field = "");
+    else if (c !== "\r") field += c;
+  }
+  if (field || row.length) row.push(field), rows.push(row);
+  return rows;
 }
 
 /**
- * Reads the sheet and returns the entries in the lookback window, newest first. With
- * system.changelog.gid set, only that tab (the number after #gid= in its URL); without,
- * every tab that reads as a changelog, merged.
+ * Ready to read: a spreadsheet id, and either tabs to read from the public export or a
+ * service account for a sheet that is not public.
  */
-export async function collectChangelog({ config, env = process.env, fetchImpl, sleep, logger, now = new Date() }) {
+export function changelogConfigured(config, env = process.env) {
   const cfg = config.system?.changelog ?? {};
-  if (!cfg.spreadsheetId) throw new Error("system.changelog.spreadsheetId is not set.");
-  const account = serviceAccountFrom(env);
-  if (!account) throw new Error(`No Google service account. ${CHANGELOG_SETUP}`);
+  return Boolean(cfg.spreadsheetId) && Boolean(cfg.tabs?.length || env.GOOGLE_SERVICE_ACCOUNT_EMAIL || env.GOOGLE_SERVICE_ACCOUNT_JSON);
+}
 
+/**
+ * The public way: each tab in system.changelog.tabs as CSV from Google's export link. No
+ * credentials, so it only works while the sheet is shared as "anyone with the link can
+ * view". A sheet that is not shows Google's sign-in page instead of CSV, and that is said.
+ */
+async function readPublicTabs(cfg, { fetchImpl = globalThis.fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), logger }) {
+  const out = [];
+  for (const tab of cfg.tabs) {
+    const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(cfg.spreadsheetId)}/export?format=csv&gid=${encodeURIComponent(tab.gid)}`;
+    let res;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        res = await fetchImpl(url, { redirect: "follow", signal: AbortSignal.timeout(30000) });
+        logger?.apiCall?.({ label: "sheets.export", method: "GET", status: res.status, attempt });
+        if (res.status < 500 && res.status !== 429) break;
+      } catch (err) {
+        if (attempt >= 3) throw new Error(`The changelog tab ${tab.name ?? tab.gid} could not be read: ${err.message}`);
+      }
+      if (attempt >= 3) break;
+      await sleep(1000 * attempt);
+    }
+    const type = res.headers?.get?.("content-type") ?? "";
+    if (!res.ok || !type.includes("text/csv")) {
+      throw new Error(
+        `The changelog tab ${tab.name ?? tab.gid} is not readable from its public link (HTTP ${res.status}). Share the sheet as "anyone with the link can view", or set up a service account (docs/DEPLOY.md).`,
+      );
+    }
+    out.push({ sheetId: tab.gid, title: tab.name ?? `gid ${tab.gid}`, values: parseCsv(await res.text()) });
+  }
+  return { title: cfg.title ?? null, tabs: out };
+}
+
+/** The private way: the Sheets API as a service account, every tab or the configured ones. */
+async function readTabsAsServiceAccount(cfg, account, { fetchImpl, sleep, logger }) {
   const token = await googleAccessToken({ account, fetchImpl, sleep, logger });
   const headers = { authorization: `Bearer ${token}` };
   const call = (url, label) =>
@@ -176,28 +226,44 @@ export async function collectChangelog({ config, env = process.env, fetchImpl, s
     });
 
   const meta = await call(`${SHEETS}/${encodeURIComponent(cfg.spreadsheetId)}?fields=properties.title,sheets.properties(sheetId,title)`, "sheets.meta");
-  const tabs = (meta.body?.sheets ?? []).map((s) => s.properties);
-  // With a gid, that one tab. Without, every tab that reads as a changelog (a Date column
-  // and a change column); the others (test lists, backlog, scratch) are passed over.
-  const wanted = cfg.gid != null ? tabs.filter((t) => String(t.sheetId) === String(cfg.gid)) : tabs;
-  if (!wanted.length) throw new Error(`The changelog sheet has no tab with gid ${cfg.gid}. Tabs: ${tabs.map((t) => t.title).join(", ")}.`);
+  const all = (meta.body?.sheets ?? []).map((s) => s.properties);
+  const gids = cfg.tabs?.length ? cfg.tabs.map((t) => String(t.gid)) : null;
+  const wanted = gids ? all.filter((t) => gids.includes(String(t.sheetId))) : all;
+  if (!wanted.length) throw new Error(`The changelog sheet has none of the configured tabs. Tabs: ${all.map((t) => t.title).join(", ")}.`);
 
   const ranges = wanted.map((t) => `ranges=${encodeURIComponent(`'${t.title.replace(/'/g, "''")}'`)}`).join("&");
   const batch = await call(
     `${SHEETS}/${encodeURIComponent(cfg.spreadsheetId)}/values:batchGet?${ranges}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`,
     "sheets.values",
   );
+  return {
+    title: meta.body?.properties?.title ?? null,
+    tabs: wanted.map((t, i) => ({ sheetId: t.sheetId, title: t.title, values: batch.body?.valueRanges?.[i]?.values ?? [] })),
+  };
+}
+
+/**
+ * Reads the sheet and returns the entries in the lookback window, newest first, merged
+ * across every tab read that has a Date and a Change column; the rest are passed over.
+ * With a service account set it uses the Sheets API (and with no tabs configured reads
+ * every tab); otherwise the public CSV export of each tab in system.changelog.tabs.
+ */
+export async function collectChangelog({ config, env = process.env, fetchImpl, sleep, logger, now = new Date() }) {
+  const cfg = config.system?.changelog ?? {};
+  if (!cfg.spreadsheetId) throw new Error("system.changelog.spreadsheetId is not set.");
+  const account = serviceAccountFrom(env);
+  if (!account && !cfg.tabs?.length) throw new Error(`No tabs configured and no Google service account. ${CHANGELOG_SETUP}`);
+  const sheet = account ? await readTabsAsServiceAccount(cfg, account, { fetchImpl, sleep, logger }) : await readPublicTabs(cfg, { fetchImpl, sleep, logger });
+
   const read = [];
   const seen = new Set();
   const all = [];
-  (batch.body?.valueRanges ?? []).forEach((vr, i) => {
-    const tab = wanted[i];
+  for (const tab of sheet.tabs) {
     let parsed;
     try {
-      parsed = parseChangelog(vr.values ?? []);
-    } catch (err) {
-      if (cfg.gid != null) throw err;
-      return;
+      parsed = parseChangelog(tab.values);
+    } catch {
+      continue;
     }
     read.push(tab);
     for (const e of parsed) {
@@ -207,8 +273,8 @@ export async function collectChangelog({ config, env = process.env, fetchImpl, s
       seen.add(same);
       all.push({ ...e, row: `${tab.sheetId}:${e.row}`, tab: tab.title });
     }
-  });
-  if (!read.length) throw new Error(`No tab in the changelog sheet has a Date and a Change column. Tabs: ${tabs.map((t) => t.title).join(", ")}.`);
+  }
+  if (!read.length) throw new Error(`No changelog tab read has a Date and a Change column. Tabs read: ${sheet.tabs.map((t) => t.title).join(", ")}.`);
   all.sort((a, b) => `${b.date} ${b.time ?? ""}`.localeCompare(`${a.date} ${a.time ?? ""}`));
 
   const lookback = cfg.lookbackDays ?? 14;
@@ -217,11 +283,11 @@ export async function collectChangelog({ config, env = process.env, fetchImpl, s
   const since = new Date(Date.parse(`${today}T00:00:00Z`) - lookback * 86_400_000).toISOString().slice(0, 10);
   const entries = all.filter((e) => e.date >= since && e.date <= today);
 
-  logger?.info?.("changelog.read", { tabs: read.map((t) => t.title), rows: all.length, inWindow: entries.length });
+  logger?.info?.("changelog.read", { via: account ? "service_account" : "public_link", tabs: read.map((t) => t.title), rows: all.length, inWindow: entries.length });
   return {
     takenAt: now.toISOString(),
     sheet: {
-      title: meta.body?.properties?.title ?? null,
+      title: sheet.title,
       tab: read.map((t) => t.title).join(" + "),
       url: `https://docs.google.com/spreadsheets/d/${cfg.spreadsheetId}/edit${read.length === 1 ? `#gid=${read[0].sheetId}` : ""}`,
     },

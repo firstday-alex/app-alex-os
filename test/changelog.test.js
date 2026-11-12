@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, createVerify } from "node:crypto";
-import { parseSheetDate, parseChangelog, changesSince, money, changeForSpeech, collectChangelog, changelogConfigured } from "../src/collectors/changelog.js";
+import { parseSheetDate, parseChangelog, parseCsv, changesSince, money, changeForSpeech, collectChangelog, changelogConfigured } from "../src/collectors/changelog.js";
 import { signedJwt, serviceAccountFrom, clearGoogleTokenCache } from "../src/lib/google.js";
 import { buildChanges, changeLine, changesText } from "../public/update-text.js";
 import { changesForSpeech } from "../src/agents/daily-speech.js";
@@ -103,7 +103,7 @@ test("the service account signs an RS256 assertion its public key verifies", () 
 });
 
 const config = {
-  system: { timezone: "America/Chicago", changelog: { spreadsheetId: "SHEET", gid: 1384691948, lookbackDays: 14 } },
+  system: { timezone: "America/Chicago", changelog: { spreadsheetId: "SHEET", tabs: [{ gid: 1384691948, name: "Web Changelog Flow" }], lookbackDays: 14 } },
 };
 
 function fakeGoogle({ valuesStatus = 200, rows = ROWS, tabs = [{ sheetId: 0, title: "site_changelog" }, { sheetId: 1384691948, title: "Web Changelog Flow" }] } = {}) {
@@ -122,7 +122,7 @@ function fakeGoogle({ valuesStatus = 200, rows = ROWS, tabs = [{ sheetId: 0, tit
   return { calls, fetchImpl };
 }
 
-test("collect: the tab is found by gid, read unformatted, and only GETs touch the sheet", async () => {
+test("collect as a service account: the tab is found by gid, read unformatted, and only GETs touch the sheet", async () => {
   clearGoogleTokenCache();
   const g = fakeGoogle();
   const out = await collectChangelog({ config, env, fetchImpl: g.fetchImpl, now: new Date("2026-11-12T15:00:00Z") });
@@ -148,12 +148,13 @@ test("collect: a sheet not shared with the service account says who to share it 
 test("collect: a gid the sheet does not have names the tabs it does", async () => {
   clearGoogleTokenCache();
   const g = fakeGoogle({ tabs: [{ sheetId: 0, title: "site_changelog" }] });
-  await assert.rejects(collectChangelog({ config, env, fetchImpl: g.fetchImpl }), /no tab with gid 1384691948.*site_changelog/);
+  await assert.rejects(collectChangelog({ config, env, fetchImpl: g.fetchImpl }), /none of the configured tabs.*site_changelog/);
 });
 
-test("not configured without a service account", () => {
-  assert.equal(changelogConfigured(config, {}), false);
-  assert.equal(changelogConfigured(config, env), true);
+test("configured by tabs (public link) or by a service account", () => {
+  assert.equal(changelogConfigured(config, {}), true);
+  assert.equal(changelogConfigured({ system: { changelog: { spreadsheetId: "SHEET" } } }, {}), false);
+  assert.equal(changelogConfigured({ system: { changelog: { spreadsheetId: "SHEET" } } }, env), true);
   assert.equal(changelogConfigured({ system: {} }, env), false);
 });
 
@@ -164,12 +165,13 @@ test("the speech reads the sheet live, and falls back to the readout's copy", as
   assert.deepEqual(live.map((c) => c.change), ["Promoted New Homepage"]);
 
   const report = { detail: { changelog: { entries: [{ row: 9, date: "2026-11-10", change: "From the readout" }, { row: 8, date: "2026-10-01", change: "Too old" }] } } };
-  const fallback = await changesForSpeech({ config, env: {}, now, report });
+  const noSheet = { system: { ...config.system, changelog: { spreadsheetId: "SHEET" } } };
+  const fallback = await changesForSpeech({ config: noSheet, env: {}, now, report });
   assert.deepEqual(fallback.map((c) => c.change), ["From the readout"]);
-  assert.equal(await changesForSpeech({ config, env: {}, now, report: {} }), null);
+  assert.equal(await changesForSpeech({ config: noSheet, env: {}, now, report: {} }), null);
 });
 
-test("collect: without a gid, every changelog tab is read and merged; other tabs are passed over", async () => {
+test("collect as a service account with no tabs listed: every changelog tab is read and merged; other tabs are passed over", async () => {
   clearGoogleTokenCache();
   const byTab = {
     site_changelog: [["Day", "Date", "", "", "", ""], ["Mon", "11/9/2026", "KDE buy box rolled out"], ["Tue", "11/10/2026", ""], ["Wed", "11/11/2026", "promoted new homepage"]],
@@ -177,11 +179,39 @@ test("collect: without a gid, every changelog tab is read and merged; other tabs
     active_tests: [["start", "end", "will end by", "test"], ["11/1/2026", "", "", "Some test"]],
   };
   const g = fakeGoogle({ tabs: Object.keys(byTab).map((title, i) => ({ sheetId: i, title })), rows: (title) => byTab[title] });
-  const out = await collectChangelog({ config: { system: { ...config.system, changelog: { spreadsheetId: "SHEET", gid: null } } }, env, fetchImpl: g.fetchImpl, now: new Date("2026-11-12T15:00:00Z") });
+  const out = await collectChangelog({ config: { system: { ...config.system, changelog: { spreadsheetId: "SHEET" } } }, env, fetchImpl: g.fetchImpl, now: new Date("2026-11-12T15:00:00Z") });
   assert.equal(out.sheet.tab, "site_changelog + Web Changelog Flow");
   assert.deepEqual(out.entries.map((e) => [e.date, e.change, e.tab]), [
     ["2026-11-11", "promoted new homepage", "site_changelog"],
     ["2026-11-09", "KDE buy box rolled out", "site_changelog"],
   ], "the same change on the same day in two tabs is one change");
   assert.equal(new Set(out.entries.map((e) => e.row)).size, out.entries.length, "row keys are unique across tabs");
+});
+
+test("CSV as Google exports it: quotes, doubled quotes, newlines inside a field", () => {
+  assert.deepEqual(parseCsv('Date,Change\r\n"Nov 11, 2026, 6:11:00 AM","say ""hi""\nline two"\n2/1/2026,x'), [
+    ["Date", "Change"],
+    ["Nov 11, 2026, 6:11:00 AM", 'say "hi"\nline two'],
+    ["2/1/2026", "x"],
+  ]);
+});
+
+const csvOf = (rows) => rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+
+test("collect from the public link: each configured tab's CSV export, no credentials", async () => {
+  const calls = [];
+  const csvRows = ROWS.map((r) => r.map((c) => (typeof c === "number" && c > 40000 ? "Aug 5, 2026, 2:24:00 PM" : c)));
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    return new Response(csvOf(csvRows), { status: 200, headers: { "content-type": "text/csv; charset=utf-8" } });
+  };
+  const out = await collectChangelog({ config, env: {}, fetchImpl, now: new Date("2026-11-12T15:00:00Z") });
+  assert.deepEqual(calls, ["https://docs.google.com/spreadsheets/d/SHEET/export?format=csv&gid=1384691948"]);
+  assert.equal(out.sheet.tab, "Web Changelog Flow");
+  assert.deepEqual(out.entries.map((e) => [e.date, e.change, e.monthlyRevenue]), [["2026-11-11", "Promoted New Homepage", null]]);
+});
+
+test("collect from the public link: a sheet that is no longer public says so", async () => {
+  const fetchImpl = async () => new Response("<html>Sign in</html>", { status: 200, headers: { "content-type": "text/html" } });
+  await assert.rejects(collectChangelog({ config, env: {}, fetchImpl }), /not readable from its public link/);
 });

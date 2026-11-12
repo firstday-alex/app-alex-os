@@ -59,17 +59,18 @@ collapsed; biggest first, "Not yet sorted" last.
 
 ### Site changelog
 
-What changed on firstday.com in production, from the team's changelog sheet (the tab the
-Slack changelog workflow appends to: Date, Change, Details, url, Test Link, Test
-Promoted, Additional Monthly Revenue). `src/collectors/changelog.js` reads it read only
-(`spreadsheets.readonly`) as a Google service account, at every pipeline run into
-`detail.changelog` (the last `lookbackDays`, default 14), and live when the Daily Speech
-is written. Every tab with a Date and a Change column is read and merged (the same
-change on the same day in two tabs counts once); set `system.changelog.gid` to read one
-tab only. Columns are found by their headers, so adding or moving a column changes nothing. Screenshot links are never read (they carry Slack ids).
-It raises no flags and has no baseline; if it cannot be read, the Update says why and
-everything else goes out as normal. Settings in `system.changelog`; credentials
-`GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_PRIVATE_KEY` (see `docs/DEPLOY.md`).
+What changed on firstday.com in production, from the team's changelog sheet.
+`src/collectors/changelog.js` reads it at every pipeline run into `detail.changelog` (the
+last `lookbackDays`, default 14), and live when the Daily Speech is written. It reads
+each tab in `system.changelog.tabs` from its **public CSV export link**, no credentials,
+because the sheet is shared as "anyone with the link can view": **Web Changelog Flow**
+(the current log the Slack workflow appends to) and **site_changelog** (the older
+day-by-day log). Tabs are merged, and the same change on the same day in both counts once.
+Columns are found by their headers, so adding or moving a column changes nothing.
+Screenshot links are never read (they carry Slack ids). If the sheet stops being public,
+the Update says so; set `GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_PRIVATE_KEY` and the
+Sheets API is used instead (`docs/DEPLOY.md`). It raises no flags and has no baseline;
+if it cannot be read, everything else goes out as normal.
 
 The rule of thumb, for anyone extending this: if you can write the logic as an `if`
 statement, it is deterministic. If the answer depends on business context that lives in a
@@ -93,7 +94,7 @@ src/
   pipeline.js      collector -> delta -> render -> send
 netlify/functions/ the 8 AM trigger, the pipeline, the dashboard API, the Slack endpoints
 public/            the dashboard
-test/              500 tests, no network, no API keys needed
+test/              503 tests, no network, no API keys needed
 scripts/           run the pipeline locally, and a syntax check
 ```
 
@@ -107,7 +108,7 @@ testable, and it is why the tests need no network and no credentials.
 
 ```bash
 npm install
-npm test                    # 500 tests. no network, no keys.
+npm test                    # 503 tests. no network, no keys.
 npm run check               # parses every source and config file
 
 cp .env.example .env        # then fill in the tokens you have

@@ -71,28 +71,28 @@ Connect the repo. Build settings come from `netlify.toml`; there is no build ste
 | `SLACK_READOUT_CHANNEL` | channel id, e.g. `C0123456789` |
 | `ANTHROPIC_API_KEY` | advisor and learning skill only |
 | `GITHUB_TOKEN` | scoped to this repo: contents + pull requests write |
-| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | the service account that reads the site changelog sheet (below) |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | optional: only if the changelog sheet stops being public (below) |
 | `GOOGLE_PRIVATE_KEY` | its private key, the `private_key` value from the key file. Literal `\n` is fine. |
 | `DASHBOARD_PASSWORD` | the shared dashboard password |
 | `DASHBOARD_COOKIE_SECRET` | `openssl rand -base64 32`. Also gates internal function calls. |
 
 ### The site changelog sheet
 
-The Update and the Daily Speech read the firstday.com changelog sheet (`system.changelog`)
-as a Google service account, read only. One time:
+Nothing to set up while the sheet stays shared as "anyone with the link can view": the
+Update and the Daily Speech read each tab in `system.changelog.tabs` from its public CSV
+export link.
+
+If the sheet is ever made private, the Update says "not readable from its public link".
+Then read it as a Google service account instead, read only:
 
 1. Google Cloud console → a project → **APIs & Services → Enable APIs** → enable the
    **Google Sheets API**.
 2. **IAM & Admin → Service Accounts → Create**. No roles needed. Open it → **Keys → Add
-   key → JSON**. The file downloads once.
+   key → JSON**.
 3. In Netlify set `GOOGLE_SERVICE_ACCOUNT_EMAIL` to its `client_email` and
-   `GOOGLE_PRIVATE_KEY` to its `private_key`. (The whole file as
-   `GOOGLE_SERVICE_ACCOUNT_JSON` also works, but Netlify functions share a 4 KB limit on
-   environment variables, and the two values are smaller.)
+   `GOOGLE_PRIVATE_KEY` to its `private_key` (Netlify functions share a 4 KB limit on
+   environment variables, so not the whole file).
 4. Share the sheet with the `client_email` as a **Viewer**.
-
-Until then the Update says "Changes to production: not read" with the reason, and the
-speech goes without it.
 
 ### Shopify auth, after the 2026 cutoff
 
