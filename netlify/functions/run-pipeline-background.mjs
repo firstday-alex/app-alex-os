@@ -9,6 +9,8 @@ import { runPipeline } from "../../src/pipeline.js";
 import { loadConfig } from "../../src/config.js";
 import { createLogger } from "../../src/lib/logger.js";
 import { isInternalCall } from "../../src/lib/dashboard-auth.js";
+import { Store } from "../../src/lib/storage.js";
+import { morningSpeech } from "../../src/agents/daily-speech.js";
 
 export default async (req) => {
   const config = loadConfig();
@@ -32,6 +34,18 @@ export default async (req) => {
       flags: result.report.flags.length,
       delivered: result.delivery.sent,
     });
+
+    // The Daily Speech, written straight after the 8 AM readout so it is waiting when
+    // Alex opens the tab. After the readout is stored and posted, and never able to fail
+    // it: morningSpeech catches everything, and skips if today's speech already exists.
+    if (mode === "official") {
+      try {
+        const store = await Store.open({ config, logger });
+        logger.info("pipeline.morning_speech", await morningSpeech({ store, config, logger, report: result.report }));
+      } catch (err) {
+        logger.warn("pipeline.morning_speech_failed", { err });
+      }
+    }
   } catch (err) {
     // Throwing is what tells Netlify to use its retry. Log first so the reason survives.
     logger.error("pipeline.crashed", { err });

@@ -4849,7 +4849,7 @@ function renderSpeech() {
         running
           ? `Started ${esc(new Date(status.startedAt).toLocaleTimeString())}. Reading the readout, stand-ups and this week's wins, then one call to Claude; usually under a minute.`
           : latest
-            ? `Written ${esc(new Date(latest.generatedAt).toLocaleString())}, from the readout pulled ${esc(latest.dateKey ?? "")}.`
+            ? `Written ${latest.trigger === "morning" ? "automatically after the 8 AM readout, " : ""}${esc(new Date(latest.generatedAt).toLocaleString())}, from the readout pulled ${esc(latest.dateKey ?? "")}.${latest.trigger === "morning" ? " Add notes and write a new one to fold them in." : ""}`
             : "Not written yet."
       }</span>
     </div>

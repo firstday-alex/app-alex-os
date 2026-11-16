@@ -179,7 +179,7 @@ export function speechText(s) {
 // ------------------------------------------------------------------- the call
 
 /** Gathers the context, makes the call, checks the numbers and stores it. */
-export async function writeSpeech({ store, config, env = process.env, logger, now = new Date() }) {
+export async function writeSpeech({ store, config, env = process.env, logger, now = new Date(), trigger = "button" }) {
   const report = await store.getLatestReport();
   if (!report) return { error: "There is no readout in storage yet, so there is nothing to tell the story from." };
   const detail = report.detail ?? {};
@@ -273,6 +273,8 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
     text: speechText(speech),
     unverified: unverifiedNumbers(speechText(speech), contextText),
     generatedAt: new Date().toISOString(),
+    // "morning": written by itself after the 8 AM readout; "button": Alex pressed it.
+    trigger,
     dateKey: report.dateKey ?? null,
     reportRunId: report.runId ?? null,
     model: result.response?.model ?? null,
@@ -288,4 +290,46 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
   if (stored.dateKey) await store.backend.set(speechHistoryKey(stored.dateKey), stored);
   logger?.info?.("speech.written", { unverified: stored.unverified.length, xf: xf.items.length });
   return stored;
+}
+
+// A run still marked running after this long has died; the morning write may go ahead.
+const RUNNING_FOR_AT_MOST_MS = 10 * 60 * 1000;
+
+/**
+ * The morning speech: written by itself straight after the 8 AM readout, so it is ready
+ * when Alex opens the tab. One Anthropic call per working day, with the same figure check
+ * as the button. Skipped, never overwritten, when today's readout already has a speech
+ * (a retry, or Alex was up first), when one is being written, or when it is turned off
+ * with config.system.dailySpeech.writeAfterReadout = false. Never throws: a failed speech
+ * must not fail the readout.
+ *
+ * @returns {Promise<{written:boolean, reason?:string, error?:string}>}
+ */
+export async function morningSpeech({ store, config, env = process.env, logger, now = new Date(), report, write = writeSpeech }) {
+  try {
+    if (config.system?.dailySpeech?.writeAfterReadout === false) return { written: false, reason: "turned off" };
+    if (!env.ANTHROPIC_API_KEY) return { written: false, reason: "no ANTHROPIC_API_KEY" };
+    const [latest, status] = await Promise.all([store.backend.get(SPEECH_KEY), store.backend.get(SPEECH_STATUS_KEY)]);
+    if (report?.dateKey && latest?.dateKey === report.dateKey) return { written: false, reason: "already written for this readout" };
+    if (status?.state === "running" && now.getTime() - new Date(status.startedAt).getTime() < RUNNING_FOR_AT_MOST_MS) {
+      return { written: false, reason: "one is already being written" };
+    }
+    const startedAt = new Date().toISOString();
+    await store.backend.set(SPEECH_STATUS_KEY, { state: "running", startedAt, trigger: "morning" });
+    const result = await write({ store, config, env, logger, now, trigger: "morning" });
+    await store.backend.set(
+      SPEECH_STATUS_KEY,
+      result.error ? { state: "failed", startedAt, error: result.error, trigger: "morning" } : { state: "done", startedAt, finishedAt: result.generatedAt, trigger: "morning" },
+    );
+    if (result.error) {
+      logger?.warn?.("speech.morning_failed", { error: result.error });
+      return { written: false, error: result.error };
+    }
+    logger?.info?.("speech.morning_written", { dateKey: result.dateKey, unverified: result.unverified?.length ?? 0 });
+    return { written: true };
+  } catch (err) {
+    logger?.error?.("speech.morning_crashed", { err });
+    await store.backend.set(SPEECH_STATUS_KEY, { state: "failed", startedAt: new Date().toISOString(), error: err.message, trigger: "morning" }).catch(() => {});
+    return { written: false, error: err.message };
+  }
 }

@@ -81,3 +81,41 @@ test("the XF beat is optional, and slots in after the win when present", () => {
   assert.ok(cleanSpeech({ headline: "H", beats, close: "", facts: [] }), "a speech with nothing XF is still a speech");
   assert.equal(cleanSpeech({ headline: "H", beats: [beats[0], xf, beats[2]], close: "", facts: [] }), null, "XF does not stand in for the stakes");
 });
+
+/* ------------------------------ morning speech ------------------------------ */
+
+test("the morning speech is written once per readout, never over one already there, and never throws", async () => {
+  const { morningSpeech, SPEECH_KEY, SPEECH_STATUS_KEY } = await import("../src/agents/daily-speech.js");
+  const { createBackend } = await import("../src/lib/storage.js");
+  const backend = await createBackend({ mode: "memory" });
+  const store = { backend };
+  const config = { system: {} };
+  const env = { ANTHROPIC_API_KEY: "k" };
+  const report = { dateKey: "2026-11-16" };
+  const calls = [];
+  const write = async (args) => {
+    calls.push(args.trigger);
+    const stored = { dateKey: "2026-11-16", generatedAt: "2026-11-16T14:02:00Z", trigger: args.trigger, unverified: [] };
+    await backend.set(SPEECH_KEY, stored);
+    return stored;
+  };
+
+  assert.deepEqual(await morningSpeech({ store, config, env, report, write }), { written: true });
+  assert.deepEqual(calls, ["morning"]);
+  assert.equal((await backend.get(SPEECH_STATUS_KEY)).state, "done");
+
+  // A retry, or Alex pressed the button first: today's speech stands.
+  assert.equal((await morningSpeech({ store, config, env, report, write })).reason, "already written for this readout");
+  assert.equal(calls.length, 1);
+
+  // Off by config, and with no key, nothing is called.
+  assert.equal((await morningSpeech({ store, config: { system: { dailySpeech: { writeAfterReadout: false } } }, env, report: { dateKey: "2026-11-17" }, write })).reason, "turned off");
+  assert.equal((await morningSpeech({ store, config, env: {}, report: { dateKey: "2026-11-17" }, write })).reason, "no ANTHROPIC_API_KEY");
+
+  // A failure is recorded for the tab and returned, not thrown.
+  const failing = await morningSpeech({ store, config, env, report: { dateKey: "2026-11-17" }, write: async () => ({ error: "The model declined to answer." }) });
+  assert.equal(failing.error, "The model declined to answer.");
+  assert.equal((await backend.get(SPEECH_STATUS_KEY)).state, "failed");
+  const crashed = await morningSpeech({ store, config, env, report: { dateKey: "2026-11-17" }, write: async () => { throw new Error("boom"); } });
+  assert.equal(crashed.error, "boom");
+});
