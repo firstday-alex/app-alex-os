@@ -128,10 +128,31 @@ export function annotateFlags(flags, entries, { dateKey, sections = {}, escalate
   return { flags: annotated, entries: next };
 }
 
+const QUIET_KEY = "flags/quiet-rules.json";
+
 export class FlagLedger {
   constructor(backend, logger) {
     this.backend = backend;
     this.logger = logger;
+  }
+
+  /** Rules Alex moved to Hygiene from the rule check: { rule: { at, note } }. */
+  async readQuiet() {
+    const doc = await this.backend.get(QUIET_KEY);
+    return doc && typeof doc.rules === "object" ? doc : { version: 0, rules: {} };
+  }
+
+  /** Moves a rule to Hygiene, or brings it back. Reversible, and kept with when and why. */
+  async setQuiet(rule, quiet, { note = "" } = {}) {
+    if (!/^[a-z0-9_]+\.[a-z0-9_.]+$/i.test(String(rule ?? ""))) throw new FlagLedgerError("Which rule?");
+    const doc = await this.readQuiet();
+    const rules = { ...doc.rules };
+    if (quiet) rules[rule] = { at: new Date().toISOString(), ...(String(note).trim() ? { note: String(note).trim().slice(0, 300) } : {}) };
+    else delete rules[rule];
+    const next = { version: (doc.version ?? 0) + 1, updatedAt: new Date().toISOString(), rules };
+    await this.backend.set(QUIET_KEY, next);
+    this.logger?.info?.("flags.quiet_rule", { rule, quiet: Boolean(quiet) });
+    return next;
   }
 
   async read() {

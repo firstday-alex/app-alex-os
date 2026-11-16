@@ -817,6 +817,13 @@ ul.plain { margin: 0; padding-left: 18px; }
 .q-x:hover { background: var(--code); color: var(--ink); }
 .q-row[data-triaged] { opacity: .75; background: var(--panel); }
 .q-opened { margin-bottom: 6px; }
+.flag.q-group > .q-list { margin: 8px 0; }
+.flag.q-group .flag.q-row { background: var(--panel); }
+.q-group-row .q-msg { font-weight: 600; }
+.group-panel { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.group-panel label.wide, .group-panel textarea { width: 100%; }
+.rule-check td { vertical-align: top; }
+.rule-check tr.rc-suggest td { background: var(--amber-bg); }
 .q-tray { margin: 12px 0 4px; }
 .q-tray > summary { cursor: pointer; font-weight: 600; color: var(--green); padding: 4px 0 8px; }
 #undo-toast {

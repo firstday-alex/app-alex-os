@@ -33,8 +33,11 @@ export default async (req) => {
   // Triage is read live rather than taken from the report, so a flag handled after the
   // report was built shows as handled straight away.
   let flagEntries = null;
+  let quietRules = {};
   try {
-    flagEntries = (await new FlagLedger(store.backend, logger).read()).entries;
+    const ledger = new FlagLedger(store.backend, logger);
+    flagEntries = (await ledger.read()).entries;
+    quietRules = (await ledger.readQuiet()).rules;
   } catch (err) {
     logger.warn("report.flag_ledger_unavailable", { err });
   }
@@ -46,6 +49,10 @@ export default async (req) => {
     advisorButtonText: config.system.slack?.advisorButtonText ?? "Ask for recommendation",
     today: dateKey(new Date(), config.system.timezone),
     flagEntries,
+    // Rules moved to Hygiene from the rule check.
+    quietRules,
+    // Alex's name, so Alex's own sprint items group under "Yours", not under a nudge.
+    alexName: config.people?.alex?.name ?? null,
     // Who a flag can be waiting on. Names only: the system never contacts the team.
     // Alex's own ClickUp id, so the dashboard never tells Alex to reach out to Alex.
     me: config.people?.alex?.clickupUserId == null ? null : String(config.people.alex.clickupUserId),

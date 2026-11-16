@@ -9,6 +9,7 @@ import { isContext } from "../delta/flags.js";
 import { topFlags } from "../delta/priority.js";
 import { weeklyLines } from "../delta/weekly.js";
 import { weekdayOfKey } from "../lib/time.js";
+import { groupByPerson, groupLine } from "../../public/flag-groups.js";
 
 /** Friday's readout leads with the week; the rest of the week it is on the dashboard. */
 const isFriday = (dateKey) => Boolean(dateKey) && weekdayOfKey(dateKey) === 5;
@@ -292,6 +293,14 @@ export const SLACK_TRIAGE = {
 // Slack allows 50 blocks a message, and each flag takes two: the message and its buttons.
 const SLACK_FLAG_LIMIT = 18;
 
+/** What the grouping needs to name a person: the tickets, and who Alex is. */
+function groupOpts(detail, config) {
+  return {
+    tasks: new Map((detail?.clickup?.tasks ?? []).map((t) => [String(t.id), t])),
+    alexName: config?.people?.alex?.name ?? null,
+  };
+}
+
 export function renderText(report) {
   const lines = [];
   const { detail, sections, config, flags } = report._render;
@@ -314,10 +323,14 @@ export function renderText(report) {
   const prompts = open.filter((f) => f.severity === "prompt");
   const line = (flag) => `[${flag.severity.toUpperCase()}] [${layerLabel(flag.layer)}] ${flag.message}${ageNote(flag)}`;
 
+  // The routine sprint checks, one line per person, after everything that stands alone.
+  const { items, groups } = groupByPerson(needsAttention, groupOpts(detail, config));
+  const single = items.filter((i) => i.kind === "flag").map((i) => i.flag);
+
   // Without a ledger there is no age to split on, and the list reads as it always did.
-  const aged = needsAttention.some((f) => f.isNew !== undefined);
-  const fresh = needsAttention.filter((f) => f.isNew);
-  const still = needsAttention.filter((f) => !f.isNew);
+  const aged = single.some((f) => f.isNew !== undefined);
+  const fresh = single.filter((f) => f.isNew);
+  const still = single.filter((f) => !f.isNew);
   if (isFriday(report.dateKey) && detail.weekly) {
     lines.push("WEEK IN REVIEW.");
     for (const l of weeklyLines(detail.weekly)) lines.push(`  ${l}`);
@@ -332,7 +345,7 @@ export function renderText(report) {
   }
 
   lines.push(
-    `NEEDS YOUR ATTENTION. ${needsAttention.length} item(s).${aged && needsAttention.length ? ` ${fresh.length} new today, ${still.length} still open.` : ""}`,
+    `NEEDS YOUR ATTENTION. ${needsAttention.length} item(s).${aged && needsAttention.length ? ` ${needsAttention.filter((f) => f.isNew).length} new today, ${needsAttention.filter((f) => !f.isNew).length} still open.` : ""}${groups.length ? ` ${groups.reduce((n, g) => n + g.flags.length, 0)} of them grouped by person.` : ""}`,
   );
   if (needsAttention.length === 0) lines.push("  nothing flagged");
   if (aged) {
@@ -341,7 +354,14 @@ export function renderText(report) {
     if (still.length) lines.push("  STILL OPEN");
     for (const flag of still) lines.push(`    ${line(flag)}`);
   } else {
-    for (const flag of needsAttention) lines.push(`  ${line(flag)}`);
+    for (const flag of single) lines.push(`  ${line(flag)}`);
+  }
+  if (groups.length) {
+    lines.push("  BY PERSON. Routine sprint checks, one conversation each.");
+    for (const g of groups) {
+      lines.push(`    [P2] ${groupLine(g)}`);
+      for (const flag of g.flags) lines.push(`      - ${flag.message}${ageNote(flag)}`);
+    }
   }
   lines.push("");
 
@@ -456,8 +476,13 @@ export function renderSlackBlocks(report, config) {
       text: { type: "mrkdwn", text: [`*Site-wide moves* · read test results against these`, ...context.slice(0, 8).map((f) => `• ${f.message}`)].join("\n").slice(0, 2900) },
     });
   }
-  const shown = actionable.slice(0, SLACK_FLAG_LIMIT);
-  if (shown.length === 0) {
+  // Routine sprint checks go one block per person, after the flags that stand alone.
+  const { items, groups } = groupByPerson(actionable, groupOpts(report._render.detail, config));
+  const singles = items.filter((i) => i.kind === "flag").map((i) => i.flag);
+  // Each group is one block, and the total has to stay under Slack's 50.
+  const groupBlocks = groups.length ? Math.min(groups.length, 10) + 1 : 0;
+  const shown = singles.slice(0, SLACK_FLAG_LIMIT - Math.ceil(groupBlocks / 2));
+  if (shown.length === 0 && groups.length === 0) {
     blocks.push({ type: "section", text: { type: "mrkdwn", text: "Nothing flagged this morning." } });
   }
 
@@ -489,10 +514,29 @@ export function renderSlackBlocks(report, config) {
     });
   }
 
-  if (actionable.length > shown.length) {
+  if (singles.length > shown.length) {
     blocks.push({
       type: "context",
-      elements: [{ type: "mrkdwn", text: `${actionable.length - shown.length} more item(s) in the full readout on the dashboard.` }],
+      elements: [{ type: "mrkdwn", text: `${singles.length - shown.length} more item(s) in the full readout on the dashboard.` }],
+    });
+  }
+
+  if (groups.length) {
+    const cut = (s, n = 110) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+    for (const g of groups.slice(0, 10)) {
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: [`:large_orange_circle: *Sprint · ${groupLine(g)}*`, ...g.flags.slice(0, 6).map((f) => `• ${cut(f.message)}`), ...(g.flags.length > 6 ? [`• and ${g.flags.length - 6} more`] : [])]
+            .join("\n")
+            .slice(0, 2900),
+        },
+      });
+    }
+    blocks.push({
+      type: "context",
+      elements: [{ type: "mrkdwn", text: "Grouped by person: on the dashboard, copy one nudge for each person, or mark their items done together." }],
     });
   }
 

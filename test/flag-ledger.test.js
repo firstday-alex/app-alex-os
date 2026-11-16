@@ -182,8 +182,9 @@ const report = (flags) =>
 
 test("the readout splits new from still open, and keeps handled flags out of the count", () => {
   const r = report([
-    flag({ id: "a", key: "a", message: "Brand new.", isNew: true, openDays: 0 }),
-    flag({ id: "b", key: "b", message: "Old one.", isNew: false, openDays: 3 }),
+    // Two people, so neither is grouped: one routine flag each stands on its own.
+    flag({ id: "a", key: "a", message: "Brand new.", isNew: true, openDays: 0, values: { assignees: "Sam Rivera" } }),
+    flag({ id: "b", key: "b", message: "Old one.", isNew: false, openDays: 3, values: { assignees: "Blake Tucker" } }),
     flag({ id: "c", key: "c", message: "Handled.", isNew: false, openDays: 2, triage: { status: "done" } }),
     flag({ id: "d", key: "d", message: "Chased.", isNew: false, openDays: 1, triage: { status: "waiting", waitingOn: "Blake", until: "2026-10-21" } }),
   ]);
@@ -212,7 +213,7 @@ test("a readout without a ledger reads as it always did", () => {
 
 test("each flag in the Slack readout carries triage buttons, inside Slack's limits", () => {
   const many = Array.from({ length: 30 }, (_, i) =>
-    flag({ id: `2026-10-19:intelligems.probability_crossed:${"e".repeat(36)}:group-${i}:conversion_rate_per_session:prob`, key: `intelligems.probability_crossed:${"e".repeat(36)}:group-${i}:conversion_rate_per_session:prob`, isNew: true, openDays: 0 }),
+    flag({ layer: 3, rule: "intelligems.probability_crossed", id: `2026-10-19:intelligems.probability_crossed:${"e".repeat(36)}:group-${i}:conversion_rate_per_session:prob`, key: `intelligems.probability_crossed:${"e".repeat(36)}:group-${i}:conversion_rate_per_session:prob`, isNew: true, openDays: 0 }),
   );
   const r = report(many);
   assert.ok(r.slackBlocks.length <= 50, `Slack allows 50 blocks, got ${r.slackBlocks.length}`);

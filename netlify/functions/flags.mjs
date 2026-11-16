@@ -3,6 +3,7 @@
 //   GET  /flags   { today, entries }   every flag's age and triage as it stands
 //   POST /flags   { key, layer, status, workingDays?, calendarDays?, waitingOn?, note? }
 //                 status null clears the triage (undo)
+//   POST /flags   { quietRule, quiet: true|false, note? }   move a rule to Hygiene, or back
 //
 // Writes only to this system's own storage. Nothing here touches ClickUp, Intelligems or
 // Slack.
@@ -27,10 +28,15 @@ export default async (req) => {
   try {
     if (req.method === "GET") {
       const doc = await ledger.read();
-      return json({ today, entries: doc.entries });
+      const quiet = await ledger.readQuiet();
+      return json({ today, entries: doc.entries, quietRules: quiet.rules });
     }
     if (req.method === "POST") {
       const body = await req.json().catch(() => ({}));
+      if (body.quietRule) {
+        const doc = await ledger.setQuiet(String(body.quietRule), body.quiet !== false, { note: body.note ?? "" });
+        return json({ ok: true, quietRules: doc.rules, today });
+      }
       const entry = await ledger.setTriage(String(body.key ?? ""), {
         status: body.status ?? null,
         workingDays: body.workingDays,

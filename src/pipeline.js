@@ -24,6 +24,7 @@ import { collectLeadership } from "./collectors/leadership.js";
 import { collectShopify } from "./collectors/shopify.js";
 import { collectChangelog, changelogConfigured, CHANGELOG_SETUP } from "./collectors/changelog.js";
 import { computeFlags } from "./delta/index.js";
+import { ruleHealth, applyQuietRules, RULE_HEALTH_DEFAULTS } from "./delta/rule-health.js";
 import { sortFlags } from "./delta/flags.js";
 import { buildReport } from "./render/report.js";
 import { sendReadout } from "./send/slack.js";
@@ -270,10 +271,15 @@ export async function runPipeline(opts = {}) {
      rendered, so the readout and the dashboard agree on its severity. If the ledger
      cannot be read the flags go out as they are: a readout without ages beats none. */
   let flags = computed.flags;
+  let quietRules = [];
   try {
     const flagLedger = new FlagLedger(store.backend, logger);
     const flagRules = config.system.flags ?? {};
     const workingWeekdays = config.system.schedule?.workingWeekdays;
+    // Rules Alex moved to Hygiene from the rule check: their P2s go there before ages are
+    // worked out, so they never escalate.
+    quietRules = Object.keys((await flagLedger.readQuiet()).rules);
+    flags = applyQuietRules(flags, quietRules);
     let { entries } = await flagLedger.read();
     if (!Object.keys(entries).length) {
       entries = await flagLedger.backfillFirstSeen(store, flags, { dateKey, workingWeekdays });
@@ -289,6 +295,31 @@ export async function runPipeline(opts = {}) {
     await flagLedger.saveObservations(annotated.entries);
   } catch (err) {
     logger.warn("flag_ledger.unavailable", { err, note: "flags render without age or triage" });
+  }
+
+  /* ------------------------------- rule check -------------------------------
+     Which kinds of flag get acted on and which sit ignored, over the last two weeks of
+     official readouts. Suggestions only; a failure here costs the check, never the readout. */
+  try {
+    const prefix = config.system.storage?.reportPrefix ?? "reports";
+    const lookback = config.system.flags?.ruleHealthLookbackDays ?? RULE_HEALTH_DEFAULTS.lookbackDays;
+    const floor = shiftDateKey(dateKey, -lookback);
+    const latestPerDay = new Map();
+    for (const k of await store.backend.keys(`${prefix}/`)) {
+      const m = k.match(/\/(\d{4}-\d{2}-\d{2})-official-/);
+      if (!m || m[1] < floor || m[1] >= dateKey) continue;
+      if (!latestPerDay.has(m[1]) || k > latestPerDay.get(m[1])) latestPerDay.set(m[1], k);
+    }
+    const history = (
+      await Promise.all(
+        [...latestPerDay.values()].map((k) =>
+          store.backend.get(k).then((r) => (r ? { dateKey: r.dateKey, flags: r.flags ?? [] } : null)).catch(() => null),
+        ),
+      )
+    ).filter(Boolean);
+    detail.ruleHealth = ruleHealth({ history, today: flags, dateKey, quiet: quietRules });
+  } catch (err) {
+    logger.warn("rule_health.unavailable", { err });
   }
 
   /* ------------------------------- the week -------------------------------

@@ -94,7 +94,7 @@ src/
   pipeline.js      collector -> delta -> render -> send
 netlify/functions/ the 8 AM trigger, the pipeline, the dashboard API, the Slack endpoints
 public/            the dashboard
-test/              505 tests, no network, no API keys needed
+test/              513 tests, no network, no API keys needed
 scripts/           run the pipeline locally, and a syntax check
 ```
 
@@ -108,7 +108,7 @@ testable, and it is why the tests need no network and no credentials.
 
 ```bash
 npm install
-npm test                    # 505 tests. no network, no keys.
+npm test                    # 513 tests. no network, no keys.
 npm run check               # parses every source and config file
 
 cp .env.example .env        # then fill in the tokens you have
@@ -270,7 +270,7 @@ The menu (☰) holds the rest:
 
 | Where | What it is for |
 |---|---|
-| **What needs you** (Today) | The landing page. Your queue: everything open, ranked, the top 3 in full and the rest one line each, with a Hidden or handled tray so × never loses anything (Undo for 8 seconds too). Then the week in review, store numbers, and every flag to triage: Done, Snooze, Waiting on, Not a problem, Draft a nudge, and quick fixes on rock flags. |
+| **What needs you** (Today) | The landing page. Your queue: everything open, ranked, the top 3 in full and the rest one line each, with a Hidden or handled tray so × never loses anything (Undo for 8 seconds too). Routine sprint checks at P2 (overdue, not started, carried over, no owner, stuck) fold into one line per person (`public/flag-groups.js`, shared with the Slack readout), with one drafted nudge for all of that person's tickets, Done all, and Hide all for today. P1s, tests and replies owed stay on their own. At the bottom, the **Rule check** (`src/delta/rule-health.js`): for each rule over the last two weeks of readouts, how many flags it raised and how many were acted on, cleared on their own, or sat ignored. A rule you never act on whose flags sit untouched is suggested for Hygiene, and one click moves it there (or back) from the next run; P1 rules cannot be moved. Then the week in review, store numbers, and every flag to triage: Done, Snooze, Waiting on, Not a problem, Draft a nudge, and quick fixes on rock flags. |
 | **Tests** | Each test's readout, with the 12 month value projection. `#tests/<experience id>` opens one. |
 | **Setup** | The LTV multipliers and the decisions still open. |
 

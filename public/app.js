@@ -4,6 +4,7 @@
 // The refresh path polls rather than awaits: a background function returns 202 straight
 // away and the caller cannot wait for its result.
 
+import { groupByPerson, groupLine, YOU, NOBODY } from "./flag-groups.js";
 import { buildAccomplishments, buildChanges, buildLastWeekWins, buildStandupUpdate, buildUpdate, changeLine, changesText, groupsText, lastWeekText, standupUpdateText, windowStart } from "./update-text.js";
 
 const $ = (id) => document.getElementById(id);
@@ -79,6 +80,8 @@ async function load() {
   state.advisorButtonText = body.advisorButtonText ?? state.advisorButtonText;
   state.today = body.today ?? null;
   state.flagEntries = body.flagEntries ?? null;
+  state.quietRules = body.quietRules ?? {};
+  state.alexName = body.alexName ?? null;
   state.people = body.people ?? [];
   state.me = body.me ?? null;
 
@@ -510,6 +513,7 @@ function renderAllFlags({ rebuildTools = false } = {}) {
   const note = (n) => (n ? ` ${plural(n, "handled item is", "handled items are")} under Waiting and Parked above.` : "");
   renderFlags($("prompts"), open.filter((f) => f.severity === "prompt"), `No test is waiting on a decision.${note(handled("prompt"))}`);
   renderFlags($("hygiene"), open.filter((f) => f.severity === "info"), `Nothing outstanding.${note(handled("info"))}`);
+  renderRuleCheck();
 
   // The collapsed headers are the summary, so each says how much is inside.
   const attn = open.filter(isAttn);
@@ -518,6 +522,97 @@ function renderAllFlags({ rebuildTools = false } = {}) {
   sectionCount("prompts", plural(open.filter((f) => f.severity === "prompt").length, "item", "items"));
   sectionCount("hygiene", plural(open.filter((f) => f.severity === "info").length, "item", "items"));
 }
+
+/* -------------------------------- rule check --------------------------------
+   Which kinds of flag get acted on and which sit ignored, from the last two weeks of
+   readouts (src/delta/rule-health.js). A rule can be moved to Hygiene here: its P2s stop
+   coming to the queue and never escalate, from the next run. P1 rules cannot be. */
+
+const RULE_VERDICT = {
+  ignored: { label: "Ignored", cls: "bad", sub: "Never acted on; most sit untouched or get marked not a problem." },
+  "clears itself": { label: "Clears itself", cls: "warn", sub: "Never acted on, and most are gone within two days anyway." },
+  mixed: { label: "Mixed", cls: "", sub: "" },
+  "needs you": { label: "Needs you", cls: "good", sub: "You act on a fair share of these." },
+};
+
+function ruleHealthText(r) {
+  const parts = [`${r.acted} of ${r.raised} acted on`];
+  if (r.ignored) parts.push(`${r.ignored} sat a working week or more untouched`);
+  if (r.dismissed) parts.push(`${r.dismissed} marked not a problem`);
+  if (r.cleared) parts.push(`${r.cleared} cleared without you${r.fast ? ` (${r.fast} within two days)` : ""}`);
+  if (r.open) parts.push(`${r.open} open under a week`);
+  return parts.join(", ");
+}
+
+function renderRuleCheck() {
+  const host = $("rule-check");
+  if (!host) return;
+  const h = state.report?.detail?.ruleHealth;
+  if (!h?.rules) {
+    host.innerHTML = `<p class="sub">The rule check appears after the next refresh.</p>`;
+    sectionCount("rules", "");
+    return;
+  }
+  const quiet = state.quietRules ?? {};
+  const isQuiet = (rule) => Object.hasOwn(quiet, rule);
+  const suggested = h.rules.filter((r) => r.suggest && !isQuiet(r.rule));
+  const quieted = Object.keys(quiet);
+  sectionCount("rules", [suggested.length ? `${suggested.length} suggested for Hygiene` : "", quieted.length ? `${quieted.length} in Hygiene` : ""].filter(Boolean).join(" · ") || "nothing to change", suggested.length > 0);
+
+  const row = (r) => {
+    const v = RULE_VERDICT[r.verdict] ?? RULE_VERDICT.mixed;
+    const q = isQuiet(r.rule);
+    const button = q
+      ? `<button type="button" class="ghost sm" data-quiet="${esc(r.rule)}" data-on="0">Bring back to the queue</button>`
+      : r.canQuiet
+        ? `<button type="button" class="${r.suggest ? "sm" : "ghost sm"}" data-quiet="${esc(r.rule)}" data-on="1">Move to Hygiene</button>`
+        : `<span class="meta" title="Raised as a P1, so it is never moved out of the queue">P1 rule</span>`;
+    return `<tr${r.suggest && !q ? ' class="rc-suggest"' : ""}>
+        <td class="wrap"><strong>${esc(ruleLabel(r.rule))}</strong><br><span class="meta">${esc(r.rule)}</span></td>
+        <td><span class="chip ${esc(v.cls)}"${v.sub ? ` title="${esc(v.sub)}"` : ""}>${esc(q ? "In Hygiene" : v.label)}</span></td>
+        <td class="wrap">${esc(ruleHealthText(r))}</td>
+        <td>${button}</td>
+      </tr>`;
+  };
+  // A rule quieted since it last fired still needs a way back.
+  const missing = quieted.filter((rule) => !h.rules.some((r) => r.rule === rule)).map((rule) => ({ rule, raised: 0, acted: 0, verdict: "mixed", canQuiet: true }));
+  host.innerHTML = `
+    <p class="sub">${esc(plural(h.readouts, "readout", "readouts"))} since ${esc(fmtDay(h.since))}: how many flags each rule raised and what became of them.
+      A rule you never act on, whose flags mostly sit untouched, is suggested for Hygiene. There it is still listed, but it stays out of the queue and never escalates.
+      Changes apply from the next refresh. Acted on means marked Done or Waiting on, here or in Slack.</p>
+    ${suggested.length ? "" : `<p class="sub"><strong>No rule qualifies for Hygiene right now.</strong> ${esc(h.rules.filter((r) => r.verdict === "clears itself").length ? "Several clear within two days without you, shown below; that may be the readout working, so they are shown, not suggested." : "")}</p>`}
+    <p class="triage-error hidden" id="rule-check-error"></p>
+    <div class="scroll"><table class="rule-check">
+      <thead><tr><th>Rule</th><th>Verdict</th><th>Last two weeks</th><th></th></tr></thead>
+      <tbody>${[...h.rules, ...missing].map(row).join("")}</tbody>
+    </table></div>`;
+}
+
+document.addEventListener("click", async (event) => {
+  const el = event.target.closest("[data-quiet]");
+  if (!el) return;
+  const rule = el.dataset.quiet;
+  const on = el.dataset.on === "1";
+  el.disabled = true;
+  try {
+    const res = await fetch(`${FN}/flags`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ quietRule: rule, quiet: on }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    state.quietRules = body.quietRules ?? {};
+    renderRuleCheck();
+  } catch (err) {
+    el.disabled = false;
+    const box = $("rule-check-error");
+    if (box) {
+      box.textContent = `Not saved: ${err.message}`;
+      box.classList.remove("hidden");
+    }
+  }
+});
 
 /**
  * Site-wide moves, above the store tiles: store metrics that moved, and control groups
@@ -586,25 +681,68 @@ function queueRow(flag) {
     </div>`;
 }
 
+/* Routine sprint checks, one item per person (public/flag-groups.js, shared with the
+   readout). A group sits where its highest-ranked flag would, so a person with an old
+   overdue ticket rises with it. */
+const groupOpts = () => ({ tasks: state.flagCtx?.tasks ?? new Map(), alexName: state.alexName });
+const groupId = (g) => `group:${g.person}`;
+
+/** A person's routine items as one card: the summary, each item one line, and the actions for all of them. */
+function groupCard(g) {
+  const who = g.person === YOU ? "Yours" : g.person;
+  const canNudge = g.person !== YOU && g.person !== NOBODY;
+  const oldest = Math.max(...g.flags.map((f) => f.openDays ?? 0));
+  return `<div class="flag q-group sev-attention" data-group-person="${esc(g.person)}">
+      <p class="msg"><strong>${esc(who)}</strong> · ${esc(plural(g.flags.length, "sprint item", "sprint items"))}: ${esc(g.summary)}</p>
+      <p class="meta">Sprint · grouped by person${oldest ? ` · oldest open ${esc(plural(oldest, "working day", "working days"))}` : ""}</p>
+      <div class="q-list">${g.flags.map((f) => (queue.open.has(f.id) ? `<div class="q-opened">${flagCard(f)}<button type="button" class="link-btn" data-q-open="${esc(f.id)}">Close</button></div>` : queueRow(f))).join("")}</div>
+      <div class="triage-actions">
+        ${canNudge ? `<button type="button" class="sm" data-group-act="nudge">Draft one nudge to ${esc(g.person)}</button>` : ""}
+        <button type="button" class="ghost sm" data-group-act="done" title="Mark every item here Done. Each comes back only if its condition clears and returns.">Done all</button>
+        <button type="button" class="ghost sm" data-group-act="hide" title="Hide all of these for today. Back tomorrow if they still hold.">Hide all for today</button>
+      </div>
+      <div class="group-panel hidden"></div>
+    </div>`;
+}
+
+/** The group, folded to one line in the "Then" list. */
+function groupRow(g) {
+  const oldest = Math.max(...g.flags.map((f) => f.openDays ?? 0));
+  const meta = [plural(g.flags.length, "item", "items"), oldest ? `oldest ${plural(oldest, "day", "days")} open` : "new today"].join(" · ");
+  return `<div class="flag q-row q-group-row sev-attention">
+      <span class="q-sev">P2 ×${esc(g.flags.length)}</span>
+      <button type="button" class="q-msg" data-q-open="${esc(groupId(g))}" title="Open ${esc(g.person)}'s items">${esc(groupLine(g))}</button>
+      <span class="q-meta">${esc(meta)}</span>
+      <span class="q-acts"><button type="button" class="ghost sm" data-q-open="${esc(groupId(g))}">Open</button></span>
+    </div>`;
+}
+
 function renderTopThree(flags) {
   const host = $("start-here");
   if (!host) return;
   const ranked = rankedFlags(flags);
+  const { items, groups } = groupByPerson(ranked, groupOpts());
+  state.queueGroups = new Map(groups.map((g) => [g.person, g]));
   const set = flags.filter((f) => !isContextFlag(f) && viewOf(f) !== "open");
   const count = (sev) => ranked.filter((f) => f.severity === sev).length;
   const chip = (n, label, cls = "") => (n ? `<span class="chip ${cls}">${n} ${esc(label)}</span>` : "");
   const summary = ranked.length
-    ? `${chip(count("p1"), "P1", "bad")}${chip(count("attention"), "P2", "warn")}${chip(count("prompt"), count("prompt") === 1 ? "decision due" : "decisions due")}${chip(flagsForView("waiting").length, "waiting on someone")}`
+    ? `${chip(count("p1"), "P1", "bad")}${chip(count("attention"), "P2", "warn")}${chip(count("prompt"), count("prompt") === 1 ? "decision due" : "decisions due")}${chip(flagsForView("waiting").length, "waiting on someone")}${groups.length ? `<span class="meta">in ${esc(plural(items.length, "line", "lines"))}</span>` : ""}`
     : `<span class="meta">Nothing open that needs you.</span>`;
 
-  const top = ranked.slice(0, 3);
-  const rest = ranked.slice(3);
+  const top = items.slice(0, 3);
+  const rest = items.slice(3);
   const shown = queue.all ? rest : rest.slice(0, QUEUE_ROWS);
-  const line = (f) => (queue.open.has(f.id) ? `<div class="q-opened">${flagCard(f)}<button type="button" class="link-btn" data-q-open="${esc(f.id)}">Close</button></div>` : queueRow(f));
+  const card = (i) => (i.kind === "group" ? groupCard(i) : flagCard(i.flag));
+  const close = (id) => `<button type="button" class="link-btn" data-q-open="${esc(id)}">Close</button>`;
+  const line = (i) => {
+    if (i.kind === "group") return queue.open.has(groupId(i)) ? `<div class="q-opened">${groupCard(i)}${close(groupId(i))}</div>` : groupRow(i);
+    return queue.open.has(i.flag.id) ? `<div class="q-opened">${flagCard(i.flag)}${close(i.flag.id)}</div>` : queueRow(i.flag);
+  };
 
   host.innerHTML = `
     <div class="start-here-head"><h2>Your queue</h2><span class="q-summary">${summary}</span></div>
-    ${top.length ? `<p class="q-label">Do first</p>${top.map((f) => flagCard(f)).join("")}` : ""}
+    ${top.length ? `<p class="q-label">Do first</p>${top.map(card).join("")}` : ""}
     ${rest.length ? `<p class="q-label">Then <span class="meta">${rest.length} more, highest first. Click one to open it.</span></p>
       <div class="q-list">${shown.map(line).join("")}</div>
       ${rest.length > shown.length ? `<button type="button" class="ghost sm" data-q-more>Show all ${rest.length}</button>` : queue.all && rest.length > QUEUE_ROWS ? `<button type="button" class="ghost sm" data-q-more>Show fewer</button>` : ""}` : ""}
@@ -613,6 +751,103 @@ function renderTopThree(flags) {
         <div class="q-list">${set.map(queueRow).join("")}</div>
       </details>` : ""}`;
 }
+
+/**
+ * One message for everything a person has open: each ticket once, with where it is, when
+ * it is due and the question to answer, the same reasoning as a single ticket's nudge.
+ * For Alex to send himself; nothing is sent from here.
+ */
+function groupNudgeText(g) {
+  const tasks = state.flagCtx?.tasks ?? new Map();
+  const seen = new Set();
+  const lines = [];
+  const addTicket = (id, fallbackName, fallbackUrl) => {
+    const key = String(id);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const task = tasks.get(key);
+    if (task) lines.push(ticketNudge(task, task.url ?? fallbackUrl).replace(/^Quick check on /, "").replace(/\n/, " "));
+    else if (fallbackName) lines.push(`"${fallbackName}"${fallbackUrl ? ` ${fallbackUrl}` : ""}`);
+  };
+  for (const f of g.flags) {
+    const subject = subjectOf(f);
+    if (subject.type === "task") addTicket(baseId(subject.id), subject.label, subject.url ?? f.url);
+    else if (Array.isArray(f.values?.tickets) && f.values.tickets.length) for (const t of f.values.tickets) addTicket(t.id, t.name, t.url);
+    else if (!seen.has(f.id)) {
+      seen.add(f.id);
+      lines.push(f.message);
+    }
+  }
+  const shown = lines.slice(0, 10);
+  const more = lines.length - shown.length;
+  return [
+    `Hi ${g.person}, a quick check on your sprint items:`,
+    ...shown.map((l) => `• ${l}`),
+    ...(more > 0 ? [`• and ${more} more on the sprint board`] : []),
+    "A line on each when you get a chance would be great. Thanks!",
+  ].join("\n");
+}
+
+/** Triage on several flags at once: saved one after another, drawn once at the end. */
+async function saveTriageMany(flags, payload) {
+  const failed = [];
+  for (const f of flags) {
+    try {
+      const res = await fetch(`${FN}/flags`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: keyOf(f), layer: f.layer, ...payload }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      state.flagEntries = { ...(state.flagEntries ?? {}), [body.key]: body.entry };
+      if (body.today) state.today = body.today;
+    } catch (err) {
+      failed.push(err.message);
+    }
+  }
+  renderAllFlags();
+  return failed;
+}
+
+$("start-here").addEventListener("click", async (event) => {
+  const act = event.target.closest("[data-group-act]");
+  if (!act) return;
+  const box = act.closest("[data-group-person]");
+  const g = state.queueGroups?.get(box?.dataset.groupPerson);
+  if (!g) return;
+  const panel = box.querySelector(".group-panel");
+  const open = g.flags.filter((f) => !triageOf(f));
+  const report = (failed) => {
+    if (!failed.length) return;
+    const again = $("start-here").querySelector(`[data-group-person="${CSS.escape(g.person)}"] .group-panel`) ?? panel;
+    again.classList.remove("hidden");
+    again.innerHTML = `<p class="triage-error">${esc(plural(failed.length, "item was", "items were"))} not saved: ${esc(failed[0])}</p>`;
+  };
+  if (act.dataset.groupAct === "done") return report(await saveTriageMany(open, { status: "done" }));
+  if (act.dataset.groupAct === "hide") return report(await saveTriageMany(open, { status: "snoozed", calendarDays: 1, note: "hidden for today" }));
+  if (act.dataset.groupAct === "nudge") {
+    if (!panel.classList.contains("hidden") && panel.dataset.kind === "nudge") return panel.classList.add("hidden");
+    const name = matchPerson(g.person)?.name ?? g.person;
+    panel.dataset.kind = "nudge";
+    panel.innerHTML = `
+      <label class="wide">To ${esc(name)} <span class="meta">For you to send yourself. Nothing is sent from here.</span>
+        <textarea class="group-nudge-text" rows="${Math.min(14, g.flags.length + 4)}">${esc(groupNudgeText(g))}</textarea></label>
+      <button type="button" class="sm" data-group-act="nudge-copy">Copy, and mark all waiting on ${esc(name)}</button>`;
+    panel.classList.remove("hidden");
+    return;
+  }
+  if (act.dataset.groupAct === "nudge-copy") {
+    const name = matchPerson(g.person)?.name ?? g.person;
+    try {
+      await navigator.clipboard.writeText(panel.querySelector(".group-nudge-text")?.value ?? "");
+    } catch {
+      panel.insertAdjacentHTML("afterbegin", `<p class="triage-error">The browser would not copy. Select the message and copy it by hand.</p>`);
+      return;
+    }
+    return report(await saveTriageMany(open, { status: "waiting", waitingOn: name }));
+  }
+});
 
 $("start-here").addEventListener("click", (event) => {
   const more = event.target.closest("[data-q-more]");
