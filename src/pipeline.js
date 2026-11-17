@@ -24,6 +24,8 @@ import { collectLeadership } from "./collectors/leadership.js";
 import { collectShopify } from "./collectors/shopify.js";
 import { collectChangelog, changelogConfigured, CHANGELOG_SETUP } from "./collectors/changelog.js";
 import { computeFlags } from "./delta/index.js";
+import { QuarterPlanStore } from "./store/quarter-plan.js";
+import { quarterOfKey } from "../public/quarter.js";
 import { ruleHealth, applyQuietRules, RULE_HEALTH_DEFAULTS } from "./delta/rule-health.js";
 import { sortFlags } from "./delta/flags.js";
 import { buildReport } from "./render/report.js";
@@ -238,6 +240,29 @@ export async function runPipeline(opts = {}) {
     logger.warn("test_notes.unavailable", { err, note: "test flags render without owners, and decided tests may be prompted" });
   }
 
+  // The Quarter plan, and the quarter's record of tickets per rock: what the course check
+  // reads for slipped plans and work finished this week. The record is only written on an
+  // official run, like the status ledger. A failure costs those two signals, nothing else.
+  let plan = null;
+  let planTickets = null;
+  try {
+    const planStore = new QuarterPlanStore(store.backend, logger);
+    plan = await planStore.read(quarterOfKey(dateKey));
+    if (snapshots.clickup && snapshots.leadership) {
+      planTickets = await planStore.observeTickets({
+        store,
+        tasks: [...(snapshots.clickup.items ?? []), ...(Array.isArray(snapshots.clickup.backlog) ? snapshots.clickup.backlog : [])],
+        rocks: snapshots.leadership.queue ?? [],
+        dayKey: dateKey,
+        timeZone: config.system.timezone,
+        persist: mode === "official",
+        reportPrefix: config.system.storage?.reportPrefix ?? "reports",
+      });
+    }
+  } catch (err) {
+    logger.warn("quarter_plan.unavailable", { err, note: "the course check runs without the plan" });
+  }
+
   const computed = computeFlags({
     snapshots,
     baselines,
@@ -245,6 +270,8 @@ export async function runPipeline(opts = {}) {
     settings,
     statusLedger,
     testNotes,
+    plan,
+    planTickets,
     dateKey,
     nowIso: now.toISOString(),
     logger,

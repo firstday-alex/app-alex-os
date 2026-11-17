@@ -13,6 +13,7 @@ import { leadershipChecks } from "./leadership-checks.js";
 import { crossLayerCheck } from "./crosslayer.js";
 import { nextStepFlags } from "./next-steps.js";
 import { markParked } from "./parked.js";
+import { rockCourse, SUPERSEDED_BY_COURSE, rockIdOfFlag } from "./rock-course.js";
 
 export { clickupDelta, intelligemsDelta, leadershipChecks, crossLayerCheck };
 
@@ -391,7 +392,7 @@ function intelligemsFlags(delta, { config, dateKey, testNotes = null }) {
  * `sections` records which layers are present and which are missing and why. A partial
  * readout beats no readout, and the reader has to be able to see the difference.
  */
-export function computeFlags({ snapshots, baselines, config, settings = null, statusLedger = null, testNotes = null, dateKey, nowIso, logger }) {
+export function computeFlags({ snapshots, baselines, config, settings = null, statusLedger = null, testNotes = null, plan = null, planTickets = null, dateKey, nowIso, logger }) {
   const sections = {};
   const flags = [];
 
@@ -541,6 +542,31 @@ export function computeFlags({ snapshots, baselines, config, settings = null, st
     };
   }
 
+  /* ---- Rock course: is each rock on course, by the evidence rather than its status. ----
+     Needs the tickets: without them every rock would read as having no work. One flag per
+     rock in trouble, standing in for the separate At Risk, stalled and due-not-moving
+     flags on that rock. */
+  let course = null;
+  if (snapshots.leadership && cuDelta) {
+    const backlog = Array.isArray(snapshots.clickup?.backlog) ? snapshots.clickup.backlog : [];
+    const sprintIds = new Set(cuDelta.tasks.map((t) => String(t.id)));
+    course = rockCourse({
+      rocks: snapshots.leadership.queue ?? [],
+      tasks: [...cuDelta.tasks, ...backlog.filter((t) => !sprintIds.has(String(t.id)))],
+      history: Object.values(planTickets?.tickets ?? {}),
+      plan: plan?.items ?? [],
+      dateKey,
+      timeZone: config.system.timezone,
+      alexName: config.people?.alex?.name ?? null,
+      opts: config.system.rockCourse ?? {},
+    });
+    const covered = new Set(course.flags.map(rockIdOfFlag));
+    for (let i = flags.length - 1; i >= 0; i -= 1) {
+      if (SUPERSEDED_BY_COURSE.has(flags[i].rule) && covered.has(rockIdOfFlag(flags[i]))) flags.splice(i, 1);
+    }
+    flags.push(...course.flags);
+  }
+
   // A parked ticket is not chased: none of its own flags go out.
   const kept = flags.filter((f) => !(f.subject?.type === "task" && parkedIds.has(String(f.subject.id).split(":")[0])));
   const sorted = sortFlags(kept);
@@ -555,6 +581,8 @@ export function computeFlags({ snapshots, baselines, config, settings = null, st
       intelligems: igDelta,
       leadership,
       crossLayer: cross,
+      // Each live rock's course and the signals behind it, for the Quarter plan.
+      rockCourse: course?.rocks ?? null,
       preSprint: snapshots.clickup
         ? preSprintCheck({
             backlogReady: snapshots.clickup.backlogReady,

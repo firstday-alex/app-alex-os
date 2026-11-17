@@ -5,6 +5,7 @@
 // away and the caller cannot wait for its result.
 
 import { groupByPerson, groupLine, YOU, NOBODY } from "./flag-groups.js";
+import { weekStartOf as qWeekStartOf, monthName as qMonthName, shortDay as qShortDay } from "./quarter.js";
 import { buildAccomplishments, buildChanges, buildLastWeekWins, buildStandupUpdate, buildUpdate, changeLine, changesText, groupsText, lastWeekText, standupUpdateText, windowStart } from "./update-text.js";
 
 const $ = (id) => document.getElementById(id);
@@ -629,7 +630,10 @@ function priorityScore(flag) {
   const age = Math.min(flag.openDays ?? 0, 10) * 3;
   const escalated = flag.escalated ? 10 : 0;
   const rock = flag.layer === 1 || flag.subject?.type === "priority" || flag.rule === "intelligems.ready_for_call" ? 15 : 0;
-  return base + age + escalated + rock;
+  // A rock off course is the decision the week turns on: it leads the queue over aged
+  // ticket flags, which can climb to +40 by age and escalation alone.
+  const course = flag.rule === "leadership.rock_off_course" ? 30 : 0;
+  return base + age + escalated + rock + course;
 }
 // Today's 3 is the top of the queue (rankedFlags, below).
 function topFlags(flags, n = 3) {
@@ -695,6 +699,10 @@ function groupCard(g) {
   return `<div class="flag q-group sev-attention" data-group-person="${esc(g.person)}">
       <p class="msg"><strong>${esc(who)}</strong> · ${esc(plural(g.flags.length, "sprint item", "sprint items"))}: ${esc(g.summary)}</p>
       <p class="meta">Sprint · grouped by person${oldest ? ` · oldest open ${esc(plural(oldest, "working day", "working days"))}` : ""}</p>
+      ${(() => {
+        const owners = g.flags.filter((f) => f.rule === "clickup.no_task_owner" && !triageOf(f));
+        return owners.length > 1 ? ownerPicker(owners, { label: `Owner for the ${owners.length} tickets with none` }) : "";
+      })()}
       <div class="q-list">${g.flags.map((f) => (queue.open.has(f.id) ? `<div class="q-opened">${flagCard(f)}<button type="button" class="link-btn" data-q-open="${esc(f.id)}">Close</button></div>` : queueRow(f))).join("")}</div>
       <div class="triage-actions">
         ${canNudge ? `<button type="button" class="sm" data-group-act="nudge">Draft one nudge to ${esc(g.person)}</button>` : ""}
@@ -809,6 +817,42 @@ async function saveTriageMany(flags, payload) {
   renderAllFlags();
   return failed;
 }
+
+/** "Set in ClickUp" on a no-Task-Owner card: writes the owner, then marks the cards Done. */
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-owner-set]");
+  if (!button) return;
+  const box = button.closest("[data-owner-fix]");
+  const ownerId = box.querySelector("[data-owner-pick]")?.value;
+  const say = (text, bad = true) => {
+    box.querySelector(".owner-msg")?.remove();
+    box.insertAdjacentHTML("beforeend", `<span class="owner-msg ${bad ? "triage-error" : "meta"}">${esc(text)}</span>`);
+  };
+  if (!ownerId) return say("Choose someone first.");
+  const keys = new Set(box.dataset.ownerFix.split("|"));
+  const flags = (state.report?.flags ?? []).filter((f) => keys.has(keyOf(f)));
+  const taskIds = flags.map((f) => baseId(subjectOf(f).id));
+  const name = box.querySelector("[data-owner-pick]").selectedOptions[0]?.textContent ?? "them";
+  button.disabled = true;
+  say("Saving to ClickUp…", false);
+  try {
+    const res = await fetch(`${FN}/ticket-owner`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskIds, ownerId }) });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok && !body.set?.length) throw new Error(body.error ?? body.failed?.[0]?.error ?? `HTTP ${res.status}`);
+    const done = new Set((body.set ?? []).map(String));
+    for (const t of state.report?.detail?.clickup?.tasks ?? []) {
+      if (done.has(String(t.id))) t.taskOwners = [{ id: ownerId, username: body.owner?.name ?? name }];
+    }
+    const failed = await saveTriageMany(
+      flags.filter((f) => done.has(baseId(subjectOf(f).id))),
+      { status: "done", note: `Task Owner set to ${body.owner?.name ?? name} in ClickUp` },
+    );
+    if (body.failed?.length || failed.length) alert(`Owner set on ${done.size} of ${taskIds.length}. Not set: ${body.failed?.[0]?.error ?? failed[0]}`);
+  } catch (err) {
+    button.disabled = false;
+    say(`Not set: ${err.message}`);
+  }
+});
 
 $("start-here").addEventListener("click", async (event) => {
   const act = event.target.closest("[data-group-act]");
@@ -1331,7 +1375,35 @@ const ROCK_FIXES = {
   "crosslayer.rock_work_stalled": "stalled",
 };
 
+/**
+ * Who should own the tickets with no Task Owner: a roster picker that writes the Task
+ * Owner in ClickUp, then marks the cards Done. Defaults to the first assignee on the
+ * roster, since the person doing the work is the usual answer.
+ */
+function ownerPicker(flags, { label = "Task Owner" } = {}) {
+  const people = (state.people ?? []).filter((p) => p.clickupUserId);
+  const options = [...(state.me ? [{ clickupUserId: state.me, name: "Me" }] : []), ...people];
+  if (!options.length) return "";
+  const assignees = flags.flatMap((f) => [].concat(f.values?.assignees ?? [])).map((n) => String(n).toLowerCase());
+  const guess = people.find((p) => assignees.includes(String(p.name).toLowerCase()))?.clickupUserId ?? "";
+  return `<div class="quick-fix" data-owner-fix="${esc(flags.map(keyOf).join("|"))}">
+      <label>${esc(label)} <select class="sm" data-owner-pick><option value="">Choose…</option>${options
+        .map((p) => `<option value="${esc(p.clickupUserId)}"${String(p.clickupUserId) === String(guess) ? " selected" : ""}>${esc(p.name)}</option>`)
+        .join("")}</select></label>
+      <button type="button" class="sm" data-owner-set>Set in ClickUp</button>
+    </div>`;
+}
+
 function quickFix(flag) {
+  if (flag.rule === "clickup.no_task_owner") return ownerPicker([flag]);
+  // A rock off course: every reason with its fix, and the plan to re-plan it in.
+  if (flag.rule === "leadership.rock_off_course") {
+    const signals = flag.values?.signals ?? [];
+    return `<div class="quick-fix quick-fix-rows">
+      ${signals.length ? `<ul class="plain qp-flag-sigs">${signals.map((x) => `<li class="qp-sig ${esc(x.level)}">${esc(x.text)}. <span class="meta">Fix: ${esc(x.fix)}.</span></li>`).join("")}</ul>` : ""}
+      <a class="ql primary" href="#plan/${esc(baseId(subjectOf(flag).id))}">Open in the Quarter plan</a>
+    </div>`;
+  }
   if (!String(flag.rule).startsWith("leadership.") && !["crosslayer.big_swing_without_rock", "crosslayer.rock_work_stalled"].includes(flag.rule)) return "";
   if (!state.rocks) return `<div class="quick-fix"><span class="meta">Loading the rock to edit…</span></div>`;
   const subject = subjectOf(flag);
@@ -3976,6 +4048,292 @@ $("rocks-list").addEventListener("change", async (event) => {
   }
 });
 
+/* ------------------------------- quarter plan -------------------------------
+   The quarter as months and weeks. Each rock, a line for its milestones, and a row per
+   tactic (plus one for tickets on the rock itself); in each week, the work planned for it
+   and the tickets that were done or are due then. Planned items are this app's: added
+   with +, ticked off, removed. Rocks and tickets are as of the latest readout. */
+
+const plan = { data: null, loading: false, adding: null, focus: null };
+const QP_NAME_W = 250;
+const QP_WEEK_W = 128;
+const QP_UN_W = 90;
+const COURSE_CHIP = { off: ["off_track", "Off course"], drift: ["at_risk", "Drifting"], on: ["on_track", "On course"] };
+const SB_WORD = { green: "On Track", amber: "At Risk", red: "Off Track" };
+
+async function loadPlan() {
+  if (plan.loading) return;
+  plan.loading = true;
+  try {
+    const res = await fetch(`${FN}/plan`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    plan.data = body;
+    planError(null);
+    renderPlan();
+  } catch (err) {
+    planError(`Could not load the plan: ${err.message}`);
+  } finally {
+    plan.loading = false;
+  }
+}
+
+function planError(message) {
+  $("plan-error").classList.toggle("hidden", !message);
+  $("plan-error").textContent = message ?? "";
+}
+
+async function planChange(change) {
+  const d = plan.data;
+  const res = await fetch(`${FN}/plan`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ quarter: d.quarter, version: d.plan.version, change }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (res.status === 409) await loadPlan();
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  plan.data = body;
+  renderPlan();
+}
+
+function renderPlan() {
+  const d = plan.data;
+  if (!d) return;
+  const thisWeek = qWeekStartOf(d.today);
+  const thisMonth = d.today.slice(0, 7);
+  $("plan-asof").textContent = d.readoutAt
+    ? `Rocks and tickets as of ${new Date(d.readoutAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}`
+    : "No readout yet";
+
+  /* ---- course: the rocks that need a decision, every reason listed ---- */
+  const courseOf = new Map((d.course ?? []).map((c) => [c.id, c]));
+  const trouble = (d.course ?? []).filter((c) => c.course !== "on").sort((a, b) => (a.course === "off" ? 0 : 1) - (b.course === "off" ? 0 : 1));
+  const fine = (d.course ?? []).filter((c) => c.course === "on");
+  const signalLi = (s) => `<li class="qp-sig ${esc(s.level)}"><span>${esc(s.text)}.</span> <span class="meta">Fix: ${esc(s.fix)}.</span></li>`;
+  $("plan-course").innerHTML = `
+    <div class="qp-course">
+      ${trouble
+        .map((c) => {
+          const [tone, label] = COURSE_CHIP[c.course];
+          const reasons = c.signals.filter((s) => s.level !== "gap");
+          const gaps = c.signals.filter((s) => s.level === "gap");
+          return `<div class="qp-course-rock ${esc(c.course)}">
+            <div class="qp-course-head"><span class="sig ${esc(tone)}">${esc(label)}</span>
+              <a href="#plan/${esc(c.id)}" data-plan-jump="${esc(c.id)}"><strong>${esc(c.title)}</strong></a>
+              <span class="meta">${esc(c.owner ? firstName({ name: c.owner }) : "no owner")}${c.statusColor ? ` · standup says ${esc(SB_WORD[c.statusColor] ?? c.statusColor)}` : ""}</span></div>
+            <ul class="plain">${reasons.map(signalLi).join("") || '<li class="meta">Its owner marked it At Risk in the standup.</li>'}</ul>
+            ${gaps.length ? `<details><summary class="meta">${esc(plural(gaps.length, "thing", "things"))} the check cannot see</summary><ul class="plain">${gaps.map(signalLi).join("")}</ul></details>` : ""}
+          </div>`;
+        })
+        .join("")}
+      ${fine.length ? `<p class="meta qp-fine"><span class="sig on_track">On course</span> ${fine.map((c) => `<a href="#plan/${esc(c.id)}" data-plan-jump="${esc(c.id)}">${esc(c.title)}</a>`).join(" · ")}</p>` : ""}
+      ${!(d.course ?? []).length ? '<p class="sub">No live rocks on the latest readout.</p>' : ""}
+    </div>`;
+
+  /* ---- the grid ---- */
+  const weeks = d.weeks;
+  const span = (m) => weeks.filter((w) => w.month === m).length;
+  const head = `<thead>
+      <tr><th class="qp-name" rowspan="2">${esc(d.quarter.replace("-", " "))}</th>${d.months
+        .map((m) => `<th class="qp-month${m === thisMonth ? " now" : ""}" colspan="${span(m)}">${esc(qMonthName(m))}</th>`)
+        .join("")}<th class="qp-un" rowspan="2" title="Open tickets with no due date">No date</th></tr>
+      <tr>${weeks.map((w) => `<th class="qp-week${w.start === thisWeek ? " now" : w.start < thisWeek ? " past" : ""}" title="${esc(qShortDay(w.start))} to ${esc(qShortDay(w.end))}">${esc(qShortDay(w.start))}</th>`).join("")}</tr>
+    </thead>`;
+
+  const wkClass = (w) => (w.start === thisWeek ? " now" : w.start < thisWeek ? " past" : "");
+  const weekOfKey = (key) => (key ? qWeekStartOf(key) : null);
+  const ticketChip = (t) => {
+    const done = Boolean(t.doneOn);
+    return `<a class="qp-t${done ? " done" : ""}" href="${esc(t.url ?? "#")}" target="_blank" rel="noreferrer" title="${esc(`${t.name}${t.who ? ` · ${t.who}` : ""} · ${done ? `done ${t.doneOn}` : `${t.status ?? "open"}${t.dueOn ? `, due ${t.dueOn}` : ""}`}`)}">${done ? "✓" : "○"} ${esc(t.name)}</a>`;
+  };
+  const itemChip = (p, past) =>
+    `<span class="qp-p${p.done ? " done" : past ? " slipped" : ""}" data-plan-item="${esc(p.id)}">
+      <input type="checkbox" data-plan-done${p.done ? " checked" : ""} aria-label="Done">
+      <span class="qp-p-text">${esc(p.text)}</span>
+      <button type="button" class="qp-x" data-plan-remove title="Remove from the plan" aria-label="Remove">×</button>
+    </span>`;
+
+  const cell = (rock, tacticId, w, tickets, items) => {
+    const here = (x) => (x.doneOn ? weekOfKey(x.doneOn) : weekOfKey(x.dueOn)) === w.start;
+    const ts = tickets.filter(here);
+    const ps = items.filter((p) => p.week === w.start);
+    const past = w.start < thisWeek;
+    const key = `${rock.id}|${tacticId ?? ""}|${w.start}`;
+    const adding = plan.adding === key;
+    const shown = ts.slice(0, 4);
+    return `<td class="qp-cell${wkClass(w)}">
+      ${ps.map((p) => itemChip(p, past)).join("")}
+      ${shown.map(ticketChip).join("")}${ts.length > shown.length ? `<span class="meta qp-more" title="${esc(ts.slice(4).map((t) => t.name).join("\n"))}">+${ts.length - shown.length} more</span>` : ""}
+      ${adding
+        ? `<form class="qp-add" data-plan-add="${esc(key)}"><input type="text" maxlength="200" placeholder="What gets done this week" required><button type="submit" class="sm">Add</button></form>`
+        : `<button type="button" class="qp-plus" data-plan-open="${esc(key)}" title="Plan work for the week of ${esc(qShortDay(w.start))}" aria-label="Plan work">+</button>`}
+    </td>`;
+  };
+
+  const rockRows = (rock) => {
+    const c = courseOf.get(rock.id);
+    const [tone, label] = COURSE_CHIP[c?.course ?? "on"];
+    const tickets = (d.tickets ?? []).filter((t) => t.rockId === rock.id);
+    const items = (d.plan?.items ?? []).filter((p) => p.rockId === rock.id);
+    const ms = rock.milestones ?? [];
+    const msDone = ms.filter((m) => m.done).length;
+    const elapsed = weeks.filter((w) => w.start <= thisWeek).length / weeks.length;
+    const progress = ms.length ? msDone / ms.length : 0;
+
+    // Done per week, planned and tickets together: the shape of progress across the quarter.
+    const summaryCells = weeks
+      .map((w) => {
+        const ps = items.filter((p) => p.week === w.start);
+        const doneT = tickets.filter((t) => t.doneOn && weekOfKey(t.doneOn) === w.start).length;
+        const bits = [];
+        if (ps.length) bits.push(`<span class="${ps.every((p) => p.done) ? "good" : w.start < thisWeek ? "bad" : ""}">${ps.filter((p) => p.done).length}/${ps.length}</span>`);
+        if (doneT) bits.push(`<span class="qp-done-n" title="${esc(plural(doneT, "ticket", "tickets"))} done">✓${doneT}</span>`);
+        return `<td class="qp-sum${wkClass(w)}">${bits.join(" ")}</td>`;
+      })
+      .join("");
+
+    const msCells = d.months
+      .map((m) => {
+        const list = ms.filter((x) => x.month === m);
+        return `<td class="qp-ms" colspan="${span(m)}">${list
+          .map((x) => `<span class="qp-m${x.done ? " done" : m < thisMonth ? " late" : m === thisMonth ? " now" : ""}" title="${esc(x.deliverable ?? "")}${x.blocker ? `\nBlocked: ${esc(x.blocker)}` : ""}">${x.done ? "✓" : "◇"} ${esc(x.deliverable ?? "")}</span>`)
+          .join("") || '<span class="meta">No milestone</span>'}</td>`;
+      })
+      .join("");
+
+    const unscheduled = (forTactic) => {
+      const list = tickets.filter((t) => !t.doneOn && !t.dueOn && forTactic(t));
+      return `<td class="qp-un">${list.length ? `<details><summary class="meta">${esc(list.length)}</summary>${list.map(ticketChip).join("")}</details>` : ""}</td>`;
+    };
+
+    const tacticRow = (t) => {
+      const [ttone, tlabel] = TACTIC_STATUS[t.status] ?? ["", t.status ?? ""];
+      const mine = (x) => x.tacticId === t.id;
+      return `<tr class="qp-tactic">
+        <th class="qp-name"><span class="qp-tactic-title">${esc(t.title)}</span>
+          <span class="meta">${tlabel ? `<span class="sig ${esc(ttone)}">${esc(tlabel)}</span> ` : ""}${t.owner ? esc(firstName({ name: t.owner })) : ""}${t.checkInDate ? ` · check-in ${esc(qShortDay(t.checkInDate))}` : ""}</span></th>
+        ${weeks.map((w) => cell(rock, t.id, w, tickets.filter(mine), items.filter((p) => p.tacticId === t.id))).join("")}
+        ${unscheduled(mine)}
+      </tr>`;
+    };
+    const live = (rock.tactics ?? []).filter((t) => t.status !== "done");
+    const direct = (x) => !x.tacticId || !live.some((t) => t.id === x.tacticId);
+
+    return `<tbody class="qp-rock ${esc(c?.course ?? "on")}" id="qp-${esc(rock.id)}">
+      <tr class="qp-rock-row">
+        <th class="qp-name">
+          <span class="sig ${esc(tone)}">${esc(label)}</span> <strong>${esc(rock.title)}</strong>
+          <span class="meta">${esc(rock.owner ? firstName({ name: rock.owner }) : "no owner")} · milestones ${esc(msDone)} of ${esc(ms.length)} · planned ${esc(items.filter((p) => p.done).length)} of ${esc(items.length)} done</span>
+          <span class="qp-bar" title="${esc(Math.round(elapsed * 100))}% of the quarter gone, ${esc(Math.round(progress * 100))}% of milestones done"><span class="qp-bar-time" style="width:${(elapsed * 100).toFixed(0)}%"></span><span class="qp-bar-done" style="width:${(progress * 100).toFixed(0)}%"></span></span>
+        </th>
+        ${summaryCells}<td class="qp-un"></td>
+      </tr>
+      <tr class="qp-ms-row"><th class="qp-name meta">Milestones</th>${msCells}<td class="qp-un"></td></tr>
+      ${live.map(tacticRow).join("")}
+      <tr class="qp-tactic qp-direct">
+        <th class="qp-name"><span class="qp-tactic-title">On the rock itself</span><span class="meta">tickets not tied to one tactic</span></th>
+        ${weeks.map((w) => cell(rock, null, w, tickets.filter(direct), items.filter((p) => !p.tacticId || !live.some((t) => t.id === p.tacticId)))).join("")}
+        ${unscheduled(direct)}
+      </tr>
+    </tbody>`;
+  };
+
+  // A re-render (adding, ticking) keeps the grid where it was scrolled to.
+  const keepLeft = $("plan-grid").querySelector(".qp-scroll")?.scrollLeft ?? null;
+  const order = { off: 0, drift: 1, on: 2 };
+  const rocks = [...(d.rocks ?? [])].sort((a, b) => order[courseOf.get(a.id)?.course ?? "on"] - order[courseOf.get(b.id)?.course ?? "on"]);
+  $("plan-grid").innerHTML = rocks.length
+    ? `<p class="meta qp-key"><span class="qp-m now">◇ milestone</span> <span class="qp-p">planned</span> <span class="qp-t done">✓ ticket done</span> <span class="qp-t">○ ticket due</span> · the bar under each rock: quarter gone, with milestones done over it.${d.backfilled ? "" : " Tickets from before today fill in after the next 8 AM readout."}</p>
+       <div class="qp-scroll"><table class="qp" style="width:${QP_NAME_W + weeks.length * QP_WEEK_W + QP_UN_W}px"><colgroup><col style="width:${QP_NAME_W}px">${weeks.map(() => `<col style="width:${QP_WEEK_W}px">`).join("")}<col style="width:${QP_UN_W}px"></colgroup>${head}${rocks.map(rockRows).join("")}</table></div>`
+    : '<p class="sub">No live rocks on the latest readout.</p>';
+
+  if (plan.focus) {
+    const el = $(`qp-${plan.focus}`);
+    plan.focus = null;
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    el?.classList.add("qp-flash");
+  }
+  // Open on this week, with last week still in view.
+  const scroller = $("plan-grid").querySelector(".qp-scroll");
+  const now = scroller?.querySelector("th.qp-week.now");
+  if (scroller && keepLeft != null && plan.scrolled) scroller.scrollLeft = keepLeft;
+  else if (scroller && now) {
+    const i = weeks.findIndex((w) => w.start === thisWeek);
+    scroller.scrollLeft = Math.max(0, (i - 1) * QP_WEEK_W);
+    plan.scrolled = true;
+  }
+  const input = $("plan-grid").querySelector(".qp-add input");
+  input?.focus({ preventScroll: true });
+}
+
+$("plan-course").addEventListener("click", (event) => {
+  const a = event.target.closest("[data-plan-jump]");
+  if (!a) return;
+  event.preventDefault();
+  plan.focus = a.dataset.planJump;
+  renderPlan();
+});
+
+$("plan-grid").addEventListener("click", async (event) => {
+  const open = event.target.closest("[data-plan-open]");
+  if (open) {
+    plan.adding = open.dataset.planOpen;
+    return renderPlan();
+  }
+  const remove = event.target.closest("[data-plan-remove]");
+  if (remove) {
+    const id = remove.closest("[data-plan-item]").dataset.planItem;
+    remove.disabled = true;
+    try {
+      await planChange({ remove: id });
+    } catch (err) {
+      planError(`Not removed: ${err.message}`);
+      remove.disabled = false;
+    }
+  }
+});
+
+$("plan-grid").addEventListener("change", async (event) => {
+  const box = event.target.closest("[data-plan-done]");
+  if (!box) return;
+  box.disabled = true;
+  try {
+    await planChange({ update: { id: box.closest("[data-plan-item]").dataset.planItem, done: box.checked } });
+  } catch (err) {
+    planError(`Not saved: ${err.message}`);
+    box.checked = !box.checked;
+    box.disabled = false;
+  }
+});
+
+$("plan-grid").addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-plan-add]");
+  if (!form) return;
+  event.preventDefault();
+  const [rockId, tacticId, week] = form.dataset.planAdd.split("|");
+  const text = form.querySelector("input").value.trim();
+  if (!text) return;
+  form.querySelector("button").disabled = true;
+  try {
+    plan.adding = null;
+    await planChange({ add: { rockId, tacticId: tacticId || null, week, text } });
+  } catch (err) {
+    plan.adding = form.dataset.planAdd;
+    planError(`Not added: ${err.message}`);
+    form.querySelector("button").disabled = false;
+  }
+});
+
+$("plan-grid").addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && event.target.closest(".qp-add")) {
+    plan.adding = null;
+    renderPlan();
+  }
+});
+
 /* ------------------------------- rock editor ------------------------------- */
 
 let editingId = null;
@@ -5166,7 +5524,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 // top bar when open. The drawer lists the same groups (index.html).
 const NAV_GROUPS = [
   { id: "today", pages: [["readout", "What needs you"], ["speech", "Daily Speech"], ["standup", "Stand-up"]] },
-  { id: "team", pages: [["sprint", "Sprint"], ["backlog", "Backlog"], ["rocks", "Rocks"], ["tests", "Tests"], ["people", "1:1"], ["ideation", "Ideation"]] },
+  { id: "team", pages: [["sprint", "Sprint"], ["backlog", "Backlog"], ["rocks", "Rocks"], ["plan", "Quarter"], ["tests", "Tests"], ["people", "1:1"], ["ideation", "Ideation"]] },
   { id: "writeups", pages: [["update", "Update"], ["upsu", "Update + Stand-up"], ["lastweek", "Last week's wins"], ["wins", "Accomplishments"], ["impact", "Alex's Impact"]] },
 ];
 const groupOf = (view) => NAV_GROUPS.find((g) => g.pages.some(([v]) => v === view)) ?? null;
@@ -5553,6 +5911,7 @@ function showView(name) {
   closeDrawer();
   if ((name === "rocks" || name === "backlog") && !state.rocks) loadRocks();
   if (name === "setup" && !state.settings) loadSettings();
+  if (name === "plan") loadPlan();
   if (name === "people") renderPeople();
   if (name === "ideation" && !ideation.loaded) loadIdeation();
   if (name === "impact" && !impact.loaded) loadImpact();
@@ -5698,6 +6057,10 @@ function routeFromHash() {
   showView(name);
   if (name === "tests" && target) focusTest(target);
   if (name === "rocks" && target) focusRock(target);
+  if (name === "plan" && target) {
+    plan.focus = target;
+    renderPlan();
+  }
   if (name === "people" && target) {
     state.peopleSelected = target;
     renderPeople();

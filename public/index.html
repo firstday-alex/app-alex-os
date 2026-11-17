@@ -48,6 +48,7 @@
     <button class="nav" data-view="sprint">Sprint</button>
     <button class="nav" data-view="backlog">Backlog</button>
     <button class="nav" data-view="rocks">Rocks</button>
+    <button class="nav" data-view="plan">Quarter plan</button>
     <button class="nav" data-view="tests">Tests</button>
     <button class="nav" data-view="people">1:1</button>
     <button class="nav" data-view="ideation">Ideation</button>
@@ -164,6 +165,18 @@
     </section>
 
     <!-- ----------------------------------- sprint --------------------------------- -->
+    <section class="view hidden" id="view-plan">
+      <div class="bar">
+        <h2 style="margin:0;border:0;padding:0">Quarter plan</h2>
+        <span class="grow"></span>
+        <span class="meta" id="plan-asof"></span>
+      </div>
+      <p class="sub">The quarter by month and week. Each rock, the tactics under it, the work you plan for each week, and the ClickUp tickets that landed or are due in it. Plan a week with +. The course check up top reads the evidence, not the status in the standup.</p>
+      <div id="plan-error" class="missing hidden"></div>
+      <div id="plan-course"></div>
+      <div id="plan-grid"></div>
+    </section>
+
     <section class="view hidden" id="view-people">
       <h2>1:1</h2>
       <p class="sub">Everything about the person you are meeting: their rocks, their sprint and what each ticket waits on, what is queued for them, open flags, and talking points to copy into your notes.</p>

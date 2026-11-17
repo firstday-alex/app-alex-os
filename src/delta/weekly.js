@@ -52,7 +52,10 @@ export function buildWeekly({ now, audit = [], rocks = [], tasks = [], cross = n
   const open = flags.filter((f) => !f.triage && (f.severity === "p1" || f.severity === "attention"));
 
   const activeRocks = rocks.filter((r) => r.state === "active");
-  const stalled = flags.filter((f) => f.rule === "crosslayer.rock_work_stalled").map((f) => f.subject?.label);
+  // The course flag stands in for the stalled flag on a rock it covers, so read both.
+  const stalled = flags
+    .filter((f) => f.rule === "crosslayer.rock_work_stalled" || (f.rule === "leadership.rock_off_course" && (f.values?.signals ?? []).some((s) => s.kind === "work_stalled" || s.kind === "milestone_nothing_moving")))
+    .map((f) => f.subject?.label);
   const atRisk = activeRocks.filter((r) => r.status === "at_risk").map((r) => r.title);
 
   return {
