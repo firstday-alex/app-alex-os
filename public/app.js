@@ -4064,6 +4064,118 @@ $("rocks-list").addEventListener("change", async (event) => {
   }
 });
 
+/* -------------------------------- my stand-up --------------------------------
+   Alex's own Yesterday / Today / Blockers. Drafted by /mystandup (one Claude call) from
+   facts gathered by code; each line lists the facts it came from, so it can be checked
+   before it is pasted. The text box is Alex's to edit; Copy takes what is in it. */
+
+const mine = { latest: null, status: null, loaded: false, polling: null, error: null, edited: null };
+const FACT_KIND = { plan: "Your last stand-up", clickup: "ClickUp", slack: "Slack", note: "Your notes", waiting: "Waiting on", reply: "Replies owed", week: "Quarter plan" };
+
+async function loadMine() {
+  const res = await fetch(`${FN}/mystandup`).then((r) => r.json()).catch(() => null);
+  mine.loaded = true;
+  if (res) {
+    mine.latest = res.latest;
+    mine.status = res.status;
+  }
+  renderMine();
+  if (mine.status?.running) pollMine();
+}
+
+function pollMine() {
+  if (mine.polling) return;
+  mine.polling = setInterval(async () => {
+    const res = await fetch(`${FN}/mystandup`).then((r) => r.json()).catch(() => null);
+    if (!res) return;
+    const changed = res.latest?.generatedAt !== mine.latest?.generatedAt;
+    mine.latest = res.latest;
+    mine.status = res.status;
+    if (changed) mine.edited = null;
+    if (!res.status?.running) {
+      clearInterval(mine.polling);
+      mine.polling = null;
+    }
+    renderMine();
+  }, 3000);
+}
+
+function renderMine() {
+  const host = $("mystandup");
+  const d = mine.latest;
+  const running = mine.status?.running;
+  const failed = mine.status?.state === "failed" && !running ? mine.status.error : null;
+  const today = state.today ?? todayKey();
+  const stale = d && d.dateKey !== today;
+  const byId = new Map((d?.facts ?? []).map((f) => [f.id, f]));
+  const factLi = (f) => `<li><span class="meta">${esc(FACT_KIND[f.kind] ?? f.kind)}</span> ${f.url ? `<a href="${esc(f.url)}" target="_blank" rel="noreferrer">${esc(f.text)} ↗</a>` : esc(f.text)}</li>`;
+  const line = (k, label) => {
+    const l = d[k];
+    const cited = l.sources.map((id) => byId.get(id)).filter(Boolean);
+    const unsupported = (d.unsupported ?? []).includes(k);
+    return `<details class="ms-why"><summary><strong>${esc(label)}</strong> <span class="meta">${unsupported ? '<span class="bad">nothing cited; check this line before posting</span>' : `from ${esc(plural(cited.length, "fact", "facts"))}`}</span></summary>
+      <ul class="plain">${cited.map(factLi).join("") || '<li class="meta">No source.</li>'}</ul></details>`;
+  };
+  const unused = d ? d.facts.filter((f) => !["yesterday", "today", "blockers"].some((k) => d[k].sources.includes(f.id))) : [];
+  const read = d?.read ?? {};
+
+  host.innerHTML = `
+    <div class="ms-bar">
+      <button type="button" data-mine="write"${running ? " disabled" : ""}>${running ? "Writing…" : d ? "Write a new one" : "Write it"}</button>
+      ${d ? `<span class="meta">${d.trigger === "morning" ? "Written after the 8 AM readout" : "Written"} ${esc(new Date(d.generatedAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }))}${stale ? ' · <span class="bad">this is from an earlier day</span>' : ""}</span>` : ""}
+    </div>
+    ${failed ? `<div class="missing">Not written: ${esc(failed)}</div>` : ""}
+    ${mine.error ? `<div class="missing">${esc(mine.error)}</div>` : ""}
+    ${(d?.notes ?? []).map((n) => `<div class="note">${esc(n)}</div>`).join("")}
+    ${d
+      ? `<div class="ms-draft">
+          <textarea id="ms-text" rows="4" spellcheck="true">${esc(mine.edited ?? d.text)}</textarea>
+          <div class="ms-acts"><button type="button" class="sm" data-mine="copy">Copy</button>${mine.edited != null ? '<button type="button" class="ghost sm" data-mine="reset">Back to the draft</button>' : ""}<span class="meta" id="ms-copied"></span></div>
+        </div>
+        ${d.posted ? `<p class="meta">You already posted today: ${esc(`Yesterday: ${d.posted.yesterday ?? ""} · Today: ${d.posted.today ?? ""} · Blockers: ${d.posted.blockers ?? ""}`)}</p>` : ""}
+        <h3>Where each line came from</h3>
+        ${line("yesterday", "Yesterday")}${line("today", "Today")}${line("blockers", "Blockers")}
+        ${unused.length ? `<details class="ms-why"><summary class="meta">${esc(plural(unused.length, "other fact was", "other facts were"))} read and not used</summary><ul class="plain">${unused.map(factLi).join("")}</ul></details>` : ""}
+        <p class="meta">Read: ClickUp from the ${esc(read.readoutDate ?? "latest")} readout · Slack ${read.slack === "no token" ? "not connected" : `${esc(read.slack)} of your messages`} · ${esc(plural(read.notes ?? 0, "note", "notes"))} · ${esc(read.waiting ?? 0)} waiting on someone · your stand-ups ${read.standups ? "read" : "not read"}</p>`
+      : running
+        ? '<p class="sub">Reading your ClickUp, Slack and notes, then drafting. About half a minute.</p>'
+        : '<p class="sub">No draft yet. One is written after each 8 AM readout, or press Write it.</p>'}`;
+}
+
+$("mystandup").addEventListener("input", (event) => {
+  if (event.target.id === "ms-text") mine.edited = event.target.value;
+});
+
+$("mystandup").addEventListener("click", async (event) => {
+  const b = event.target.closest("[data-mine]");
+  if (!b) return;
+  const act = b.dataset.mine;
+  if (act === "copy") {
+    try {
+      await navigator.clipboard.writeText($("ms-text").value);
+      $("ms-copied").textContent = "Copied. Paste it in #ecomm-team.";
+    } catch {
+      $("ms-copied").textContent = "The browser would not copy. Select the text and copy it by hand.";
+    }
+    return;
+  }
+  if (act === "reset") {
+    mine.edited = null;
+    return renderMine();
+  }
+  if (act === "write") {
+    if (mine.edited != null && !confirm("Write a new one? Your edits to this one will be replaced.")) return;
+    mine.error = null;
+    b.disabled = true;
+    const res = await fetch(`${FN}/mystandup`, { method: "POST" });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok && res.status !== 409) mine.error = `Could not start: ${body.reason ?? body.error ?? `HTTP ${res.status}`}`;
+    mine.status = { state: "running", running: true, startedAt: body.startedAt };
+    renderMine();
+    pollMine();
+  }
+});
+
 /* ------------------------------- quarter plan -------------------------------
    The quarter as months and weeks. Each rock, a line for its milestones, and a row per
    tactic (plus one for tickets on the rock itself); in each week, the work planned for it
@@ -5541,7 +5653,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 const NAV_GROUPS = [
   { id: "today", pages: [["readout", "What needs you"], ["speech", "Daily Speech"], ["standup", "Stand-up"]] },
   { id: "team", pages: [["sprint", "Sprint"], ["backlog", "Backlog"], ["rocks", "Rocks"], ["plan", "Quarter"], ["tests", "Tests"], ["people", "1:1"], ["ideation", "Ideation"]] },
-  { id: "writeups", pages: [["update", "Update"], ["upsu", "Update + Stand-up"], ["lastweek", "Last week's wins"], ["wins", "Accomplishments"], ["impact", "Alex's Impact"]] },
+  { id: "writeups", pages: [["mystandup", "My stand-up"], ["update", "Update"], ["upsu", "Update + Stand-up"], ["lastweek", "Last week's wins"], ["wins", "Accomplishments"], ["impact", "Alex's Impact"]] },
 ];
 const groupOf = (view) => NAV_GROUPS.find((g) => g.pages.some(([v]) => v === view)) ?? null;
 // The page last open in each area, so going back to an area lands where you were.
@@ -5932,6 +6044,7 @@ function showView(name) {
   if (name === "ideation" && !ideation.loaded) loadIdeation();
   if (name === "impact" && !impact.loaded) loadImpact();
   if (name === "speech" && !speech.loaded) loadSpeech();
+  if (name === "mystandup" && !mine.loaded) loadMine();
   if (name === "standup" && !standup.data && !standup.loading) loadStandup();
   if (name === "upsu") {
     if (!standup.data && !standup.loading) loadStandup();

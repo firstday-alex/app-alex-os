@@ -11,6 +11,7 @@ import { createLogger } from "../../src/lib/logger.js";
 import { isInternalCall } from "../../src/lib/dashboard-auth.js";
 import { Store } from "../../src/lib/storage.js";
 import { morningSpeech } from "../../src/agents/daily-speech.js";
+import { morningStandup } from "../../src/agents/my-standup.js";
 
 export default async (req) => {
   const config = loadConfig();
@@ -42,6 +43,8 @@ export default async (req) => {
       try {
         const store = await Store.open({ config, logger });
         logger.info("pipeline.morning_speech", await morningSpeech({ store, config, logger, report: result.report }));
+        // Alex's own stand-up draft, the same way: once a day, never over today's.
+        logger.info("pipeline.morning_standup", await morningStandup({ store, config, logger }));
       } catch (err) {
         logger.warn("pipeline.morning_speech_failed", { err });
       }

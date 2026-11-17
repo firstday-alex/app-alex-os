@@ -947,3 +947,11 @@ ul.plain .qp-sig { list-style: none; }
 }
 .act-with-info { display: inline-flex; align-items: center; }
 .act-with-info .act-info { margin-left: 5px; }
+
+/* ------------------------------- my stand-up ------------------------------- */
+.ms-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 6px 0 12px; }
+.ms-draft textarea { width: 100%; font: 15px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 10px 12px; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--ink); }
+.ms-acts { display: flex; gap: 8px; align-items: center; margin: 6px 0 14px; }
+.ms-why { margin: 4px 0; }
+.ms-why ul { margin: 4px 0 8px 14px; font-size: 13px; }
+.ms-why li { margin: 2px 0; }
