@@ -2,7 +2,7 @@
 //
 // Deterministic. One endpoint does the core job:
 //   GET /api/v2/list/{list_id}/task
-// Custom fields ride along in the same call, so Task Owner and Leadership Priority cost
+// Custom fields ride along in the same call, so ROCK and TACTIC cost
 // no extra request. Comments do NOT ride along: they are fetched only for tasks whose
 // date_updated moved since the baseline, because a comment bumps date_updated.
 //
@@ -25,18 +25,21 @@ function authHeaders(token) {
 /* --------------------------- custom field resolution --------------------------- */
 
 /**
- * Resolves the ids of the Task Owner and Leadership Priority fields, and builds the
+ * Resolves the ids of the TACTIC and ROCK fields, and builds the
  * dropdown option id -> label map.
  *
  * Dropdowns return the selected option as an id, not a label. Labels get renamed and ids
  * do not, so everything downstream keys on the id and carries the label only for display.
  */
 /** The custom fields this system reads. Order matters only for readability. */
-export const WANTED_FIELDS = ["taskOwner", "leadershipPriority", "bigSwing"];
+// The Project Owner field (taskOwner) is no longer read. Alex, 2026-11-17: the rocks each
+// person owns are the source of truth for ownership; on a ticket, the assignees are who
+// it belongs to, for follow-ups and kudos alike.
+export const WANTED_FIELDS = ["leadershipPriority", "bigSwing"];
 
 export function buildFieldMap(fields, clickupConfig) {
   const wanted = clickupConfig.customFields ?? {};
-  const result = { taskOwner: null, leadershipPriority: null, bigSwing: null, options: {}, all: [] };
+  const result = { leadershipPriority: null, bigSwing: null, options: {}, all: [] };
 
   const normalize = (s) => String(s ?? "").trim().toLowerCase();
 
@@ -112,9 +115,6 @@ export async function fetchFieldMap({ config, token, store, logger, fetchImpl, s
   });
 
   const map = buildFieldMap(body?.fields ?? [], cu);
-  if (!map.taskOwner) {
-    logger?.warn?.("clickup.field_missing", { field: "taskOwner", looked_for: cu.customFields?.taskOwner?.matchName });
-  }
   if (!map.leadershipPriority) {
     logger?.warn?.("clickup.field_missing", { field: "leadershipPriority", looked_for: cu.customFields?.leadershipPriority?.matchName });
   }
@@ -151,15 +151,7 @@ function customFieldValue(task, fieldId) {
  * flag as unassigned or no priority, do not error.
  */
 export function normalizeTask(task, { fieldMap, statusMap, logger }) {
-  const ownerFieldId = fieldMap.taskOwner?.id ?? null;
   const priorityFieldId = fieldMap.leadershipPriority?.id ?? null;
-
-  const rawOwner = customFieldValue(task, ownerFieldId);
-  const owners = Array.isArray(rawOwner)
-    ? rawOwner.map((u) => ({ id: String(u.id ?? u), username: u.username ?? u.email ?? null }))
-    : rawOwner
-      ? [{ id: String(rawOwner.id ?? rawOwner), username: rawOwner.username ?? null }]
-      : [];
 
   const leadershipPriority = resolveDropdown(
     customFieldValue(task, priorityFieldId),
@@ -186,7 +178,6 @@ export function normalizeTask(task, { fieldMap, statusMap, logger }) {
     statusType: task.status?.type ?? null,
     bucket: statusBucket(statusName, statusMap, logger),
     assignees: (task.assignees ?? []).map((u) => ({ id: String(u.id), username: u.username ?? null })),
-    taskOwners: owners,
     leadershipPriority,
     bigSwing,
     priority: task.priority?.priority ?? null,
@@ -488,7 +479,7 @@ export async function collectClickUp({ config, token, store, logger, fetchImpl, 
     source: "clickup",
     takenAt: now.toISOString(),
     listId: config.clickup.sprintListId,
-    fieldMap: { taskOwner: fieldMap.taskOwner, leadershipPriority: fieldMap.leadershipPriority, bigSwing: fieldMap.bigSwing, options: fieldMap.options },
+    fieldMap: { leadershipPriority: fieldMap.leadershipPriority, bigSwing: fieldMap.bigSwing, options: fieldMap.options },
     items: tasks,
     comments,
     members,

@@ -84,16 +84,12 @@ export function nextStepFlags({ tasks = [], statusLedger = null, leadership = nu
 
   const open = tasks.filter((t) => t.bucket !== "done" && !t.archived);
   const subject = (t, suffix) => ({ type: "task", id: `${t.id}:${suffix}`, label: t.name, url: t.url });
-  const owners = (t) => t.taskOwners ?? [];
-  const doers = (t) => (t.assignees?.length ? t.assignees : owners(t));
-  // Who to reach about a sprint ticket: whoever is assigned, doing the work now, rather
-  // than the project owner. The owner only when nobody else is on it.
-  const contact = (t) => {
-    const a = (t.assignees ?? []).filter((u) => !isMe(u));
-    return a.length ? a : owners(t).filter((u) => !isMe(u));
-  };
+  // A ticket belongs to its assignees (the Project Owner field was retired 2026-11-17).
+  const doers = (t) => t.assignees ?? [];
+  // Who to reach about a sprint ticket: whoever is assigned, other than Alex.
+  const contact = (t) => (t.assignees ?? []).filter((u) => !isMe(u));
   // Nobody but Alex on it: there is no one to nudge, so it is Alex's to do.
-  const onlyMe = (t) => !contact(t).length && [...(t.assignees ?? []), ...owners(t)].some(isMe);
+  const onlyMe = (t) => !contact(t).length && (t.assignees ?? []).some(isMe);
 
   for (const t of open) {
     const s = statusOf(t);
@@ -111,15 +107,15 @@ export function nextStepFlags({ tasks = [], statusLedger = null, leadership = nu
       });
     }
 
-    /* ---- reply: Alex owns it and it is waiting for Alex to approve or deploy ---- */
-    if ((REVIEW.has(s) || DEPLOY.has(s)) && owners(t).some(isMe) && !doers(t).every(isMe) && (t.statusAge?.days ?? 0) >= 1) {
+    /* ---- reply: Alex is assigned with others and it is waiting for Alex to approve or deploy ---- */
+    if ((REVIEW.has(s) || DEPLOY.has(s)) && doers(t).some(isMe) && !doers(t).every(isMe) && (t.statusAge?.days ?? 0) >= 1) {
       const step = DEPLOY.has(s) ? "deploy or approve it" : "review it";
       add({
         rule: "nextstep.awaiting_you",
         severity: "attention",
         subject: subject(t, "awaiting-you"),
-        message: `"${t.name}" is in ${t.status} for ${t.statusAge.exact ? "" : "at least "}${t.statusAge.days} days and you own it: ${step}, or say who should.`,
-        values: { action: "reply", who: "you", status: t.status, days: t.statusAge.days, doing: names(doers(t)) },
+        message: `"${t.name}" is in ${t.status} for ${t.statusAge.exact ? "" : "at least "}${t.statusAge.days} days and you are assigned: ${step}, or say who should.`,
+        values: { action: "reply", who: "you", status: t.status, days: t.statusAge.days, doing: names(contact(t)) },
       });
     }
 
@@ -185,11 +181,13 @@ export function nextStepFlags({ tasks = [], statusLedger = null, leadership = nu
     if (!t.assignees?.length) {
       add({
         rule: "nextstep.no_assignee",
-        severity: "info",
+        // Now the only record of who a ticket belongs to, so it carries the weight the
+        // retired "no Task Owner" flag did. Fixed from the card: pick a person, set in ClickUp.
+        severity: "attention",
         advisable: false,
         subject: subject(t, "assignee"),
-        message: `"${t.name}" has nobody assigned. Assign whoever is doing the current stage.`,
-        values: { action: "fix", who: names(owners(t)).join(", ") || null, status: t.status },
+        message: `"${t.name}" has nobody assigned, so nobody is following it up. Assign whoever is doing the current stage.`,
+        values: { action: "fix", who: null, status: t.status },
       });
     }
   }

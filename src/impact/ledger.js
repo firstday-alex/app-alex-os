@@ -65,7 +65,7 @@ export function itemsFromSources({ report, builds = [], config } = {}) {
       kind: "ticket",
       title: String(t.plainName ?? t.name ?? t.id).trim(),
       url: t.url ?? `https://app.clickup.com/t/${t.id}`,
-      who: names(t.assignees?.length ? t.assignees : t.taskOwners),
+      who: names(t.assignees),
       bigSwing: t.bigSwing?.label ?? null,
       rock: t.leadershipPriority?.label ?? null,
       status: t.status,

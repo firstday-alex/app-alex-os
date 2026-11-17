@@ -134,7 +134,7 @@ function renderClickUp(delta, section, lines) {
   lines.push("  NOT STARTED");
   if (delta.boards.notStarted.length === 0) lines.push("    nothing");
   for (const task of delta.boards.notStarted) {
-    lines.push(`    ${task.name} | ${task.status} | owner ${names(task.taskOwners)} | assignees ${names(task.assignees)} | due ${fmtDate(task.dueDate)}`);
+    lines.push(`    ${task.name} | ${task.status} | assignees ${names(task.assignees)} | due ${fmtDate(task.dueDate)}`);
   }
 
   lines.push("");
@@ -143,7 +143,7 @@ function renderClickUp(delta, section, lines) {
   for (const task of delta.boards.inProgress) {
     const idle = task.idleDays == null ? "?" : `${task.idleDays}d`;
     lines.push(
-      `    [${SIGNAL_MARK[task.signal] ?? task.signal}] ${task.name} | ${task.status} | owner ${names(task.taskOwners)} | untouched ${idle} | ${task.leadershipPriority?.label ?? "no priority"}`,
+      `    [${SIGNAL_MARK[task.signal] ?? task.signal}] ${task.name} | ${task.status} | assignees ${names(task.assignees)} | untouched ${idle} | ${task.leadershipPriority?.label ?? "no priority"}`,
     );
   }
 
@@ -163,7 +163,7 @@ function renderClickUp(delta, section, lines) {
       const text = t.latest?.text ? `: "${t.latest.text.slice(0, 120)}"` : "";
       lines.push(`    comment: ${t.name}: +${t.added}${who}${text}`);
     }
-    for (const t of ch.newTasks) lines.push(`    new: ${t.name} | ${t.status} | owner ${names(t.taskOwners)}`);
+    for (const t of ch.newTasks) lines.push(`    new: ${t.name} | ${t.status} | assignees ${names(t.assignees)}`);
     for (const t of ch.disappeared) lines.push(`    gone: ${t.name} | was ${t.status}`);
   }
   lines.push("");

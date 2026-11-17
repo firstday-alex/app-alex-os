@@ -62,7 +62,7 @@ const SCHEMA = {
 };
 
 const mineBy = (alexId) => (t) =>
-  alexId != null && [...(t.assignees ?? []), ...(t.taskOwners ?? [])].some((u) => String(u.id) === String(alexId));
+  alexId != null && (t.assignees ?? []).some((u) => String(u.id) === String(alexId));
 
 /**
  * Everything the draft may draw on, as numbered facts. Pure apart from the reads passed in.

@@ -1,4 +1,4 @@
-// Rocks off course, by the evidence; the Quarter plan; and setting a Task Owner from the card.
+// Rocks off course, by the evidence; the Quarter plan; and assigning someone from the card.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -6,7 +6,7 @@ import { rockCourse, placeTicket } from "../src/delta/rock-course.js";
 import { quarterWeeks, weekStartOf, monthOfWeek } from "../public/quarter.js";
 import { QuarterPlanStore } from "../src/store/quarter-plan.js";
 import { createBackend } from "../src/lib/storage.js";
-import { setTaskOwner } from "../src/send/clickup-owner.js";
+import { setAssignee } from "../src/send/clickup-assignee.js";
 
 const rock = (over = {}) => ({
   id: "r1",
@@ -111,6 +111,7 @@ test("the course flag stands in for the rock's At Risk, stalled and due-not-movi
   assert.ok(rules.includes("leadership.rock_off_course"));
   assert.ok(!rules.includes("leadership.rock_at_risk"));
   assert.ok(!rules.includes("nextstep.rock_due_not_moving"));
+  assert.ok(!flags.some((f) => /owner_field_missing|task_owner/.test(f.rule)), "the retired Project Owner field raises nothing");
 });
 
 test("a ticket lands on its tactic through the tactic's ROCK option, else on the rock", () => {
@@ -143,20 +144,16 @@ test("the ticket ledger keeps finished work after it leaves the sprint, dated th
   );
 });
 
-/* ------------------------------ Task Owner write ------------------------------ */
+/* ------------------------------ assignee write ------------------------------ */
 
-const ownerSetup = async (tasks) => {
+const assignSetup = async (tasks) => {
   const backend = await createBackend({ mode: "memory" });
   const calls = [];
   const fetchImpl = async (url, init) => {
     calls.push({ url, method: init?.method, body: init?.body ? JSON.parse(init.body) : null });
     return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
   };
-  const store = {
-    backend,
-    getLatestReport: async () => ({ detail: { clickup: { tasks } } }),
-    getCached: async () => ({ taskOwner: { id: "fOwner" }, leadershipPriority: null, bigSwing: null, options: {} }),
-  };
+  const store = { backend, getLatestReport: async () => ({ detail: { clickup: { tasks } } }) };
   const config = {
     system: { http: { maxAttempts: 1 } },
     clickup: { apiBase: "https://api.clickup.test", customFields: {} },
@@ -165,21 +162,20 @@ const ownerSetup = async (tasks) => {
   return { backend, calls, fetchImpl, store, config };
 };
 
-test("setting a Task Owner adds one roster person to tickets the readout shows with none, and records it", async () => {
-  const s = await ownerSetup([{ id: "abc", taskOwners: [] }, { id: "own", taskOwners: [{ id: 1 }] }]);
-  const out = await setTaskOwner({ ...s, token: "pk", taskIds: ["abc", "own"], ownerId: "42" });
+test("assigning adds one roster person to tickets the readout shows with nobody assigned, and records it", async () => {
+  const s = await assignSetup([{ id: "abc", assignees: [] }, { id: "own", assignees: [{ id: 1 }] }]);
+  const out = await setAssignee({ ...s, token: "pk", taskIds: ["abc", "own"], assigneeId: "42" });
   assert.deepEqual(out.set, ["abc"]);
   assert.match(out.failed[0].error, /left alone/);
-  const write = s.calls.find((c) => c.method === "POST");
-  assert.equal(write.url, "https://api.clickup.test/task/abc/field/fOwner");
-  assert.deepEqual(write.body, { value: { add: [42], rem: [] } });
-  const audit = await s.backend.keys("clickup/writes/");
-  assert.equal(audit.length, 1);
+  const write = s.calls.find((c) => c.method === "PUT");
+  assert.equal(write.url, "https://api.clickup.test/task/abc");
+  assert.deepEqual(write.body, { assignees: { add: [42], rem: [] } });
+  assert.equal((await s.backend.keys("clickup/writes/")).length, 1);
 });
 
-test("a Task Owner off the roster, or a ticket that already has one, is refused before ClickUp is called", async () => {
-  const s = await ownerSetup([{ id: "own", taskOwners: [{ id: 1 }] }]);
-  await assert.rejects(setTaskOwner({ ...s, token: "pk", taskIds: ["own"], ownerId: "999" }), /roster/);
-  await assert.rejects(setTaskOwner({ ...s, token: "pk", taskIds: ["own"], ownerId: "42" }), /without a Task Owner/);
+test("an assignee off the roster, or a ticket that already has one, is refused before ClickUp is called", async () => {
+  const s = await assignSetup([{ id: "own", assignees: [{ id: 1 }] }]);
+  await assert.rejects(setAssignee({ ...s, token: "pk", taskIds: ["own"], assigneeId: "999" }), /roster/);
+  await assert.rejects(setAssignee({ ...s, token: "pk", taskIds: ["own"], assigneeId: "42" }), /nobody assigned/);
   assert.equal(s.calls.length, 0);
 });

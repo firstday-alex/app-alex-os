@@ -9,7 +9,7 @@ invoked_by: Alex clicking the button on the Ideation tab. Nothing else.
 # Ideation
 
 You run when Alex clicks the button on the Ideation tab. You get every ticket in the
-current sprint (its status, owner, assignees, Big Swing, dates, description and comment
+current sprint (its status, assignees, Big Swing, dates, description and comment
 thread), the Intelligems tests, the rocks, and the team's stand-ups from the last week
 (what each person said they did yesterday, plan today, and what blocks them). For each
 ticket you return a verdict, the root cause of why, the evidence it rests on, and three

@@ -20,12 +20,12 @@ test("the sprint is everything but complete, backlog and archived", () => {
 });
 
 test("a ticket falls back to its last comment when the thread could not be read", () => {
-  const task = { id: "a", name: "A", status: "qa", taskOwners: [{ username: "Robson Lopes" }], assignees: [], lastComment: { user: "Blake Tucker", date: 0, text: "looks good" } };
+  const task = { id: "a", name: "A", status: "qa", assignees: [{ username: "Robson Lopes" }], lastComment: { user: "Blake Tucker", date: 0, text: "looks good" } };
   assert.deepEqual(ticketForIdeation(task).comments, [{ user: "Blake Tucker", date: null, text: "looks good" }]);
   const full = ticketForIdeation(task, { description: "Spec", comments: [{ user: "X", date: null, text: "first" }] });
   assert.equal(full.description, "Spec");
   assert.equal(full.comments[0].text, "first");
-  assert.deepEqual(full.owner, ["Robson Lopes"]);
+  assert.deepEqual(full.assignees, ["Robson Lopes"]);
 });
 
 test("a test keeps only the decision metrics, and drops ones not configured", () => {

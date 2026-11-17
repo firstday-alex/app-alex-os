@@ -149,7 +149,7 @@ export class QuarterPlanStore {
         status: t.status ?? null,
         bucket: t.bucket ?? null,
         dueOn: t.dueDate ? zonedDateKey(new Date(Number(t.dueDate)), timeZone) : null,
-        who: (t.taskOwners?.length ? t.taskOwners : t.assignees ?? []).map((u) => u.username).filter(Boolean)[0] ?? null,
+        who: (t.assignees ?? []).map((u) => u.username).filter(Boolean)[0] ?? null,
         firstSeen: before?.firstSeen ?? dayKey,
         lastSeen: dayKey,
         doneOn: done ? before?.doneOn ?? closedKey ?? dayKey : null,

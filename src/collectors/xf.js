@@ -91,7 +91,7 @@ export function xfFromClickUp(tasks = [], { roster, since }) {
     const c = t.lastComment;
     if (t.archived || !c?.date || c.date < since.getTime()) continue;
     if (c.userId ? teamIds.has(String(c.userId)) : matchPerson([c.user], roster)) continue;
-    const who = (t.assignees?.length ? t.assignees : t.taskOwners ?? []).map((u) => u.username).filter(Boolean);
+    const who = (t.assignees ?? []).map((u) => u.username).filter(Boolean);
     out.push({
       source: "clickup",
       where: `ClickUp: ${t.plainName ?? t.name}`,

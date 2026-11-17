@@ -95,7 +95,6 @@ export function ticketForIdeation(task, extra = {}) {
     id: task.id,
     name: task.name,
     status: task.status,
-    owner: people(task.taskOwners),
     assignees: people(task.assignees),
     bigSwing: task.bigSwing?.label ?? null,
     leadershipPriority: task.leadershipPriority?.label ?? null,
@@ -245,7 +244,7 @@ export async function ideate({ store, config, env = process.env, logger, fetchIm
     readStandups: Boolean(standups),
     tickets: answers.map((a) => {
       const t = byId.get(a.id);
-      return { ...a, name: t.name, url: t.url ?? null, status: t.status, bigSwing: t.bigSwing?.label ?? null, owner: people(t.taskOwners), assignees: people(t.assignees) };
+      return { ...a, name: t.name, url: t.url ?? null, status: t.status, bigSwing: t.bigSwing?.label ?? null, assignees: people(t.assignees) };
     }),
     missing: missing.map((id) => ({ id, name: byId.get(id)?.name ?? id })),
   };

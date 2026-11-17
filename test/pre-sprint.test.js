@@ -16,7 +16,7 @@ const config = testConfig({
     alex: { slackUserId: "UALEX" },
   },
 });
-const own = (id, name) => ({ taskOwners: [{ id, username: name }], assignees: [] });
+const own = (id, name) => ({ assignees: [{ id, username: name }] });
 const QUIZ = { optionId: "sw_quiz", label: "Quiz" };
 const APP = { optionId: "sw_app", label: "Mobile App" };
 const leadership = {
@@ -39,7 +39,7 @@ test("the pool is checked per person, per rock and per ticket", () => {
       { ...task({ id: "b1", name: "Quiz results page", bigSwing: QUIZ }), ...own("u1", "dana") },
       { ...task({ id: "b2", name: "Footer copy", bigSwing: null }), ...own("u2", "rey") },
       { ...task({ id: "b3", name: "Fix 404s", bigSwing: { optionId: "sw_bau", label: "BAU" } }), ...own("u2", "rey") },
-      { ...task({ id: "b4", name: "Old project tweak", bigSwing: { optionId: "sw_x", label: "AB Testing" } }), taskOwners: [], assignees: [] },
+      { ...task({ id: "b4", name: "Old project tweak", bigSwing: { optionId: "sw_x", label: "AB Testing" } }), assignees: [] },
     ],
     sprintTasks: [],
     leadership,

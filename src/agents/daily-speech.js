@@ -120,7 +120,7 @@ export function ticketForSpeech(t) {
   return {
     name: t.plainName ?? t.name,
     status: t.status,
-    who: firstNames(t.assignees?.length ? t.assignees : t.taskOwners),
+    who: firstNames(t.assignees),
     bigSwing: t.bigSwing?.label ?? null,
     signal: t.signal ?? null,
     due: iso(t.dueDate),

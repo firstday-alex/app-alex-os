@@ -23,18 +23,18 @@ const RAW_FIELDS = [
   { id: "f_other", name: "Sprint Points", type: "number" },
 ];
 
-test("custom fields resolve by name when no id is configured", () => {
-  const noIds = { ...config.clickup, customFields: { taskOwner: { id: null, matchName: ["Task Owner", "Task Project Manager"] }, leadershipPriority: { id: null, matchName: ["Leadership Priority"] } } };
+test("custom fields resolve by name when no id is configured; the retired Project Owner field is not read", () => {
+  const noIds = { ...config.clickup, customFields: { leadershipPriority: { id: null, matchName: ["Leadership Priority"] } } };
   const map = buildFieldMap(RAW_FIELDS, noIds);
-  assert.equal(map.taskOwner.id, "f_owner");
+  assert.equal(map.taskOwner, undefined);
   assert.equal(map.leadershipPriority.id, "f_priority");
   assert.equal(map.options.f_priority.opt_sub.label, "Subscription upsell");
 });
 
-test("the alternate field name is accepted, since the spec allows either", () => {
-  const fields = [{ id: "f_pm", name: "Task Project Manager", type: "users" }];
-  const map = buildFieldMap(fields, { customFields: { taskOwner: { id: null, matchName: ["Task Owner", "Task Project Manager"] } } });
-  assert.equal(map.taskOwner.id, "f_pm");
+test("the alternate field name is accepted (ROCK was Big Swing)", () => {
+  const fields = [{ id: "f_rock", name: "ROCK", type: "drop_down" }];
+  const map = buildFieldMap(fields, { customFields: { bigSwing: { id: null, matchName: ["ROCK", "Big Swing"] } } });
+  assert.equal(map.bigSwing.id, "f_rock");
 });
 
 test("a dropdown value returns an option id, and the label is looked up not trusted", () => {
@@ -51,17 +51,8 @@ test("a custom field missing on a task is null, not an error", () => {
   const map = buildFieldMap(RAW_FIELDS, config.clickup);
   const normalized = normalizeTask({ id: "t1", status: { status: "to do" }, custom_fields: [] }, { fieldMap: map, statusMap: config.clickup.statusMap });
   assert.equal(normalized.leadershipPriority, null);
-  assert.deepEqual(normalized.taskOwners, []);
+  assert.equal(normalized.taskOwners, undefined);
   assert.equal(normalized.bucket, "notStarted");
-});
-
-test("a user-type field returns an array of users", () => {
-  const map = buildFieldMap(RAW_FIELDS, config.clickup);
-  const normalized = normalizeTask(
-    { id: "t1", status: { status: "to do" }, custom_fields: [{ id: "f_owner", value: [{ id: 7, username: "rey" }] }] },
-    { fieldMap: map, statusMap: config.clickup.statusMap },
-  );
-  assert.deepEqual(normalized.taskOwners, [{ id: "7", username: "rey" }]);
 });
 
 test("status matching is case-insensitive, and an unmapped status is logged not crashed on", () => {

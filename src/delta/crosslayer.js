@@ -20,9 +20,8 @@ import { makeFlag } from "./flags.js";
 import { ownsSwing, swingIdsOf } from "../collectors/leadership.js";
 import { ownsTactic, tacticIdsOf } from "../collectors/clickup-names.js";
 
-/** The person accountable for a ticket: the Task Owner field, falling back to assignees. */
+/** Who a ticket belongs to: its assignees. (The Project Owner field was retired 2026-11-17.) */
 export function accountableFor(task) {
-  if (task.taskOwners?.length) return task.taskOwners.map((u) => ({ id: String(u.id), name: u.username ?? u.id, via: "owner" }));
   if (task.assignees?.length) return task.assignees.map((u) => ({ id: String(u.id), name: u.username ?? u.id, via: "assignee" }));
   return [];
 }

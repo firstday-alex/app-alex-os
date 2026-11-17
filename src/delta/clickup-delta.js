@@ -42,10 +42,9 @@ export function classifyMovement(current, before, { stalledAfterDays = 3, now = 
     typeof before?.commentCount === "number" &&
     current.commentCount > before.commentCount;
   const assigneesChanged = Boolean(before) && !sameIdSet(current.assignees, before.assignees);
-  const ownersChanged = Boolean(before) && !sameIdSet(current.taskOwners, before.taskOwners);
   const updatedMoved = Boolean(before) && (current.dateUpdated ?? 0) > (before.dateUpdated ?? 0);
 
-  const touched = statusChanged || commentsGrew || assigneesChanged || ownersChanged || updatedMoved;
+  const touched = statusChanged || commentsGrew || assigneesChanged || updatedMoved;
   const idleDays = current.dateUpdated ? Math.floor((now - current.dateUpdated) / DAY_MS) : null;
 
   let signal;
@@ -58,7 +57,7 @@ export function classifyMovement(current, before, { stalledAfterDays = 3, now = 
   return {
     signal,
     idleDays,
-    changed: { statusChanged, commentsGrew, assigneesChanged, ownersChanged, updatedMoved },
+    changed: { statusChanged, commentsGrew, assigneesChanged, updatedMoved },
   };
 }
 
@@ -77,7 +76,7 @@ export function clickupDelta(baseline, current, { config, now = Date.now(), comm
     disappeared: [],
     statusChanges: [],
     assigneeChanges: [],
-    ownerChanges: [],
+    ownerChanges: [], // always empty since the Project Owner field was retired; kept for the report's shape
     priorityChanges: [],
     newComments: [],
   };
@@ -115,9 +114,6 @@ export function clickupDelta(baseline, current, { config, now = Date.now(), comm
     }
     if (movement.changed.assigneesChanged) {
       changes.assigneeChanges.push({ ...entry, from: label(before.assignees), to: label(task.assignees) });
-    }
-    if (movement.changed.ownersChanged) {
-      changes.ownerChanges.push({ ...entry, from: label(before.taskOwners), to: label(task.taskOwners) });
     }
     if ((before.leadershipPriority?.optionId ?? null) !== (task.leadershipPriority?.optionId ?? null)) {
       changes.priorityChanges.push({

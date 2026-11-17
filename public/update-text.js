@@ -75,7 +75,7 @@ export function cleanName(name) {
  * assignee), else the owner. `handleFor(user)` turns a ClickUp user into the @name.
  */
 export function updateItem(task, handleFor) {
-  const holders = task.assignees?.length ? task.assignees : task.taskOwners ?? [];
+  const holders = task.assignees ?? [];
   const who = holders.map((u) => `@${handleFor(u)}`).join(" + ") || "@unassigned";
   // A parked ticket's marker, "[Waiting for Test Slot]", is a note to the dashboard, not part of the title.
   const name = cleanName(task.plainName ?? task.name);
@@ -130,7 +130,7 @@ export function buildAccomplishments(tasks, { since, handleFor }) {
    written by a model. */
 
 const NO_ROCK = "No rock";
-const who = (task) => (task.assignees?.length ? task.assignees : task.taskOwners ?? []);
+const who = (task) => (task.assignees ?? []);
 
 /** A name list as people say it: "A", "A and B", "A, B and C". */
 export function listed(items) {
@@ -286,7 +286,7 @@ function bestTicket(phrase, tasks, counts) {
 const firstOf = (name) => String(name ?? "").trim().split(/\s+/)[0].toLowerCase();
 // A ticket is someone's to talk about when they are on it, or when nobody is.
 const isTheirs = (task, person) => {
-  const on = [...(task.assignees ?? []), ...(task.taskOwners ?? [])];
+  const on = (task.assignees ?? []);
   return !on.length || on.some((u) => firstOf(u.username) === firstOf(person));
 };
 

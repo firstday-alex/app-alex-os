@@ -67,7 +67,7 @@ export function parseStandupTactics(html) {
 }
 
 const peopleOf = (task) =>
-  [...(task.taskOwners ?? []), ...(task.assignees ?? [])].map((u) => normalizeTitle(u.username)).filter(Boolean);
+  (task.assignees ?? []).map((u) => normalizeTitle(u.username)).filter(Boolean);
 
 /**
  * How alike a tactic and a ticket are, 0 to 1.
@@ -133,7 +133,7 @@ export function matchTacticsToTickets({ tactics, tasks }) {
         name: t.name,
         url: t.url,
         status: t.status,
-        owners: [...new Set([...(t.taskOwners ?? []), ...(t.assignees ?? [])].map((u) => u.username).filter(Boolean))],
+        owners: [...new Set((t.assignees ?? []).map((u) => u.username).filter(Boolean))],
         bigSwing: t.bigSwing?.label ?? null,
         rockReference: t.leadershipPriority?.label ?? null,
       })),

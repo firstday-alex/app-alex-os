@@ -19,14 +19,14 @@ test("facts: Alex's last plan, Alex's ClickUp moves and open tickets, notes, wai
       clickup: {
         changes: {
           statusChanges: [
-            { id: "a", name: "[DEV] Toddler Sesame Street SKU Setup", assignees: alex, taskOwners: [], from: "in-progress", to: "vqa" },
-            { id: "b", name: "Sam's ticket", assignees: sam, taskOwners: [], from: "to do", to: "in-progress" },
+            { id: "a", name: "[DEV] Toddler Sesame Street SKU Setup", assignees: alex, from: "in-progress", to: "vqa" },
+            { id: "b", name: "Sam's ticket", assignees: sam, from: "to do", to: "in-progress" },
           ],
-          closed: [{ id: "c", name: "Sesame Street feedback", assignees: [], taskOwners: alex }],
+          closed: [{ id: "c", name: "Sesame Street feedback", assignees: alex }],
         },
         tasks: [
-          { id: "d", name: "All-in-1 Core Bundle", assignees: alex, taskOwners: [], bucket: "inProgress", status: "in-progress", dueDate: Date.parse("2026-11-17T18:00:00Z") },
-          { id: "e", name: "Commented one", assignees: sam, taskOwners: [], bucket: "notStarted", status: "to do", lastComment: { userId: "7", date: Date.parse("2026-11-16T16:00:00Z"), text: "Looks good, ship it" } },
+          { id: "d", name: "All-in-1 Core Bundle", assignees: alex, bucket: "inProgress", status: "in-progress", dueDate: Date.parse("2026-11-17T18:00:00Z") },
+          { id: "e", name: "Commented one", assignees: sam, bucket: "notStarted", status: "to do", lastComment: { userId: "7", date: Date.parse("2026-11-16T16:00:00Z"), text: "Looks good, ship it" } },
         ],
       },
     },

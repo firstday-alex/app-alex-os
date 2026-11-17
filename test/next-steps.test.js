@@ -36,7 +36,6 @@ const ticket = (id, over = {}) => ({
   status: "in-progress",
   bucket: "inProgress",
   assignees: [ROBSON],
-  taskOwners: [ROBSON],
   dateUpdated: now - 3_600_000,
   ...over,
 });
@@ -67,9 +66,9 @@ test("a question to someone else is a nudge only once it has gone unanswered", (
   assert.equal(flags[0].values.who, "Blake");
 });
 
-test("Alex owning a ticket in QA or ready for deploy is waiting on Alex", () => {
-  const t = ticket("r", { status: "ready for deploy", taskOwners: [ALEX], assignees: [CRIS], statusAge: { days: 2, exact: true } });
-  const fresh = ticket("s", { status: "qa", taskOwners: [ALEX], assignees: [CRIS], statusAge: { days: 0, exact: true } });
+test("Alex assigned with someone else on a ticket in QA or ready for deploy is waiting on Alex", () => {
+  const t = ticket("r", { status: "ready for deploy", assignees: [ALEX, CRIS], statusAge: { days: 2, exact: true } });
+  const fresh = ticket("s", { status: "qa", assignees: [ALEX, CRIS], statusAge: { days: 0, exact: true } });
   const flags = run([t, fresh]);
   assert.deepEqual(rules(flags), ["nextstep.awaiting_you"]);
   assert.match(flags[0].message, /deploy or approve it/);
@@ -106,7 +105,7 @@ test("in progress with no due date is only flagged once due dates are in use", (
 });
 
 test("not started on Wednesday is one decision per owner, and not raised on Tuesday", () => {
-  const todo = (id, owner) => ticket(id, { status: "to do", bucket: "notStarted", taskOwners: [owner], assignees: [owner] });
+  const todo = (id, owner) => ticket(id, { status: "to do", bucket: "notStarted", assignees: [owner] });
   const tasks = [todo("t1", BLAKE), todo("t2", BLAKE), todo("t3", CRIS), todo("t4", ALEX)];
   assert.equal(run(tasks).filter((f) => f.rule === "nextstep.commitment_at_risk").length, 0);
   const wed = nextStepFlags({ tasks, config, dateKey: "2026-10-28", nowIso: WEDNESDAY }).filter((f) => f.rule === "nextstep.commitment_at_risk");
@@ -125,8 +124,8 @@ test("carried over: open since before this sprint's Monday, one flag per owner",
 });
 
 test("too much at once, and nothing started, are about who is doing the work", () => {
-  const wip = [1, 2, 3].map((i) => ticket(`w${i}`, { assignees: [CRIS], taskOwners: [ROBSON] }));
-  const idle = ticket("i1", { status: "to do", bucket: "notStarted", assignees: [BLAKE], taskOwners: [BLAKE] });
+  const wip = [1, 2, 3].map((i) => ticket(`w${i}`, { assignees: [CRIS] }));
+  const idle = ticket("i1", { status: "to do", bucket: "notStarted", assignees: [BLAKE] });
   const flags = run([...wip, idle]);
   assert.deepEqual(rules(flags), ["nextstep.idle", "nextstep.too_much_in_progress"]);
   assert.equal(flags.find((f) => f.rule === "nextstep.too_much_in_progress").values.who, "Cristobal");
@@ -154,24 +153,18 @@ test("a rock due this month with nothing in progress is a decision", () => {
 test("nobody assigned is a fix", () => {
   const flags = run([ticket("n", { assignees: [] })]);
   assert.deepEqual(rules(flags), ["nextstep.no_assignee"]);
-  assert.equal(flags[0].severity, "info");
+  assert.equal(flags[0].severity, "attention", "now the only record of who a ticket belongs to");
 });
 
-test("a sprint ticket's nudge goes to whoever is assigned, not the project owner", () => {
+test("a sprint ticket's nudge goes to whoever is assigned; an old Project Owner value is ignored", () => {
   const t = ticket("d", { status: "to do", bucket: "notStarted", assignees: [BLAKE], taskOwners: [ROBSON], dueDate: now + DAY });
   const [flag] = run([t]).filter((f) => f.rule === "nextstep.due_not_started");
   assert.equal(flag.values.who, "Blake");
   assert.match(flag.message, /^Nudge Blake:/);
 });
 
-test("with nobody assigned, the nudge falls back to the project owner", () => {
-  const t = ticket("e", { status: "to do", bucket: "notStarted", assignees: [], taskOwners: [ROBSON], dueDate: now + DAY });
-  const [flag] = run([t]).filter((f) => f.rule === "nextstep.due_not_started");
-  assert.equal(flag.values.who, "Robson");
-});
-
-test("not started on Wednesday is raised for the assignee, not the Task Owner", () => {
-  const t = ticket("a", { status: "to do", bucket: "notStarted", assignees: [BLAKE], taskOwners: [ROBSON] });
+test("not started on Wednesday is raised for the assignee", () => {
+  const t = ticket("a", { status: "to do", bucket: "notStarted", assignees: [BLAKE] });
   const wed = nextStepFlags({ tasks: [t], config, dateKey: "2026-10-28", nowIso: WEDNESDAY }).filter((f) => f.rule === "nextstep.commitment_at_risk");
   assert.equal(wed.length, 1);
   assert.equal(wed[0].subject.label, "Blake Tucker");
@@ -179,7 +172,7 @@ test("not started on Wednesday is raised for the assignee, not the Task Owner", 
 });
 
 test("due soon and not started on a ticket only Alex is on is Alex's to do, not a nudge", () => {
-  const t = ticket("a", { status: "to do", bucket: "notStarted", assignees: [ALEX], taskOwners: [ALEX], dueDate: now + 3_600_000 });
+  const t = ticket("a", { status: "to do", bucket: "notStarted", assignees: [ALEX], dueDate: now + 3_600_000 });
   const [f] = run([t]).filter((x) => x.rule === "nextstep.due_not_started");
   assert.equal(f.values.action, "reply");
   assert.match(f.message, /is yours, due today, and not started/);

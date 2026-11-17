@@ -25,25 +25,12 @@ function clickupFlags(delta, { config, dateKey, fieldMap }) {
   // A field that does not exist on the board is a configuration problem, not a problem
   // with every ticket. Flagging each ticket separately turns one fact into N lines and
   // buries the signal that actually matters underneath them.
-  const ownerFieldExists = Boolean(fieldMap?.taskOwner?.id);
   // Tickets reach rocks through Big Swing, so that is the field the ladder needs.
   const swingFieldExists = Boolean(fieldMap?.bigSwing?.id);
   const bauMarkers = (config.clickup.bauMarkers ?? []).map((m) => String(m).toLowerCase());
   const isBau = (task) =>
     [task.leadershipPriority?.label, task.bigSwing?.label].some((l) => l && bauMarkers.includes(String(l).trim().toLowerCase()));
   const openTasks = (delta.tasks ?? []).filter((t) => t.bucket !== "done");
-
-  if (!ownerFieldExists) {
-    add({
-      layer: 2,
-      rule: "clickup.owner_field_missing",
-      severity: "p1",
-      advisable: false,
-      subject: { type: "field", id: "task-owner-field", label: "Task Owner field" },
-      message: `There is no Task Owner field on the sprint list, so nobody is recorded as accountable for any of the ${openTasks.length} open tickets. The ownership model cannot run until the field exists.`,
-      values: { openTasks: openTasks.length, lookedFor: config.clickup.customFields?.taskOwner?.matchName ?? [] },
-    });
-  }
 
   if (!swingFieldExists) {
     add({
@@ -71,35 +58,8 @@ function clickupFlags(delta, { config, dateKey, fieldMap }) {
           status: task.status,
           idleDays: task.idleDays,
           stalledAfterDays: stalledAfter,
-          owner: task.taskOwners.map((u) => u.username).join(", ") || null,
           assignees: task.assignees.map((u) => u.username).join(", ") || null,
         },
-      });
-    }
-
-    // ClickUp allows several owners on one ticket. The spec's model is one accountable
-    // person: "the owner is accountable for divvying up the work and keeping the task
-    // moving". Two owners is not twice the accountability, it is none.
-    if (ownerFieldExists && task.taskOwners.length > 1) {
-      add({
-        layer: 2,
-        rule: "clickup.multiple_task_owners",
-        severity: "info",
-        advisable: false,
-        subject: { type: "task", id: `${task.id}:owners`, label: task.name, url: task.url },
-        message: `"${task.name}" has ${task.taskOwners.length} Project Owners. One person should be accountable for keeping it moving; the rest can be assignees.`,
-        values: { owners: task.taskOwners.map((u) => u.username) },
-      });
-    }
-
-    if (ownerFieldExists && task.taskOwners.length === 0) {
-      add({
-        layer: 2,
-        rule: "clickup.no_task_owner",
-        severity: "attention",
-        subject: { type: "task", id: `${task.id}:owner`, label: task.name, url: task.url },
-        message: `"${task.name}" has no Task Owner. Nobody is accountable for keeping it moving.`,
-        values: { status: task.status, assignees: task.assignees.map((u) => u.username) },
       });
     }
 

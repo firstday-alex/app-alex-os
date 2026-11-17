@@ -31,7 +31,7 @@ const LEADERSHIP = {
   ],
 };
 
-const owner = (id, username) => ({ taskOwners: [{ id, username }], assignees: [{ id, username }] });
+const owner = (id, username) => ({ assignees: [{ id, username }] });
 const SUB = { optionId: "opt_sub", label: "Subscription upsell" };
 const SHIP = { optionId: "opt_ship", label: "Shipping threshold test" };
 const BAU = { optionId: "opt_bau", label: "Business as usual" };
@@ -100,12 +100,12 @@ test("a person on the roster with no tickets at all is not flagged for having no
   assert.ok(!reyFlags.includes("crosslayer.no_big_swing"), "no tickets is a different problem from tickets with no big swing");
 });
 
-test("the Task Owner drives accountability, falling back to assignee", () => {
+test("the assignee holds the big swing (the Project Owner field is retired)", () => {
   const result = check([
     { ...task({ id: "a", bigSwing: SUB }), taskOwners: [{ id: "u2", username: "rey" }], assignees: [{ id: "u1", username: "dana" }] },
   ]);
-  assert.equal(result.people.find((p) => p.name === "rey").distinctBigSwings, 1, "the owner holds the big swing");
-  assert.equal(result.people.find((p) => p.name === "dana").distinctBigSwings, 0, "the assignee executes a piece of it");
+  assert.equal(result.people.find((p) => p.name === "dana").distinctBigSwings, 1, "the assignee holds it");
+  assert.equal(result.people.find((p) => p.name === "rey").distinctBigSwings, 0, "an old owner value is ignored");
 });
 
 test("a shipped rock still claims the follow-up work on its Big Swing", () => {
@@ -217,7 +217,6 @@ test("a renamed dropdown option does not break a rock linked by option id", asyn
     bucket: "inProgress",
     status: "in-progress",
     assignees: [{ id: 1, username: "dana" }],
-    taskOwners: [],
     // The option was renamed in ClickUp this morning. The id did not change.
     bigSwing: { optionId: "swing-1", label: "New Problem Based Bundle Buy Box v2" },
     leadershipPriority: { optionId: "opt-1", label: "ncAOV" },
@@ -245,7 +244,6 @@ test("a rock linked only by title is reported, because a rename would break it s
     bucket: "inProgress",
     status: "in-progress",
     assignees: [{ id: 1, username: "dana" }],
-    taskOwners: [],
     bigSwing: { optionId: "swing-9", label: "ncAOV" },
     leadershipPriority: null,
   };

@@ -54,7 +54,7 @@ test("both leftover lists come out, and finished tickets match but are never lis
   const tasks = [
     { id: "1", name: "Family Bundle Builder V2 test", url: "u1", status: "in progress", bucket: "inProgress", assignees: [{ username: "Cristobal Alanis" }] },
     { id: "2", name: "Mobile app MVP scoping", url: "u2", status: "complete", bucket: "done", closed: true },
-    { id: "3", name: "Homepage star ratings on PLP", url: "u3", status: "to do", bucket: "notStarted", taskOwners: [{ username: "Akky" }], bigSwing: { label: "CRO" } },
+    { id: "3", name: "Homepage star ratings on PLP", url: "u3", status: "to do", bucket: "notStarted", assignees: [{ username: "Akky" }], bigSwing: { label: "CRO" } },
     { id: "4", name: "Old cleanup", url: "u4", status: "complete", bucket: "done", closed: true },
   ];
   const result = matchTacticsToTickets({ tactics, tasks });

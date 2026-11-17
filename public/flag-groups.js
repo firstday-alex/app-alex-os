@@ -1,7 +1,7 @@
 // One line per person instead of one per ticket.
 //
 // Most of a morning's flags are the same few sprint checks (overdue, not started, carried
-// over, no owner, stuck in a status) spread across a handful of people. Listed one by one
+// over, nobody assigned, stuck in a status) spread across a handful of people. Listed one by one
 // they bury the P1s; grouped they read "Akansha: 4 overdue, 1 carried over", which is one
 // conversation, not five. Only those routine sprint checks at P2 are grouped. A P1 (an
 // escalated one included), a test, a rock and anything waiting on Alex's own reply stay
@@ -20,7 +20,7 @@ export const ROUTINE_RULES = {
   "nextstep.idle": "nothing in progress",
   "nextstep.bounced_back": "bounced back",
   "nextstep.question_unanswered": "question unanswered",
-  "clickup.no_task_owner": "no owner",
+  "nextstep.no_assignee": "nobody assigned",
   "clickup.stale_in_status": "stuck in a status",
   "clickup.stalled": "untouched",
 };
@@ -55,7 +55,7 @@ export function personOf(flag, { tasks = new Map(), alexName = null } = {}) {
   else if (flag.subject?.type === "person" && flag.subject.label) who = flag.subject.label;
   else {
     const task = tasks.get(String(flag.subject?.id ?? "").split(":")[0]);
-    const person = task?.assignees?.[0] ?? task?.taskOwners?.[0];
+    const person = task?.assignees?.[0];
     who = person?.username ?? person?.name ?? null;
   }
   const first = firstName(who);

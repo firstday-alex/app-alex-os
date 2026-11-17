@@ -12,16 +12,7 @@
     "_decided_subtasks": "Alex, 2026-10-22: subtasks are not counted. Only top-level sprint tickets count toward a person."
   },
   "customFields": {
-    "taskOwner": {
-      "id": "673c4185-87a0-4021-83bf-b974267913c1",
-      "matchName": [
-        "Project Owner",
-        "Task Owner",
-        "Task Project Manager"
-      ],
-      "type": "users",
-      "_comment": "Created 2026-09-10. A users-type field, separate from assignee. The owner drives the task and is accountable for keeping it moving; assignees execute pieces of it. Note single_user is false, so ClickUp will accept several owners on one ticket — see the multiple-owners flag, since accountability shared between two people is accountability held by neither."
-    },
+    "_removed_taskOwner": "Project Owner (673c4185) is no longer read. Alex, 2026-11-17: rock ownership comes from the rocks; on a ticket the assignees are who it belongs to, for follow-ups and kudos.",
     "leadershipPriority": {
       "id": "de6b3171-e1ed-4078-ac4c-f1f1c9a4fd4b",
       "matchName": [

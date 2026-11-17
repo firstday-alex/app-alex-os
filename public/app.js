@@ -700,8 +700,8 @@ function groupCard(g) {
       <p class="msg"><strong>${esc(who)}</strong> · ${esc(plural(g.flags.length, "sprint item", "sprint items"))}: ${esc(g.summary)}</p>
       <p class="meta">Sprint · grouped by person${oldest ? ` · oldest open ${esc(plural(oldest, "working day", "working days"))}` : ""}</p>
       ${(() => {
-        const owners = g.flags.filter((f) => f.rule === "clickup.no_task_owner" && !triageOf(f));
-        return owners.length > 1 ? ownerPicker(owners, { label: `Owner for the ${owners.length} tickets with none` }) : "";
+        const none = g.flags.filter((f) => f.rule === "nextstep.no_assignee" && !triageOf(f));
+        return none.length > 1 ? ownerPicker(none, { label: `Assign the ${none.length} tickets with nobody on them to` }) : "";
       })()}
       <div class="q-list">${g.flags.map((f) => (queue.open.has(f.id) ? `<div class="q-opened">${flagCard(f)}<button type="button" class="link-btn" data-q-open="${esc(f.id)}">Close</button></div>` : queueRow(f))).join("")}</div>
       <div class="triage-actions">
@@ -818,7 +818,7 @@ async function saveTriageMany(flags, payload) {
   return failed;
 }
 
-/** "Set in ClickUp" on a no-Task-Owner card: writes the owner, then marks the cards Done. */
+/** "Assign in ClickUp" on a nobody-assigned card: adds the assignee, then marks the cards Done. */
 document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-owner-set]");
   if (!button) return;
@@ -836,18 +836,18 @@ document.addEventListener("click", async (event) => {
   button.disabled = true;
   say("Saving to ClickUp…", false);
   try {
-    const res = await fetch(`${FN}/ticket-owner`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskIds, ownerId }) });
+    const res = await fetch(`${FN}/ticket-assignee`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskIds, assigneeId: ownerId }) });
     const body = await res.json().catch(() => ({}));
     if (!res.ok && !body.set?.length) throw new Error(body.error ?? body.failed?.[0]?.error ?? `HTTP ${res.status}`);
     const done = new Set((body.set ?? []).map(String));
     for (const t of state.report?.detail?.clickup?.tasks ?? []) {
-      if (done.has(String(t.id))) t.taskOwners = [{ id: ownerId, username: body.owner?.name ?? name }];
+      if (done.has(String(t.id))) t.assignees = [...(t.assignees ?? []), { id: ownerId, username: body.assignee?.name ?? name }];
     }
     const failed = await saveTriageMany(
       flags.filter((f) => done.has(baseId(subjectOf(f).id))),
-      { status: "done", note: `Task Owner set to ${body.owner?.name ?? name} in ClickUp` },
+      { status: "done", note: `Assigned to ${body.assignee?.name ?? name} in ClickUp` },
     );
-    if (body.failed?.length || failed.length) alert(`Owner set on ${done.size} of ${taskIds.length}. Not set: ${body.failed?.[0]?.error ?? failed[0]}`);
+    if (body.failed?.length || failed.length) alert(`Assigned on ${done.size} of ${taskIds.length}. Not set: ${body.failed?.[0]?.error ?? failed[0]}`);
   } catch (err) {
     button.disabled = false;
     say(`Not set: ${err.message}`);
@@ -1110,9 +1110,8 @@ function flagContext(flag) {
     case "task": {
       const task = idx.tasks.get(id);
       itemLabel ??= task?.name;
-      // Whoever is assigned first, so a nudge goes to the person doing the work; the
-      // project owner after, so filtering by them still finds it.
-      owners = [...new Set([...(task?.assignees ?? []), ...(task?.taskOwners ?? [])].map((u) => u.username).filter(Boolean))];
+      // The assignees: a nudge goes to the person doing the work.
+      owners = [...new Set((task?.assignees ?? []).map((u) => u.username).filter(Boolean))];
       url = subject.url ?? flag.url ?? task?.url ?? null;
       // ClickUp only: a Sprint link was the same on every ticket.
       if (url) links.push({ label: "ClickUp", href: url, external: true, clickup: true });
@@ -1392,26 +1391,24 @@ const ROCK_FIXES = {
 };
 
 /**
- * Who should own the tickets with no Task Owner: a roster picker that writes the Task
- * Owner in ClickUp, then marks the cards Done. Defaults to the first assignee on the
- * roster, since the person doing the work is the usual answer.
+ * Who should be on the tickets with nobody assigned: a roster picker that adds the
+ * assignee in ClickUp, then marks the cards Done.
  */
-function ownerPicker(flags, { label = "Task Owner" } = {}) {
+function ownerPicker(flags, { label = "Assign to" } = {}) {
   const people = (state.people ?? []).filter((p) => p.clickupUserId);
   const options = [...(state.me ? [{ clickupUserId: state.me, name: "Me" }] : []), ...people];
   if (!options.length) return "";
-  const assignees = flags.flatMap((f) => [].concat(f.values?.assignees ?? [])).map((n) => String(n).toLowerCase());
-  const guess = people.find((p) => assignees.includes(String(p.name).toLowerCase()))?.clickupUserId ?? "";
+  const guess = "";
   return `<div class="quick-fix" data-owner-fix="${esc(flags.map(keyOf).join("|"))}">
       <label>${esc(label)} <select class="sm" data-owner-pick><option value="">Choose…</option>${options
         .map((p) => `<option value="${esc(p.clickupUserId)}"${String(p.clickupUserId) === String(guess) ? " selected" : ""}>${esc(p.name)}</option>`)
         .join("")}</select></label>
-      <button type="button" class="sm" data-owner-set>Set in ClickUp</button>
+      <button type="button" class="sm" data-owner-set>Assign in ClickUp</button>
     </div>`;
 }
 
 function quickFix(flag) {
-  if (flag.rule === "clickup.no_task_owner") return ownerPicker([flag]);
+  if (flag.rule === "nextstep.no_assignee") return ownerPicker([flag]);
   // A rock off course: every reason with its fix, and the plan to re-plan it in.
   if (flag.rule === "leadership.rock_off_course") {
     const signals = flag.values?.signals ?? [];
@@ -2081,8 +2078,7 @@ function stalenessLabel(task) {
 
 /**
  * Who a backlog ticket is queued for: its primary assignee, the first one listed. Other
- * assignees are collaborators, and the Task Owner is who follows up on the initiative or
- * answers the assignee's questions, so neither counts as having the work queued.
+ * assignees are collaborators, so they do not count as having the work queued.
  */
 function primaryAssignee(task) {
   return toPeople(task.assignees).slice(0, 1);
@@ -2254,26 +2250,18 @@ function rockForTask(task) {
   );
 }
 
-/** Who a ticket belongs to: its Task Owner, else its assignees. Same rule as the cross layer. */
-function accountable(task) {
-  const owners = task.taskOwners?.length ? task.taskOwners : task.assignees ?? [];
-  return owners.map((u) => ({ id: String(u.id), name: u.username ?? String(u.id) }));
-}
-
-// Two roles on a ticket. The Task Owner is who you go to with questions and who keeps it
-// moving. The assignee does the work in the current stage.
+// A ticket belongs to its assignees: who it is followed up with and who gets the kudos.
+// Ownership above the ticket is the rocks'. (The Project Owner field was retired 2026-11-17.)
 const toPeople = (list) => (list ?? []).map((u) => ({ id: String(u.id), name: u.username ?? String(u.id) }));
-const ownersOf = (task) => toPeople(task.taskOwners);
 const doersOf = (task) => toPeople(task.assignees);
+/** Who a ticket belongs to: its assignees. Same rule as the cross layer. */
+const accountable = (task) => doersOf(task);
 const firstName = (p) => String(p.name).split(/\s+/)[0];
 const isMe = (p) => state.me != null && p.id === String(state.me);
 const nameList = (list) => list.map(firstName).join(", ");
 
-/** Whose turn it is on a ticket, by what ClickUp says: owner, else assignee. */
-function doing(task) {
-  const doers = doersOf(task);
-  return doers.length ? doers : ownersOf(task);
-}
+/** Whose turn it is on a ticket: its assignees. */
+const doing = (task) => doersOf(task);
 
 /**
  * Who Alex should reach out to about a ticket, and why. In order: someone the ticket is
@@ -2299,25 +2287,17 @@ function reachOut(task) {
     }
   }
 
-  const owners = ownersOf(task).filter((p) => !isMe(p));
   const doers = doersOf(task).filter((p) => !isMe(p));
-  if (owners.length) return { verb: "Ask", who: nameList(owners), why: "", isOwner: true };
-  if (doers.length) return { verb: "Ask", who: nameList(doers), why: "", tone: ownersOf(task).length ? "" : "warn" };
-  if (ownersOf(task).length || doersOf(task).length) return { verb: "On you", who: "", why: "" };
-  return { verb: "Nobody to ask", who: "", why: "no owner or assignee", tone: "bad" };
+  if (doers.length) return { verb: "Ask", who: nameList(doers), why: "", isOwner: true };
+  if (doersOf(task).length) return { verb: "On you", who: "", why: "" };
+  return { verb: "Nobody to ask", who: "", why: "nobody assigned", tone: "bad" };
 }
 
-/**
- * "owner Robson · Cristobal doing it", or one name when it is the same person. When the
- * Ask line already names the owner, only who is doing the work is left to say.
- */
+/** "Robson, Cristobal on it". Empty when the Ask line already names them. */
 function rolesText(task, ask = null) {
-  const owners = ownersOf(task);
   const doers = doersOf(task);
-  const same = owners.length && doers.length && owners.map((p) => p.id).sort().join() === doers.map((p) => p.id).sort().join();
-  if (ask?.isOwner) return same ? "owner, doing it" : doers.length ? `${nameList(doers)} doing it` : "nobody assigned";
-  if (same) return `${nameList(owners)} owns it and is doing it`;
-  return [owners.length ? `owner ${nameList(owners)}` : "no owner", doers.length ? `${nameList(doers)} doing it` : "nobody assigned"].join(" · ");
+  if (ask?.isOwner) return "";
+  return doers.length ? `${nameList(doers)} on it` : "nobody assigned";
 }
 
 function stageOf(task) {
@@ -2472,8 +2452,8 @@ function renderLayer2(report) {
     const roster = (state.people ?? []).filter((p) => p.clickupUserId);
     const byId = new Map();
     for (const t of open) {
-      // By owner: who keeps it moving. By assignee: who is doing the work right now.
-      const who = sprintGroup === "assignee" ? doing(t) : accountable(t);
+      // By person: the assignees.
+      const who = doing(t);
       if (!who.length) who.push({ id: "", name: "Unassigned" });
       for (const p of who) {
         if (!byId.has(p.id)) byId.set(p.id, { title: p.name, tasks: [] });
@@ -2523,7 +2503,7 @@ function renderLayer2(report) {
     ${delta.hasBaseline ? "" : `<div class="note"><strong>First run.</strong> There is no previous snapshot, so there is no day over day comparison yet.</div>`}
     <div class="bar sp-bar">
       <div class="dod-windows" role="group" aria-label="Group by">
-        ${[["person", "By owner"], ["assignee", "By assignee"], ["stage", "By what it waits on"]].map(([id, label]) => `<button type="button" class="ghost dod-window${id === sprintGroup ? " on" : ""}" data-sprint-group="${id}" aria-pressed="${id === sprintGroup}">${esc(label)}</button>`).join("")}
+        ${[["person", "By person"], ["stage", "By what it waits on"]].map(([id, label]) => `<button type="button" class="ghost dod-window${id === sprintGroup ? " on" : ""}" data-sprint-group="${id}" aria-pressed="${id === sprintGroup}">${esc(label)}</button>`).join("")}
       </div>
       ${swingSelect}
       <span class="meta">${esc(plural(open.length, "open ticket", "open tickets"))}${sprintSwing ? ` on ${esc(sprintSwing === NO_SWING ? "no Big Swing" : sprintSwing)}` : ""}, worst first</span>
@@ -2565,8 +2545,6 @@ const NEXT_ACTIONS = [
 const RULE_ACTION = {
   "clickup.stalled": "nudge",
   "clickup.stale_in_status": "nudge",
-  "clickup.no_task_owner": "fix",
-  "clickup.multiple_task_owners": "fix",
   "clickup.no_big_swing_set": "fix",
 };
 
@@ -2577,7 +2555,7 @@ function nextActionOf(flag) {
     const task = state.flagCtx?.tasks.get(baseId(subjectOf(flag).id));
     // Alex's own ticket is a reply only when nobody else is assigned; otherwise the nudge
     // goes to the assignee, as the drafted nudge does.
-    if (task && ownersOf(task).some(isMe) && !doersOf(task).some((p) => !isMe(p))) return "reply";
+    if (task && doersOf(task).some(isMe) && !doersOf(task).some((p) => !isMe(p))) return "reply";
   }
   return own;
 }
@@ -2988,7 +2966,7 @@ function renderDayOverDay(delta) {
   }
   for (const t of ch.newTasks) Object.assign(row(t), { move: "new", to: t.status });
   for (const t of ch.disappeared) Object.assign(row(t), { move: "gone", from: t.status });
-  for (const [list, what] of [[ch.assigneeChanges, "assignee"], [ch.ownerChanges, "owner"], [ch.priorityChanges, "priority"]]) {
+  for (const [list, what] of [[ch.assigneeChanges, "assignee"], [ch.ownerChanges ?? [], "owner"], [ch.priorityChanges, "priority"]]) {
     for (const t of list) row(t).notes.push({ what, from: t.from, to: t.to });
   }
   for (const t of ch.newComments) row(t).comments.push({ added: t.added, user: t.latest?.user, text: t.latest?.text });
@@ -5696,7 +5674,7 @@ function personData(person) {
   const d = report.detail ?? {};
   const id = String(person.clickupUserId ?? "");
   const tasks = (d.clickup?.tasks ?? []).filter((t) =>
-    [...(t.taskOwners ?? []), ...(t.assignees ?? [])].some((u) => String(u.id) === id || isPerson(u.username, person)),
+    (t.assignees ?? []).some((u) => String(u.id) === id || isPerson(u.username, person)),
   );
   const open = tasks.filter((t) => t.bucket !== "done");
   const doneThisWeek = doneThisSprint(tasks);

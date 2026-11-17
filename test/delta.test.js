@@ -25,12 +25,6 @@ test("assignee change is detected", () => {
   assert.equal(delta.changes.assigneeChanges[0].to, "rey");
 });
 
-test("owner change is detected, separately from assignee", () => {
-  const delta = run([task()], [task({ taskOwners: [{ id: "u2", username: "rey" }] })]);
-  assert.equal(delta.changes.ownerChanges.length, 1);
-  assert.equal(delta.changes.assigneeChanges.length, 0, "an owner change is not an assignee change");
-});
-
 test("leadership priority change is detected", () => {
   const delta = run([task()], [task({ leadershipPriority: { optionId: "opt_ship", label: "Shipping threshold test" } })]);
   assert.equal(delta.changes.priorityChanges.length, 1);

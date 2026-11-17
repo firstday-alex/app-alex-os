@@ -27,7 +27,7 @@ One endpoint does the core job: `GET /api/v2/list/{list_id}/task`.
 - `subtasks` follows `config/clickup.json`.
 
 Each task comes back with status, assignees, `date_updated`, `date_closed`, priority, due
-date and a `custom_fields` array, so **Task Owner** and **Leadership Priority** ride along
+date and a `custom_fields` array, so **ROCK** and **TACTIC** ride along
 in the same call. No second request per task.
 
 ## Custom fields
@@ -51,12 +51,12 @@ cannot burn through the rate limit.
 
 ## Task Ownership Model
 
-The **Task Owner** field is separate from assignee. The owner drives the task; assignees
-execute pieces of it. The owner is accountable for divvying up the work and keeping the
-task moving, can pull other people in, and stays accountable for movement even when the
-work crosses several people.
+Ownership lives on the rocks: each rock has one owner, and that is the source of truth for
+who is accountable for an outcome. On a ticket, the **assignees** are who it belongs to:
+who it is followed up with and who gets the kudos. (The Project Owner field was retired on
+2026-11-17 and is not read.)
 
-A task with no Task Owner is flagged: nobody is accountable for keeping it moving.
+A task with nobody assigned is flagged: nobody is following it up.
 
 ## The daily readout
 
@@ -110,8 +110,7 @@ marker is what accumulates unnoticed, so only those count.
 Distinct **Big Swings** are counted, not distinct tickets. Several tickets under one Big
 Swing are one big swing, which is the point of the rule.
 
-The person accountable for a ticket is its **Task Owner**, falling back to its assignees
-when no owner is set.
+The person accountable for a ticket is its assignees.
 
 ## Statuses
 

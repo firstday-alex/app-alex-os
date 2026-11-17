@@ -28,7 +28,6 @@ export function task(overrides = {}) {
     statusType: "custom",
     bucket: "inProgress",
     assignees: [{ id: "u1", username: "dana" }],
-    taskOwners: [{ id: "u1", username: "dana" }],
     leadershipPriority: { optionId: "opt_sub", label: "Subscription upsell" },
     priority: null,
     dueDate: null,
