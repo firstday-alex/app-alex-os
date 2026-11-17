@@ -195,6 +195,8 @@ export function normalizeTask(task, { fieldMap, statusMap, logger }) {
     dueDate: task.due_date ? Number(task.due_date) : null,
     dateUpdated: task.date_updated ? Number(task.date_updated) : null,
     dateClosed: task.date_closed ? Number(task.date_closed) : null,
+    // Set by ClickUp when a ticket enters a "done" type status, which "done (this sprint)" is.
+    dateDone: task.date_done ? Number(task.date_done) : null,
     dateCreated: task.date_created ? Number(task.date_created) : null,
     archived: Boolean(task.archived),
     closed: Boolean(task.date_closed) || task.status?.type === "closed",

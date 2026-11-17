@@ -2686,7 +2686,7 @@ function renderLastWeek(report) {
   }
   const wins = (lastWeek.wins = buildLastWeekWins(report.detail?.clickup?.tasks ?? [], { handleFor }));
   if (!wins.count) {
-    root.innerHTML = `<p class="sub">No tickets are in "complete" right now.</p>`;
+    root.innerHTML = `<p class="sub">No tickets are in last sprint's closed status ("dont use", formerly "complete") right now.</p>`;
     return;
   }
   const day = (ms) => new Date(ms).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });

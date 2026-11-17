@@ -9,11 +9,14 @@
 //   @Cristobal – QA – Checkout upsell – last update: 10/27
 //
 // "done (this sprint)" and "complete" are different statuses. The daily update carries
-// the first, never the second; accomplishments carry both.
+// the first, never the second; accomplishments carry both. On 2026-11-17 "complete" was
+// renamed "dont use" in ClickUp; it is still the closed status holding last sprint's work,
+// so both names mean the same here.
 
 // Statuses the daily update covers, furthest along first. "complete" is deliberately absent.
 export const UPDATE_STATUSES = ["done (this sprint)", "done", "ready for deploy", "vqa", "qa", "in review", "in-progress", "in progress", "to do"];
-const DONE_STATUSES = new Set(["done (this sprint)", "done", "complete"]);
+export const LAST_SPRINT_STATUSES = new Set(["complete", "dont use"]);
+const DONE_STATUSES = new Set(["done (this sprint)", "done", ...LAST_SPRINT_STATUSES]);
 
 const STATUS_LABEL = {
   "to do": "To do",
@@ -45,7 +48,7 @@ export function lastActivity(task) {
  * saw that, else its last update.
  */
 export function doneDate(task) {
-  return task.dateClosed ?? (task.statusAge?.exact ? task.statusAge.since : null) ?? task.dateUpdated ?? null;
+  return task.dateClosed ?? task.dateDone ?? (task.statusAge?.exact ? task.statusAge.since : null) ?? task.dateUpdated ?? null;
 }
 
 /** 10/27 */
@@ -136,7 +139,7 @@ export function listed(items) {
 }
 
 export function buildLastWeekWins(tasks, { handleFor }) {
-  const done = (tasks ?? []).filter((t) => !t.archived && statusKey(t) === "complete");
+  const done = (tasks ?? []).filter((t) => !t.archived && LAST_SPRINT_STATUSES.has(statusKey(t)));
   const dates = done.map(doneDate).filter(Boolean);
 
   const rocks = new Map();

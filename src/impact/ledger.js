@@ -23,7 +23,7 @@ export const historyKey = (dateKey) => `impact/history/${dateKey}.json`;
 export const UNSORTED = "Not yet sorted";
 export const KINDS = ["ticket", "test", "rock", "build"];
 const KEEP_RUNS = 90;
-const DONE = new Set(["done (this sprint)", "done", "complete"]);
+const DONE = new Set(["done (this sprint)", "done", "complete", "dont use"]);
 
 export function emptyLedger() {
   return { version: 1, items: {}, themes: [], runs: [], createdAt: null, updatedAt: null, reorganizedAt: null, changeNote: null };

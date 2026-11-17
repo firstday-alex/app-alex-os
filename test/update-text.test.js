@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildAccomplishments, buildUpdate, cleanName, groupsText, shortDate, windowStart } from "../public/update-text.js";
+import { buildAccomplishments, buildLastWeekWins, buildUpdate, cleanName, groupsText, shortDate, windowStart } from "../public/update-text.js";
 
 const DAY = 86_400_000;
 const handleFor = (u) => u.username.split(" ")[0];
@@ -125,4 +125,20 @@ test("last week's wins: only complete tickets, by the ClickUp ROCK field, then k
     "Last week's wins, by rock\nBundles: Gift box; Bundle page\nNo rock: Footer\n\nKudos\n🙌 Blake (Bundles): Gift box, Footer\n🙌 Robson (Bundles): Gift box, Bundle page",
   );
   assert.equal(lastWeekText(wins, new Set(["3"])).includes("Footer"), false, "an unticked ticket leaves both sections");
+});
+
+test("\"dont use\" (complete, renamed in ClickUp 2026-11-17) is last sprint's work; done (this sprint) is not", async () => {
+  const { statusBucket } = await import("../src/collectors/clickup.js");
+  const { readFileSync } = await import("node:fs");
+  const statusMap = JSON.parse(readFileSync(new URL("../config/clickup.json", import.meta.url))).statusMap;
+  assert.equal(statusBucket("dont use", statusMap), "done");
+  assert.equal(statusBucket("done (this sprint)", statusMap), "done");
+  const wins = buildLastWeekWins(
+    [
+      { id: "a", name: "Old win", status: "dont use", dateClosed: 1, assignees: [] },
+      { id: "b", name: "This sprint", status: "done (this sprint)", dateDone: 2, assignees: [] },
+    ],
+    { handleFor: (u) => u.username },
+  );
+  assert.deepEqual(wins.rocks.flatMap((r) => r.tasks.map((t) => t.id)), ["a"]);
 });

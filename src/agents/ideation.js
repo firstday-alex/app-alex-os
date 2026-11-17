@@ -16,9 +16,9 @@ import { fetchStandups } from "../collectors/standup.js";
 export const IDEATION_KEY = "ideation/latest.json";
 export const VERDICTS = ["successful", "unsuccessful", "too_early"];
 
-// "complete" is last sprint's work, moved there when the sprint rolled over. "backlog" was
-// never in the sprint.
-const NOT_THIS_SPRINT = new Set(["complete", "backlog"]);
+// "complete" (renamed "dont use" in ClickUp, 2026-11-17) is last sprint's work, moved there
+// when the sprint rolled over. "backlog" was never in the sprint.
+const NOT_THIS_SPRINT = new Set(["complete", "dont use", "backlog"]);
 const DESCRIPTION_CHARS = 3000;
 const COMMENT_CHARS = 600;
 const COMMENTS_PER_TICKET = 15;
