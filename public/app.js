@@ -4048,7 +4048,7 @@ $("rocks-list").addEventListener("change", async (event) => {
    before it is pasted. The text box is Alex's to edit; Copy takes what is in it. */
 
 const mine = { latest: null, status: null, loaded: false, polling: null, error: null, edited: null };
-const FACT_KIND = { plan: "Your last stand-up", clickup: "ClickUp", slack: "Slack", note: "Your notes", waiting: "Waiting on", reply: "Replies owed", week: "Quarter plan" };
+const FACT_KIND = { plan: "Your last stand-up", clickup: "ClickUp", slack: "Slack", note: "Your notes", waiting: "Waiting on", reply: "Replies owed", week: "Quarter plan", focus: "Today's rock moves" };
 
 async function loadMine() {
   const res = await fetch(`${FN}/mystandup`).then((r) => r.json()).catch(() => null);
@@ -5997,6 +5997,162 @@ function focusTest(testId, { attempt = 0 } = {}) {
   setTimeout(() => card.classList.remove("test-focused"), 2200);
 }
 
+/* ------------------------------ today's rock moves ------------------------------
+   Top of What needs you: the few things that move a rock today, each with what it moves
+   and why now, picked by Alex and ticked off. See src/focus/moves.js. */
+
+const moves = { data: null, loading: false, busy: false, adding: false, more: false, error: null, just: null };
+const COURSE_WORD = { off: "off course", drift: "drifting", on: "on course" };
+const WEEKDAY = (key) => new Date(`${key}T12:00:00Z`).toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
+
+async function loadMoves() {
+  if (moves.loading) return;
+  moves.loading = true;
+  try {
+    const res = await fetch(`${FN}/focus`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    moves.data = body;
+    moves.error = null;
+  } catch (err) {
+    moves.error = `Could not load today's rock moves: ${err.message}`;
+  } finally {
+    moves.loading = false;
+    renderMoves();
+  }
+}
+
+async function movesChange(change) {
+  if (moves.busy) return;
+  moves.busy = true;
+  try {
+    const res = await fetch(`${FN}/focus`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ change }) });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    moves.data = body;
+    moves.error = null;
+  } catch (err) {
+    moves.error = err.message;
+  } finally {
+    moves.busy = false;
+    renderMoves();
+  }
+}
+
+/** "Moves Bundles 2.0 (off course) · November: Upsell test live · Tactic: Builder, KPI +2% CVR" */
+function impactLine(i) {
+  if (!i) return "";
+  const bits = [
+    `Moves <strong>${esc(i.rockTitle)}</strong>${i.course && i.course !== "on" ? ` <span class="chip ${i.course === "off" ? "bad" : "warn"}">${esc(COURSE_WORD[i.course])}</span>` : ""}`,
+    i.milestone ? `${esc(i.milestone.label)} milestone: ${esc(i.milestone.deliverable)}` : "",
+    i.tactic ? `Tactic: ${esc(i.tactic.title)}${i.tactic.kpi ? `, KPI ${esc(i.tactic.kpi)}` : ""}` : "",
+  ].filter(Boolean);
+  return `<p class="mv-impact">${bits.join(" · ")}</p>${i.definitionOfDone ? `<p class="mv-dod meta">Done means: ${esc(i.definitionOfDone)}</p>` : ""}`;
+}
+
+function moveCard(m) {
+  const done = Boolean(m.doneAt);
+  const at = done ? new Date(m.doneAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+  return `<div class="mv-card${done ? " done" : ""}${moves.just === m.id ? " just" : ""}">
+      <div class="mv-head">
+        <span class="mv-text">${m.url ? `<a href="${esc(m.url)}" target="_blank" rel="noreferrer">${esc(m.text)}</a>` : esc(m.text)}</span>
+        <span class="mv-acts">
+          ${done
+            ? `<button type="button" class="link-btn" data-mv="undo" data-mv-id="${esc(m.id)}">Not done</button>`
+            : `<button type="button" class="sm" data-mv="done" data-mv-id="${esc(m.id)}">Done</button>
+               <button type="button" class="link-btn" data-mv="remove" data-mv-id="${esc(m.id)}" title="Take it off today's list">Drop</button>`}
+        </span>
+      </div>
+      ${m.why ? `<p class="mv-why">${done ? "" : "Why now: "}${esc(m.why)}</p>` : ""}
+      ${impactLine(m.impact)}
+      ${done ? `<p class="mv-ack">✓ Done ${esc(at)}. ${esc(m.impact?.rockTitle ?? "The rock")} moved today.</p>` : ""}
+    </div>`;
+}
+
+function suggestionRow(m) {
+  return `<div class="mv-sug">
+      <div class="mv-head">
+        <span class="mv-text">${m.url ? `<a href="${esc(m.url)}" target="_blank" rel="noreferrer">${esc(m.text)}</a>` : esc(m.text)}</span>
+        <span class="mv-acts"><button type="button" class="ghost sm" data-mv="pick" data-mv-id="${esc(m.id)}">Do this today</button></span>
+      </div>
+      <p class="mv-why">${esc(m.why)}</p>
+      ${impactLine(m.impact)}
+    </div>`;
+}
+
+function renderMoves() {
+  const host = $("focus");
+  if (!host) return;
+  const d = moves.data;
+  if (!d) {
+    host.innerHTML = moves.error ? `<p class="triage-error">${esc(moves.error)}</p>` : `<p class="meta">Loading today's rock moves…</p>`;
+    return;
+  }
+  const open = d.picks.filter((p) => !p.doneAt);
+  const done = d.picks.filter((p) => p.doneAt);
+  const room = open.length < 3;
+  const sugs = room ? d.suggestions.slice(0, moves.more ? 6 : d.picks.length ? 2 : 3) : [];
+
+  const w = d.week;
+  const strip = w.days
+    .map((day) => `<span class="mv-day${day.done ? " hit" : day.dateKey === d.today ? " today" : ""}" title="${esc(day.dateKey)}: ${esc(day.done)} done of ${esc(day.picked)} picked">${esc(WEEKDAY(day.dateKey))}${day.done ? ` ✓${day.done > 1 ? day.done : ""}` : ""}</span>`)
+    .join("");
+  const rockCounts = w.rocks.map((r) => `${esc(r.title)} (${esc(r.n)})`).join(" · ");
+  const shipped = d.shipped ?? [];
+
+  host.innerHTML = `
+    <div class="mv-top">
+      <div class="start-here-head"><h2>Today's rock moves</h2><span class="q-summary">${
+        d.picks.length ? `<span class="meta">${esc(done.length)} of ${esc(d.picks.length)} done</span>` : `<span class="meta">Pick up to 3 before the queue</span>`
+      }</span></div>
+      ${moves.error ? `<p class="triage-error">${esc(moves.error)}</p>` : ""}
+      ${d.picks.length ? `<div class="mv-list">${[...open, ...done].map(moveCard).join("")}</div>` : ""}
+      ${sugs.length ? `<p class="q-label">${d.picks.length ? "More that would move a rock" : "What would move a rock today"} <span class="meta">from the rock check, this week's plan and your tickets on rocks</span></p>
+        <div class="mv-list">${sugs.map(suggestionRow).join("")}</div>
+        ${d.suggestions.length > sugs.length || moves.more ? `<button type="button" class="link-btn" data-mv="more">${moves.more ? "Fewer" : `${d.suggestions.length - sugs.length} more`}</button>` : ""}` : ""}
+      ${!d.suggestions.length && !d.picks.length ? `<p class="sub">Nothing suggested: every rock is on course and nothing on a rock is planned or yours this week. Add your own below.</p>` : ""}
+      ${room ? (moves.adding
+        ? `<form class="mv-add" data-mv-form>
+            <input type="text" name="text" maxlength="200" placeholder="What will you do today?" required>
+            <select name="rockId" required aria-label="Rock it moves"><option value="">Rock it moves…</option>${d.rocks.map((r) => `<option value="${esc(r.id)}">${esc(r.title)}</option>`).join("")}</select>
+            <button type="submit" class="sm">Add</button><button type="button" class="link-btn" data-mv="cancel">Cancel</button>
+          </form>`
+        : `<button type="button" class="link-btn" data-mv="add">+ Add your own rock move</button>`) : ""}
+      <div class="mv-week">
+        <span class="meta">This week</span> ${strip}
+        <span class="meta">${esc(plural(w.done, "rock move", "rock moves"))} done${rockCounts ? `: ${rockCounts}` : ""}${shipped.length ? ` · ${esc(plural(shipped.length, "ticket", "tickets"))} on rocks shipped` : ""}</span>
+        ${shipped.length ? `<details class="mv-shipped"><summary class="meta">Shipped on rocks this week</summary><ul class="plain">${shipped
+          .map((t) => `<li>✓ ${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)} <span class="meta">${esc(t.rockTitle ?? "")} · ${esc(t.doneOn)}</span></li>`)
+          .join("")}</ul></details>` : ""}
+      </div>
+    </div>`;
+}
+
+$("focus")?.addEventListener("click", (event) => {
+  const b = event.target.closest("[data-mv]");
+  if (!b) return;
+  const id = b.dataset.mvId;
+  const act = b.dataset.mv;
+  if (act === "more") { moves.more = !moves.more; return renderMoves(); }
+  if (act === "add") { moves.adding = true; renderMoves(); return $("focus").querySelector("[data-mv-form] input")?.focus(); }
+  if (act === "cancel") { moves.adding = false; return renderMoves(); }
+  if (act === "pick") return movesChange({ pick: { id } });
+  if (act === "done") { moves.just = id; return movesChange({ done: id }); }
+  if (act === "undo") return movesChange({ undo: id });
+  if (act === "remove") return movesChange({ remove: id });
+});
+
+$("focus")?.addEventListener("submit", (event) => {
+  const form = event.target.closest("[data-mv-form]");
+  if (!form) return;
+  event.preventDefault();
+  const text = form.text.value.trim();
+  const rockId = form.rockId.value;
+  if (!text || !rockId) return;
+  moves.adding = false;
+  movesChange({ pick: { text, rockId } });
+});
+
 function showView(name) {
   for (const section of document.querySelectorAll(".view")) {
     section.classList.toggle("hidden", section.id !== `view-${name}`);
@@ -6018,6 +6174,7 @@ function showView(name) {
   if ((name === "rocks" || name === "backlog") && !state.rocks) loadRocks();
   if (name === "setup" && !state.settings) loadSettings();
   if (name === "plan") loadPlan();
+  if (name === "readout") loadMoves();
   if (name === "people") renderPeople();
   if (name === "ideation" && !ideation.loaded) loadIdeation();
   if (name === "impact" && !impact.loaded) loadImpact();

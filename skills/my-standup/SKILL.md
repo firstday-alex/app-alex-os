@@ -32,13 +32,14 @@ Blockers: need X from Y person
 ## What goes on each line
 
 **Yesterday**: what Alex actually did on the previous working day. Best evidence first:
-tickets Alex closed or moved, Alex's comments, Alex's Slack messages that show work
+rock moves Alex marked done, tickets Alex closed or moved, Alex's comments, Alex's Slack messages that show work
 (reviewing, giving feedback, planning, a call). Alex's own Today line from the last
 stand-up says what was meant to happen; use it only where something else shows it
 happened, or where nothing contradicts it and it is the only record.
 
-**Today**: what Alex will do. Alex's open tickets in progress and anything due today or
-overdue first, then replies owed, this week's planned items, and anything Alex said in
+**Today**: what Alex will do. Rock moves Alex picked for today ("focus" facts) lead the
+line: Alex chose them as the highest-value work. Then Alex's open tickets in progress and
+anything due today or overdue, then replies owed, this week's planned items, and anything Alex said in
 Slack or a note they would do today. Carry over yesterday's unfinished item when the
 facts show it is still open.
 

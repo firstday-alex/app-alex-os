@@ -955,3 +955,27 @@ ul.plain .qp-sig { list-style: none; }
 .ms-why { margin: 4px 0; }
 .ms-why ul { margin: 4px 0 8px 14px; font-size: 13px; }
 .ms-why li { margin: 2px 0; }
+
+/* ------------------------------ today's rock moves ------------------------------ */
+.focus .mv-list { display: grid; gap: 8px; margin-bottom: 8px; }
+.mv-card, .mv-sug { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--green); border-radius: 4px; padding: 10px 12px; }
+.mv-sug { border-left-color: var(--line); background: transparent; }
+.mv-card.done { background: #eef4ef; }
+.mv-card.just { animation: mv-pop 0.6s ease-out; }
+@keyframes mv-pop { 0% { transform: scale(0.98); } 60% { transform: scale(1.01); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .mv-card.just { animation: none; } }
+.mv-head { display: flex; gap: 10px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
+.mv-text { font-weight: 600; white-space: normal; flex: 1 1 280px; min-width: 0; }
+.mv-card.done .mv-text { text-decoration: line-through; text-decoration-color: var(--green); }
+.mv-acts { display: flex; gap: 8px; align-items: baseline; flex-shrink: 0; }
+.mv-why, .mv-impact, .mv-dod, .mv-ack { margin: 4px 0 0; white-space: normal; }
+.mv-why { color: var(--ink-soft, inherit); }
+.mv-ack { color: var(--green); font-weight: 600; }
+.mv-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+.mv-add input[type="text"] { flex: 1 1 260px; min-width: 0; }
+.mv-week { display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; margin: 10px 0 4px; }
+.mv-day { border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; font-size: 0.85em; }
+.mv-day.hit { background: #eef4ef; border-color: var(--green); color: var(--green); font-weight: 600; }
+.mv-day.today { border-style: dashed; }
+.mv-shipped { flex-basis: 100%; }
+.mv-shipped ul.plain { list-style: none; padding-left: 0; margin: 4px 0; }

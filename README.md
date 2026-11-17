@@ -94,7 +94,7 @@ src/
   pipeline.js      collector -> delta -> render -> send
 netlify/functions/ the 8 AM trigger, the pipeline, the dashboard API, the Slack endpoints
 public/            the dashboard
-test/              528 tests, no network, no API keys needed
+test/              532 tests, no network, no API keys needed
 scripts/           run the pipeline locally, and a syntax check
 ```
 
@@ -108,7 +108,7 @@ testable, and it is why the tests need no network and no credentials.
 
 ```bash
 npm install
-npm test                    # 528 tests. no network, no keys.
+npm test                    # 532 tests. no network, no keys.
 npm run check               # parses every source and config file
 
 cp .env.example .env        # then fill in the tokens you have
@@ -272,6 +272,7 @@ The menu (☰) holds the rest:
 
 | Where | What it is for |
 |---|---|
+| **Today's rock moves** (top of What needs you) | Up to 3 things a day that move a rock, picked before the queue (`src/focus/moves.js`, `netlify/functions/focus.mjs`). Suggested from the decision each off-course or drifting rock is waiting on, this week's Quarter plan items, and your own open tickets on a rock; each says why now and what it moves: the rock and its course, this month's milestone, the tactic and its KPI, and the rock's definition of done, all copied from the rocks and ClickUp. Or add your own on a rock. Done ticks it off with the time; the week strip counts rock moves per day and per rock, with the tickets on rocks you shipped. Stored as `focus/<day>.json`; My stand-up reads yesterday's done moves and today's picks. |
 | **What needs you** (Today) | The landing page. Your queue: everything open, ranked, the top 3 in full and the rest one line each, with a Hidden or handled tray so × never loses anything (Undo for 8 seconds too). Routine sprint checks at P2 (overdue, not started, carried over, nobody assigned, stuck) fold into one line per person (`public/flag-groups.js`, shared with the Slack readout), with one drafted nudge for all of that person's tickets, Done all, and Hide all for today. P1s, tests and replies owed stay on their own. At the bottom, the **Rule check** (`src/delta/rule-health.js`): for each rule over the last two weeks of readouts, how many flags it raised and how many were acted on, cleared on their own, or sat ignored. A rule you never act on whose flags sit untouched is suggested for Hygiene, and one click moves it there (or back) from the next run; P1 rules cannot be moved. Then the week in review, store numbers, and every flag to triage: Done, Snooze, Waiting on, Not a problem, Draft a nudge, and quick fixes on rock flags. A ticket with nobody assigned has a picker on its card (and one for all of them on the grouped line): Assign in ClickUp adds that person as an assignee (`netlify/functions/ticket-assignee.mjs`, the app's one ClickUp write: only adding an assignee, only roster people, only on tickets the latest readout shows with nobody assigned, each write recorded in `clickup/writes/`) and marks the card Done. |
 | **Tests** | Each test's readout, with the 12 month value projection. `#tests/<experience id>` opens one. |
 | **Setup** | The LTV multipliers and the decisions still open. |

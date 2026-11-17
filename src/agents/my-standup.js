@@ -20,6 +20,8 @@
 //   waiting   flags Alex marked "Waiting on someone": the blockers
 //   reply     replies Alex owes, from the readout
 //   week      this week's Quarter plan items not yet done
+//   focus     Today's rock moves: the ones done on the previous working day, and the ones
+//             picked for today (src/focus/moves.js)
 //
 // Then one Anthropic call writes the three lines, citing the fact ids behind each. Code
 // drops any cited id that does not exist and flags a line that cites nothing, so every
@@ -28,6 +30,7 @@
 import { betaJSONSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/beta/json-schema";
 import { ask, readSkill } from "./anthropic.js";
 import { fetchStandups, slackGet } from "../collectors/standup.js";
+import { FocusStore } from "../focus/moves.js";
 import { xfSince, namedText } from "../collectors/xf.js";
 import { notesForSpeech } from "../store/day-notes.js";
 import { FlagLedger, activeTriage } from "../store/flag-ledger.js";
@@ -69,13 +72,16 @@ const mineBy = (alexId) => (t) =>
  *
  * @returns {{ facts: object[], style: string[], posted: object|null, since: string }}
  */
-export function standupFacts({ config, now, report, standups, slack, notes, waiting, plan }) {
+// One letter per kind, so no two kinds share an id prefix ("week" and "waiting" did).
+const PREFIX = { plan: "p", clickup: "c", reply: "r", week: "k", focus: "f", slack: "s", note: "n", waiting: "w" };
+
+export function standupFacts({ config, now, report, standups, slack, notes, waiting, plan, focus }) {
   const tz = config.system.timezone;
   const today = zonedDateKey(now, tz);
   const alex = config.people?.alex ?? {};
   const facts = [];
   const add = (kind, text, extra = {}) => {
-    const id = `${kind[0]}${facts.filter((f) => f.kind === kind).length + 1}`;
+    const id = `${PREFIX[kind] ?? kind[0]}${facts.filter((f) => f.kind === kind).length + 1}`;
     facts.push({ id, kind, text, ...extra });
   };
 
@@ -120,6 +126,12 @@ export function standupFacts({ config, now, report, standups, slack, notes, wait
   for (const f of (report?.flags ?? []).filter((f) => f.rule === "nextstep.reply_owed" && !f.triage).slice(0, 6)) add("reply", clip(f.message, 220));
   const week = weekStartOf(today);
   for (const p of (plan?.items ?? []).filter((p) => p.week === week && !p.done)) add("week", `Planned this week: ${clip(p.text, 160)}`);
+
+  // Today's rock moves: what Alex finished on the previous working day, and picked for today.
+  const rockOf = (m) => (m.impact?.rockTitle ? ` (moves ${m.impact.rockTitle})` : "");
+  for (const m of (focus?.yesterday?.picks ?? []).filter((m) => m.doneAt)) add("focus", `Done ${focus.yesterday.dateKey}, a rock move Alex picked: ${clip(m.text, 160)}${rockOf(m)}`);
+  for (const m of (focus?.yesterday?.picks ?? []).filter((m) => !m.doneAt)) add("focus", `Picked for ${focus.yesterday.dateKey} and not marked done: ${clip(m.text, 160)}${rockOf(m)}`);
+  for (const m of (focus?.today?.picks ?? []).filter((m) => !m.doneAt)) add("focus", `Picked as today's rock move: ${clip(m.text, 160)}${rockOf(m)}`);
 
   // Slack, Alex's own words.
   for (const m of (slack?.messages ?? []).slice(0, MAX_SLACK)) add("slack", `${m.day} in ${m.where}: ${clip(m.text)}`, { url: m.url ?? null, date: m.day });
@@ -229,7 +241,16 @@ export async function writeMyStandup({ store, config, env = process.env, logger,
     plan = null;
   }
 
-  const gathered = standupFacts({ config, now, report, standups, slack, notes: dayNotes, waiting, plan });
+  let focus = null;
+  try {
+    const moves = new FocusStore(store.backend, logger);
+    const todayKey = zonedDateKey(now, tz);
+    focus = { today: await moves.read(todayKey), yesterday: await moves.read(previousWorkingDayKey(todayKey, config.system.schedule?.workingWeekdays)) };
+  } catch {
+    focus = null;
+  }
+
+  const gathered = standupFacts({ config, now, report, standups, slack, notes: dayNotes, waiting, plan, focus });
   if (!gathered.facts.length) return { error: "Nothing to go on: no ClickUp activity, notes, Slack or earlier stand-up of yours was found.", notes };
 
   const yesterdayKey = previousWorkingDayKey(gathered.today, config.system.schedule?.workingWeekdays);
