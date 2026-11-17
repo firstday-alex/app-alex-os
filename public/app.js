@@ -1002,7 +1002,7 @@ const SNOOZE_NOTE = " It keeps aging while hidden, so a P2 can come back as a P1
 
 function triageActions(flag, { compact = false, fix = false } = {}) {
   const item = (act, label, help, extra = "") =>
-    `<div class="menu-row"><button type="button" class="menu-item" data-triage="${act}"${extra}>${esc(label)}</button><span class="info" tabindex="0" role="note" aria-label="${esc(help)}" data-tip="${esc(help)}">i</span></div>`;
+    `<div class="menu-row"><button type="button" class="menu-item" data-triage="${act}"${extra}>${esc(label)}</button><span class="act-info" tabindex="0" role="note" aria-label="${esc(help)}" data-tip="${esc(help)}">i</span></div>`;
   return `<div class="triage-actions">
       <button type="button" class="sm" data-triage="done" title="Handled. Hidden until the condition clears and comes back.">Done</button>
       <details class="act-menu">
