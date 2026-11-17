@@ -996,15 +996,19 @@ const ACTION_HELP = {
   snooze1: "Hides it until the next working day. If the problem is still there, it comes back.",
   snooze3: "Hides it for 3 working days, skipping weekends. If the problem is still there, it comes back.",
   snooze5: "Hides it for 5 working days. If the problem is still there, it comes back.",
+  done: "You have dealt with it. It leaves your queue and stays hidden while the same problem is raised. If it clears and happens again later, it comes back as new. Undo from Hidden or handled.",
+  advise: "Asks Claude for a recommendation on this flag: what to do, why, and the trade-offs, weighed against this quarter's rocks. One model call per click; a second click shows the same answer.",
   dismiss: "The flag is wrong, or this does not matter here. It stays hidden as long as the same problem is raised; if it clears and happens again later, it is new. Add why if you like: the Rule check counts these to find noisy rules.",
 };
 const SNOOZE_NOTE = " It keeps aging while hidden, so a P2 can come back as a P1.";
 
+const infoIcon = (help) => `<span class="act-info" tabindex="0" role="note" aria-label="${esc(help)}" data-tip="${esc(help)}">i</span>`;
+
 function triageActions(flag, { compact = false, fix = false } = {}) {
   const item = (act, label, help, extra = "") =>
-    `<div class="menu-row"><button type="button" class="menu-item" data-triage="${act}"${extra}>${esc(label)}</button><span class="act-info" tabindex="0" role="note" aria-label="${esc(help)}" data-tip="${esc(help)}">i</span></div>`;
+    `<div class="menu-row"><button type="button" class="menu-item" data-triage="${act}"${extra}>${esc(label)}</button>${infoIcon(help)}</div>`;
   return `<div class="triage-actions">
-      <button type="button" class="sm" data-triage="done" title="Handled. Hidden until the condition clears and comes back.">Done</button>
+      <span class="act-with-info"><button type="button" class="sm" data-triage="done">Done</button>${infoIcon(ACTION_HELP.done)}</span>
       <details class="act-menu">
         <summary class="btn-ghost sm">Take action ▾</summary>
         <div class="act-pop">
@@ -1019,7 +1023,7 @@ function triageActions(flag, { compact = false, fix = false } = {}) {
           ${item("dismiss-open", "Not a problem…", ACTION_HELP.dismiss)}
         </div>
       </details>
-      ${flag.advisable ? `<button type="button" class="ghost sm advise" data-flag="${esc(flag.id)}">${esc(state.advisorButtonText)}</button>` : ""}
+      ${flag.advisable ? `<span class="act-with-info"><button type="button" class="ghost sm advise" data-flag="${esc(flag.id)}">${esc(state.advisorButtonText)}</button>${infoIcon(ACTION_HELP.advise)}</span>` : ""}
     </div>
     <div class="triage-panel hidden"></div>`;
 }

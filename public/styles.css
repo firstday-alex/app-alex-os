@@ -945,3 +945,5 @@ ul.plain .qp-sig { list-style: none; }
 @media (max-width: 700px) {
   .act-info::after { left: auto; right: -6px; top: calc(100% + 6px); width: min(260px, 80vw); }
 }
+.act-with-info { display: inline-flex; align-items: center; }
+.act-with-info .act-info { margin-left: 5px; }
