@@ -988,23 +988,35 @@ function triageBanner(flag, t) {
 
 // Done and the advisor stay out; everything else that handles a flag sits under one menu.
 // A compact card keeps its quick fix folded until "Fix it here".
+/** What each action in Take action does, for the ⓘ beside it. */
+const ACTION_HELP = {
+  fix: "Opens this flag's quick fix right here on the card.",
+  nudge: "Writes a short message to the person on this, for you to copy and send yourself. Nothing is sent from here. Copying it marks the flag Waiting on them for 2 working days.",
+  waiting: "You have asked someone and are waiting to hear back. Pick who, and when to check back (2 working days unless you change it). It leaves your queue until then, and comes back if it still holds.",
+  snooze1: "Hides it until the next working day. If the problem is still there, it comes back.",
+  snooze3: "Hides it for 3 working days, skipping weekends. If the problem is still there, it comes back.",
+  snooze5: "Hides it for 5 working days. If the problem is still there, it comes back.",
+  dismiss: "The flag is wrong, or this does not matter here. It stays hidden as long as the same problem is raised; if it clears and happens again later, it is new. Add why if you like: the Rule check counts these to find noisy rules.",
+};
+const SNOOZE_NOTE = " It keeps aging while hidden, so a P2 can come back as a P1.";
+
 function triageActions(flag, { compact = false, fix = false } = {}) {
-  const item = (act, label, title = "", extra = "") =>
-    `<button type="button" class="menu-item" data-triage="${act}"${extra}${title ? ` title="${esc(title)}"` : ""}>${esc(label)}</button>`;
+  const item = (act, label, help, extra = "") =>
+    `<div class="menu-row"><button type="button" class="menu-item" data-triage="${act}"${extra}>${esc(label)}</button><span class="info" tabindex="0" role="note" aria-label="${esc(help)}" data-tip="${esc(help)}">i</span></div>`;
   return `<div class="triage-actions">
       <button type="button" class="sm" data-triage="done" title="Handled. Hidden until the condition clears and comes back.">Done</button>
       <details class="act-menu">
         <summary class="btn-ghost sm">Take action ▾</summary>
         <div class="act-pop">
-          ${compact && fix ? item("fix-toggle", "Fix it here") : ""}
-          ${item("nudge-open", "Draft a nudge", "A message for you to send yourself")}
-          ${item("waiting-open", "Waiting on…")}
+          ${compact && fix ? item("fix-toggle", "Fix it here", ACTION_HELP.fix) : ""}
+          ${item("nudge-open", "Draft a nudge", ACTION_HELP.nudge)}
+          ${item("waiting-open", "Waiting on…", ACTION_HELP.waiting)}
           <span class="menu-sep">Snooze</span>
-          ${item("snooze", "1 working day", "", ' data-days="1"')}
-          ${item("snooze", "3 working days", "", ' data-days="3"')}
-          ${item("snooze", "1 week", "", ' data-days="5"')}
+          ${item("snooze", "1 working day", ACTION_HELP.snooze1 + SNOOZE_NOTE, ' data-days="1"')}
+          ${item("snooze", "3 working days", ACTION_HELP.snooze3 + SNOOZE_NOTE, ' data-days="3"')}
+          ${item("snooze", "1 week", ACTION_HELP.snooze5 + SNOOZE_NOTE, ' data-days="5"')}
           <span class="menu-sep"></span>
-          ${item("dismiss-open", "Not a problem…")}
+          ${item("dismiss-open", "Not a problem…", ACTION_HELP.dismiss)}
         </div>
       </details>
       ${flag.advisable ? `<button type="button" class="ghost sm advise" data-flag="${esc(flag.id)}">${esc(state.advisorButtonText)}</button>` : ""}

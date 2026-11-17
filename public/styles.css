@@ -927,3 +927,21 @@ ul.plain .qp-sig { list-style: none; }
 .qp td, .qp tbody th { white-space: normal; }
 .qp-t, .qp-p-text { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 .quick-fix-rows > a.ql { align-self: flex-start; }
+
+/* ⓘ beside each Take action item: hover, or focus/tap, shows what it does. */
+.menu-row { display: flex; align-items: center; position: relative; }
+.menu-row .menu-item { flex: 1; }
+.info {
+  flex: none; width: 16px; height: 16px; margin: 0 6px 0 4px; border-radius: 50%; border: 1px solid var(--muted);
+  color: var(--muted); font: italic 700 10px/14px Georgia, serif; text-align: center; cursor: help; position: relative;
+}
+.info:hover, .info:focus { color: #fff; background: var(--green); border-color: var(--green); outline: none; }
+.info::after {
+  content: attr(data-tip); display: none; position: absolute; z-index: 30; left: calc(100% + 10px); top: -6px; width: 260px;
+  font: 400 12px/1.45 ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif; color: var(--ink); text-align: left;
+  background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; box-shadow: 0 6px 18px rgba(28, 43, 42, .16);
+}
+.info:hover::after, .info:focus::after { display: block; }
+@media (max-width: 700px) {
+  .info::after { left: auto; right: -6px; top: calc(100% + 6px); width: min(260px, 80vw); }
+}
