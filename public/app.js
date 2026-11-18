@@ -363,12 +363,12 @@ function triageShort(t) {
 }
 
 /** One line: severity, what, who and how long, the main link, and Done / × (or Bring back). */
-function queueRow(flag) {
+function queueRow(flag, { also = 0 } = {}) {
   const ctx = flagContext(flag);
   const t = triageOf(flag);
   const link = ctx.links.find((l) => l.clickup) ?? ctx.links.find((l) => l.external) ?? ctx.links.find((l) => !l.more);
   const age = flag.isNew ? "new today" : flag.openDays ? `${plural(flag.openDays, "day", "days")} open` : "";
-  const meta = [ctx.owners.join(", "), age, flag.escalated ? "escalated" : "", t ? triageShort(t) : ""].filter(Boolean).join(" · ");
+  const meta = [ctx.owners.join(", "), age, flag.escalated ? "escalated" : "", also ? `+${also} more on this ticket` : "", t ? triageShort(t) : ""].filter(Boolean).join(" · ");
   return `<div class="flag q-row sev-${esc(flag.severity)}"${t ? " data-triaged" : ""} data-flag="${esc(flag.id)}" data-key="${esc(keyOf(flag))}" data-layer="${esc(flag.layer)}">
       <span class="q-sev">${esc(SEV_SHORT[flag.severity] ?? flag.severity)}</span>
       <button type="button" class="q-msg" data-q-open="${esc(flag.id)}" title="Open the full card">${esc(flag.message)}</button>
@@ -824,7 +824,7 @@ function flagCard(flag, { compact = false, also = 0 } = {}) {
       <div class="flag sev-${esc(flag.severity)}${compact ? " ns-compact" : ""}"${t ? " data-triaged" : ""} data-flag="${esc(flag.id)}" data-key="${esc(keyOf(flag))}" data-layer="${esc(flag.layer)}">
         ${t ? "" : `<button type="button" class="flag-x" data-triage="hide-today" title="Hide for today. Back tomorrow if it still holds." aria-label="Hide for today">×</button>`}
         <p class="msg">${esc(flag.message)}</p>
-        <p class="meta">${esc(layerLabel(flag.layer))} · ${esc(flag.rule)}${ctx.owners.length ? ` · ${esc(ctx.owners.join(", "))}` : ""}</p>
+        <p class="meta" title="${esc(flag.rule)}">${esc(AREA_LABEL[flag.layer] ?? layerLabel(flag.layer))}${ctx.owners.length ? ` · ${esc(ctx.owners.join(", "))}` : ""}</p>
         ${badges || links ? `<div class="flag-foot">${links ? `<span class="quicklinks">${links}</span>` : ""}<span class="flag-badges">${badges}</span></div>` : ""}
         ${t ? triageBanner(flag, t) : `${fix}${triageActions(flag, { compact, fix: Boolean(fix) })}`}
         <div class="advice hidden"></div>
@@ -837,7 +837,7 @@ function flagCard(flag, { compact = false, also = 0 } = {}) {
    Intelligems page. Subject ids carry a suffix per rule (`<rockId>:status`,
    `<testId>:gate`), so they are matched on the part before the first colon. */
 
-const AREA_LABEL = { 1: "Leadership", cross: "Cross layer", 3: "Tests", 2: "Sprint", 0: "Store" };
+const AREA_LABEL = { 1: "Rocks", cross: "Team", 3: "Tests", 2: "Sprint", 0: "Store" };
 const AREA_ORDER = ["1", "cross", "3", "2", "0"]; // the same order sortFlags uses
 const NO_OWNER = "No owner";
 
@@ -2219,6 +2219,11 @@ function nextActionOf(flag) {
   return own;
 }
 
+/* Next steps on the Sprint page: the same compact rows as Your queue, grouped by what to
+   do (reply, decide, nudge, fix), with tabs to show one kind. A row opens to the full card. */
+const ns = { action: "", open: new Set(), all: new Set() };
+const NS_ROWS = 6;
+
 function renderNextSteps() {
   const root = $("next-steps");
   if (!root) return;
@@ -2227,41 +2232,72 @@ function renderNextSteps() {
   const handled = all.length - open.length;
   const sev = { p1: 0, attention: 1, prompt: 2, info: 3 };
 
-  root.innerHTML = open.length
-    ? NEXT_ACTIONS.map((a) => {
-        const sorted = open.filter((f) => nextActionOf(f) === a.id).sort((x, y) => (sev[x.severity] ?? 9) - (sev[y.severity] ?? 9));
-        // One card per ticket per action: "stalled" and "stuck in its status" are often the
-        // same ticket and the same nudge. The others ride along as a count.
-        const seen = new Map();
-        const list = [];
-        for (const f of sorted) {
-          const sub = subjectOf(f);
-          const k = sub.type === "task" ? `task:${baseId(sub.id)}` : f.key ?? f.id;
-          if (seen.has(k)) seen.get(k).also += 1;
-          else {
-            const entry = { flag: f, also: 0 };
-            seen.set(k, entry);
-            list.push(entry);
-          }
-        }
-        if (!list.length) return "";
-        const card = ({ flag, also }) => flagCard(flag, { compact: true, also });
-        const head = `<span class="ns-label">${esc(a.label)}</span> <span class="ns-n">${esc(list.length)}</span> <span class="meta">${esc(a.sub)}</span>`;
-        if (!a.show) {
-          return `<details class="ns-group ns-folded"><summary>${head}</summary>${list.map(card).join("")}</details>`;
-        }
-        const first = list.slice(0, a.show);
-        const rest = list.slice(a.show);
-        return `<section class="ns-group ns-${a.id}">
-          <div class="ns-head">${head}</div>
-          ${first.map(card).join("")}
-          ${rest.length ? `<details class="ns-more"><summary>${esc(rest.length)} more</summary>${rest.map(card).join("")}</details>` : ""}
-        </section>`;
-      }).join("") + (handled ? `<p class="meta">${esc(plural(handled, "handled item is", "handled items are"))} under Waiting and Parked on What needs you (Today).</p>` : "")
-    : `<p class="sub">Nothing to do on the sprint right now.${handled ? ` ${esc(plural(handled, "handled item is", "handled items are"))} under Waiting and Parked on What needs you (Today).` : ""}</p>`;
-  const shown = root.querySelectorAll(".flag").length;
-  $("next-steps-count").textContent = shown ? `${shown} open` : "nothing open";
+  const groups = NEXT_ACTIONS.map((a) => {
+    const sorted = open.filter((f) => nextActionOf(f) === a.id).sort((x, y) => (sev[x.severity] ?? 9) - (sev[y.severity] ?? 9));
+    // One row per ticket per action: "stalled" and "stuck in its status" are often the
+    // same ticket and the same nudge. The others ride along as a count.
+    const seen = new Map();
+    const list = [];
+    for (const f of sorted) {
+      const sub = subjectOf(f);
+      const k = sub.type === "task" ? `task:${baseId(sub.id)}` : f.key ?? f.id;
+      if (seen.has(k)) seen.get(k).also += 1;
+      else {
+        const entry = { flag: f, also: 0 };
+        seen.set(k, entry);
+        list.push(entry);
+      }
+    }
+    return { a, list };
+  }).filter((g) => g.list.length);
+  const total = groups.reduce((n, g) => n + g.list.length, 0);
+  $("next-steps-count").textContent = total ? `${total} open` : "nothing open";
+  if (ns.action && !groups.some((g) => g.a.id === ns.action)) ns.action = "";
+
+  if (!total) {
+    root.innerHTML = `<div class="glass ns-glass"><p class="sub">Nothing to do on the sprint right now.${handled ? ` ${esc(plural(handled, "handled item is", "handled items are"))} under Handled in Your queue (Today).` : ""}</p></div>`;
+    return;
+  }
+  const tabs = `<div class="q-kinds ns-tabs" role="group" aria-label="Show">
+      <button type="button" class="q-kind all${ns.action ? "" : " on"}" data-ns-action="">All <span>${esc(total)}</span></button>
+      ${groups.map((g) => `<button type="button" class="q-kind ns-${g.a.id}${ns.action === g.a.id ? " on" : ""}" data-ns-action="${g.a.id}">${esc(g.a.label)} <span>${esc(g.list.length)}</span></button>`).join("")}
+    </div>`;
+  const close = (id) => `<button type="button" class="link-btn" data-ns-open="${esc(id)}">Close</button>`;
+  const row = ({ flag, also }) =>
+    ns.open.has(flag.id)
+      ? `<div class="q-opened">${flagCard(flag, { also })}${close(flag.id)}</div>`
+      : queueRow(flag, { also }).replace(`data-q-open="${esc(flag.id)}"`, `data-ns-open="${esc(flag.id)}"`);
+  const sections = groups
+    .filter((g) => !ns.action || g.a.id === ns.action)
+    .map((g) => {
+      const full = ns.action === g.a.id || ns.all.has(g.a.id);
+      const list = full ? g.list : g.list.slice(0, NS_ROWS);
+      const more = g.list.length - NS_ROWS;
+      return `<section class="ns-group ns-${g.a.id}">
+        <div class="ns-head"><span class="ns-pill">${esc(g.a.label)}</span><span class="ns-n">${esc(g.list.length)}</span><span class="ns-sub">${esc(g.a.sub)}</span></div>
+        <div class="q-list">${list.map(row).join("")}</div>
+        ${more > 0 && ns.action !== g.a.id ? `<button type="button" class="link-btn q-all" data-ns-all="${g.a.id}">${full ? "Show fewer" : `Show all ${g.list.length}`}</button>` : ""}
+      </section>`;
+    })
+    .join("");
+  root.innerHTML = `<div class="glass ns-glass">${tabs}${sections}${handled ? `<p class="meta ns-handled">${esc(plural(handled, "handled item is", "handled items are"))} under Handled in Your queue (Today).</p>` : ""}</div>`;
 }
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest("#next-steps")) return;
+  const tab = event.target.closest("[data-ns-action]");
+  const open = event.target.closest("[data-ns-open]");
+  const all = event.target.closest("[data-ns-all]");
+  if (tab) ns.action = tab.dataset.nsAction;
+  else if (open) {
+    const id = open.dataset.nsOpen;
+    ns.open.has(id) ? ns.open.delete(id) : ns.open.add(id);
+  } else if (all) {
+    const id = all.dataset.nsAll;
+    ns.all.has(id) ? ns.all.delete(id) : ns.all.add(id);
+  } else return;
+  renderNextSteps();
+});
 
 // One action menu open at a time; a click anywhere else closes it.
 document.addEventListener("click", (event) => {

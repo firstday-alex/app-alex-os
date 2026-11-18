@@ -744,19 +744,8 @@ ul.plain { margin: 0; padding-left: 18px; }
 /* -------------------------------- next steps -------------------------------- */
 /* Compact cards: the message already names the ticket and the person. */
 .ns .flag { padding: 8px 12px; margin-bottom: 6px; }
-.ns .flag .msg { margin-bottom: 0; }
-.ns .flag > .meta { display: none; }
+.ns .flag .msg { margin-bottom: 2px; }
 .ns .flag .triage-actions { margin-top: 8px; }
-.ns-group { margin-top: 14px; }
-.ns-head, .ns-folded > summary { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin: 0 0 6px; }
-.ns-folded > summary { cursor: pointer; }
-.ns-label { font-weight: 700; color: var(--green); text-transform: uppercase; letter-spacing: .03em; font-size: 13px; }
-.ns-n { font-weight: 700; font-variant-numeric: tabular-nums; }
-.ns-reply .ns-label { color: var(--red); }
-.ns-reply .flag { border-left-width: 4px; }
-.ns-more > summary { cursor: pointer; color: var(--green); font-size: 14px; padding: 4px 0 6px; }
-/* A compact card's quick fix stays folded until "Fix it here". */
-.flag.ns-compact:not(.open) .quick-fix { display: none; }
 .sp-stats { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 10px; font-size: 15px; }
 .sp-stat strong { font-size: 18px; font-variant-numeric: tabular-nums; margin-right: 2px; }
 .sp-stat.zero { color: var(--muted); }
@@ -1116,32 +1105,32 @@ body {
 .q-cleared { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--green); }
 .q-moved { display: block; margin: 8px 0 0; background: none; border: 0; padding: 0; font: inherit; font-size: 13px; color: var(--green); cursor: pointer; }
 .q-moved:hover { text-decoration: underline; }
-#start-here .q-label { margin: 16px 0 8px; }
+:is(#start-here, #next-steps) .q-label { margin: 16px 0 8px; }
 .q-tops { display: grid; gap: 10px; }
 .q-top { position: relative; padding-left: 36px; }
 .q-rank {
   position: absolute; left: 0; top: 12px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
   font-size: 13px; font-weight: 700; color: #fff; background: var(--ink);
 }
-#start-here .flag {
+:is(#start-here, #next-steps) .flag {
   background: rgba(255, 255, 255, 0.92); border: 1px solid #fff; border-radius: 12px;
   box-shadow: inset 3px 0 0 var(--line), 0 2px 8px rgba(28, 43, 42, 0.07); margin-bottom: 0;
 }
-#start-here .flag.sev-p1 { box-shadow: inset 3px 0 0 var(--red), 0 2px 8px rgba(28, 43, 42, 0.07); }
-#start-here .flag.sev-attention { box-shadow: inset 3px 0 0 var(--amber), 0 2px 8px rgba(28, 43, 42, 0.07); }
-#start-here .flag.sev-prompt { box-shadow: inset 3px 0 0 var(--green), 0 2px 8px rgba(28, 43, 42, 0.07); }
-#start-here .q-top > .flag { padding: 12px 16px; }
-#start-here .q-top > .flag .msg { font-size: 15.5px; font-weight: 500; line-height: 1.45; }
-#start-here .flag .meta { font-family: inherit; }
-#start-here .q-list { gap: 6px; }
-#start-here .flag.q-row { padding: 8px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.6); box-shadow: none; border-color: rgba(255, 255, 255, 0.8); transition: background .15s, box-shadow .15s; }
-#start-here .flag.q-row:hover { background: #fff; box-shadow: 0 2px 10px rgba(28, 43, 42, 0.08); }
-#start-here .q-sev { justify-self: start; padding: 2px 8px; border-radius: 999px; background: rgba(28, 43, 42, 0.07); }
-#start-here .sev-p1 .q-sev { background: var(--red-bg); }
-#start-here .sev-attention .q-sev { background: var(--amber-bg); }
-#start-here .flag .flag .flag, #start-here .flag.q-group .flag.q-row { background: rgba(255, 255, 255, 0.7); }
+:is(#start-here, #next-steps) .flag.sev-p1 { box-shadow: inset 3px 0 0 var(--red), 0 2px 8px rgba(28, 43, 42, 0.07); }
+:is(#start-here, #next-steps) .flag.sev-attention { box-shadow: inset 3px 0 0 var(--amber), 0 2px 8px rgba(28, 43, 42, 0.07); }
+:is(#start-here, #next-steps) .flag.sev-prompt { box-shadow: inset 3px 0 0 var(--green), 0 2px 8px rgba(28, 43, 42, 0.07); }
+:is(#start-here, #next-steps) .q-top > .flag { padding: 12px 16px; }
+:is(#start-here, #next-steps) .q-top > .flag .msg { font-size: 15.5px; font-weight: 500; line-height: 1.45; }
+:is(#start-here, #next-steps) .flag .meta { font-family: inherit; }
+:is(#start-here, #next-steps) .q-list { gap: 6px; }
+:is(#start-here, #next-steps) .flag.q-row { padding: 8px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.6); box-shadow: none; border-color: rgba(255, 255, 255, 0.8); transition: background .15s, box-shadow .15s; }
+:is(#start-here, #next-steps) .flag.q-row:hover { background: #fff; box-shadow: 0 2px 10px rgba(28, 43, 42, 0.08); }
+:is(#start-here, #next-steps) .q-sev { justify-self: start; padding: 2px 8px; border-radius: 999px; background: rgba(28, 43, 42, 0.07); }
+:is(#start-here, #next-steps) .sev-p1 .q-sev { background: var(--red-bg); }
+:is(#start-here, #next-steps) .sev-attention .q-sev { background: var(--amber-bg); }
+:is(#start-here, #next-steps) .flag .flag .flag, :is(#start-here, #next-steps) .flag.q-group .flag.q-row { background: rgba(255, 255, 255, 0.7); }
 .q-all { padding-left: 0; font-size: 13px; }
-@media (prefers-reduced-motion: reduce) { #start-here .flag.q-row { transition: none; } }
+@media (prefers-reduced-motion: reduce) { :is(#start-here, #next-steps) .flag.q-row { transition: none; } }
 @media (max-width: 560px) {
   .q-top { padding-left: 0; }
   .q-rank { position: static; margin-bottom: 6px; }
@@ -1214,7 +1203,7 @@ body {
   .flag, .rock-row, .sp-row, .test-card, .scroll, .su-card, .lw-person { background: rgba(250, 251, 252, 0.96); }
 }
 /* The queue keeps its own whiter cards on the band. */
-#start-here .flag { -webkit-backdrop-filter: none; backdrop-filter: none; }
+:is(#start-here, #next-steps) .flag { -webkit-backdrop-filter: none; backdrop-filter: none; }
 .res-group { margin: 6px 10px 2px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .res-group:first-child { margin-top: 2px; }
 
@@ -1237,7 +1226,7 @@ body {
 .q-tools select.sm { border-radius: 999px; border: 1px solid rgba(28, 43, 42, 0.15); background: #fff; }
 .q-search { margin-left: auto; flex: 0 1 220px; min-width: 140px; font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 999px; border: 1px solid rgba(28, 43, 42, 0.15); background: #fff; }
 .q-empty { margin: 12px 0; }
-#start-here .sev-info .q-sev { background: rgba(28, 43, 42, 0.06); }
+:is(#start-here, #next-steps) .sev-info .q-sev { background: rgba(28, 43, 42, 0.06); }
 @media (max-width: 640px) { .q-search { margin-left: 0; flex-basis: 100%; } }
 
 /* A card with an open menu sits above its neighbours, so the menu is never painted over
@@ -1253,3 +1242,22 @@ body {
 .rock-fix-name a { color: var(--ink); }
 .rock-fix-row select { max-width: 260px; border-radius: 999px; }
 .rock-fix-acts { display: flex; gap: 10px; align-items: center; }
+
+/* Next steps (Sprint): a glass panel of compact rows, grouped by what to do. */
+.ns-glass { margin: 8px 0 18px; padding: 14px 18px 12px; }
+.ns-tabs { margin-bottom: 4px; }
+.q-kind.ns-reply { background: var(--red-bg); color: var(--red); }
+.q-kind.ns-decide { background: var(--amber-bg); color: var(--amber-ink); }
+.q-kind.ns-nudge { background: var(--link-bg); color: var(--link); }
+.q-kind.ns-fix { background: rgba(28, 43, 42, 0.06); color: var(--muted); }
+.ns-group { margin-top: 14px; }
+.ns-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 8px; }
+.ns-pill { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 9px; border-radius: 999px; background: rgba(28, 43, 42, 0.07); color: var(--muted); }
+.ns-reply .ns-pill { background: var(--red-bg); color: var(--red); }
+.ns-decide .ns-pill { background: var(--amber-bg); color: var(--amber-ink); }
+.ns-nudge .ns-pill { background: var(--link-bg); color: var(--link); }
+.ns-n { font-weight: 700; font-variant-numeric: tabular-nums; }
+.ns-sub { font-size: 13px; color: var(--muted); }
+.ns-handled { margin: 12px 0 0; }
+/* Card label: area and people in plain words, not a rule code. */
+.flag .meta { font-family: inherit; }
