@@ -5596,8 +5596,10 @@ function renderMoves() {
   const done = d.picks.filter((p) => p.doneAt);
   const room = open.length < 3;
   const unblock = unblockFlags();
+  const reviews = myReviewTickets();
   // Unblocking others comes first; with nobody waiting, the rock work is shown.
-  const tab = moves.tab ?? (unblock.length ? "unblock" : "rock");
+  const tab = moves.tab ?? (unblock.length + reviews.length ? "unblock" : "rock");
+  const waitingN = unblock.length + reviews.length;
   const mineOpen = myOpenTickets();
   const rockCount = mineOpen.moving.length + mineOpen.todo.length + open.length;
   const sugPool = d.suggestions.filter((m) => m.source !== "ticket");
@@ -5628,11 +5630,11 @@ function renderMoves() {
         ${tab === "rock" && d.picks.length ? `<div class="mv-meter" title="${esc(done.length)} of ${esc(d.picks.length)} rock moves done" aria-label="${esc(done.length)} of ${esc(d.picks.length)} done">${meter}</div>` : ""}
       </header>
       <div class="mv-tabs" role="tablist" aria-label="Today's moves">
-        <button type="button" role="tab" class="mv-tab${tab === "unblock" ? " on" : ""}" aria-selected="${tab === "unblock"}" data-mv-tab="unblock">Unblock others${unblock.length ? `<span class="mv-badge alert">${esc(unblock.length)}</span>` : `<span class="mv-badge">0</span>`}</button>
+        <button type="button" role="tab" class="mv-tab${tab === "unblock" ? " on" : ""}" aria-selected="${tab === "unblock"}" data-mv-tab="unblock">Unblock others${waitingN ? `<span class="mv-badge alert">${esc(waitingN)}</span>` : `<span class="mv-badge">0</span>`}</button>
         <button type="button" role="tab" class="mv-tab${tab === "rock" ? " on" : ""}" aria-selected="${tab === "rock"}" data-mv-tab="rock">My rock work${rockCount ? `<span class="mv-badge">${esc(rockCount)}</span>` : ""}${d.picks.length ? `<span class="mv-tab-sub">${esc(done.length)}/${esc(d.picks.length)} done</span>` : ""}</button>
       </div>
       ${moves.error ? `<p class="triage-error">${esc(moves.error)}</p>` : ""}
-      ${tab === "unblock" ? unblockList(unblock) : `${myTicketsHtml()}${myTicketsHtml() ? `<div class="mv-sec"><span>Rock moves</span><span class="meta">Decisions and plan items that move a rock</span></div>` : ""}
+      ${tab === "unblock" ? unblockList(unblock, reviews) : `${myTicketsHtml()}${myTicketsHtml() ? `<div class="mv-sec"><span>Rock moves</span><span class="meta">Decisions and plan items that move a rock</span></div>` : ""}
       ${open.length ? `<div class="mv-list">${open.map(moveCard).join("")}</div>` : ""}
       ${done.length ? `<div class="mv-list mv-done-list">${done.map(moveCard).join("")}</div>` : ""}
       ${sugs.length ? `${d.picks.length || hidden > 0 || moves.more ? `<div class="mv-sec"><span>${d.picks.length ? "More that would move a rock" : ""}</span>${hidden > 0 || moves.more ? `<button type="button" class="link-btn" data-mv="more">${moves.more ? "Fewer" : `${hidden} more`}</button>` : ""}</div>` : ""}
@@ -5675,7 +5677,28 @@ function myOpenTickets() {
   );
   const isTodo = (t) => stageOf(t).id === "start" || String(t.status ?? "").toLowerCase() === "to do";
   const byDue = (a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity) || (b.statusAge?.days ?? 0) - (a.statusAge?.days ?? 0);
-  return { moving: mine.filter((t) => !isTodo(t)).sort(byDue), todo: mine.filter(isTodo).sort(byDue) };
+  const reviewing = (t) => stageOf(t).id === "review";
+  return {
+    moving: mine.filter((t) => !isTodo(t) && !reviewing(t)).sort(byDue),
+    todo: mine.filter(isTodo).sort(byDue),
+    review: mine.filter(reviewing).sort(byDue),
+  };
+}
+
+/**
+ * Alex's tickets in QA, VQA or review with no "waiting on you" flag yet: someone's work
+ * is waiting on Alex's check, so they count as unblocking others.
+ */
+function myReviewTickets() {
+  const flagged = new Set(unblockFlags().map((f) => baseId(subjectOf(f).id)));
+  return myOpenTickets().review.filter((t) => !flagged.has(String(t.id)));
+}
+
+/** "Robson is waiting on your QA", from the other people on the ticket. */
+function reviewWaiting(t) {
+  const others = (t.assignees ?? []).filter((u) => String(u.id) !== String(state.me)).map((u) => String(u.username ?? "").split(/\s+/)[0]).filter(Boolean);
+  const what = String(t.status ?? "").toLowerCase() === "vqa" ? "VQA" : String(t.status ?? "").toLowerCase() === "qa" ? "QA" : "review";
+  return others.length ? `${others.join(", ")} ${others.length === 1 ? "is" : "are"} waiting on your ${what}` : `Waiting on your ${what}`;
 }
 
 function dueText(t) {
@@ -5690,7 +5713,9 @@ function delegateText(task, to) {
   const f = ticketFacts(task);
   return [
     nudgeEmojis([task]),
-    `${to ? `@${to} ` : ""}Could you take "${task.name}" on, or help me move it forward? ${f.where}${f.comment ? ` ${f.comment}` : ""}`,
+    stageOf(task).id === "review"
+      ? `${to ? `@${to} ` : ""}Could you do the ${reviewWaiting(task).replace(/^.* your /, "")} on "${task.name}" for me? ${f.where}${f.comment ? ` ${f.comment}` : ""}`
+      : `${to ? `@${to} ` : ""}Could you take "${task.name}" on, or help me move it forward? ${f.where}${f.comment ? ` ${f.comment}` : ""}`,
     `Happy to walk you through where it is and what's left. Just want to make sure it keeps moving and doesn't wait on me. Feel free to adjust the approach however you think works best. Thanks!${task.url ? `\n${task.url}` : ""}`,
   ].filter(Boolean).join("\n\n");
 }
@@ -5705,7 +5730,7 @@ function myTicketRow(t) {
       <div class="mt-line">
         <span class="mt-status st-${esc(stage.id)}">${esc(t.status ?? "open")}</span>
         <span class="mt-name">${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)}</span>
-        <span class="mt-meta${late ? " late" : ""}">${esc(due)}${t.bigSwing?.label ? ` · ${esc(t.bigSwing.label)}` : ""}</span>
+        <span class="mt-meta${late ? " late" : ""}">${stage.id === "review" ? `${esc(reviewWaiting(t))} · ` : ""}${esc(due)}${t.bigSwing?.label ? ` · ${esc(t.bigSwing.label)}` : ""}</span>
         <span class="mt-acts">
           ${t.url ? `<a class="ql" href="${esc(t.url)}" target="_blank" rel="noreferrer">ClickUp ↗</a>` : ""}
           <button type="button" class="ghost sm" data-mv-delegate="${esc(t.id)}">${open ? "Close" : "Delegate"}</button>
@@ -5729,14 +5754,15 @@ function myTicketsHtml() {
 }
 
 /** The people waiting on Alex, one row each; a row opens to the full card (reply, Done, ×). */
-function unblockList(list) {
-  if (!list.length) return `<p class="sub mv-clear">✓ Nobody is waiting on you right now.</p>`;
+function unblockList(list, reviews = []) {
+  if (!list.length && !reviews.length) return `<p class="sub mv-clear">✓ Nobody is waiting on you right now.</p>`;
   const row = (f) =>
     moves.open.has(f.id)
       ? `<div class="q-opened">${flagCard(f)}<button type="button" class="link-btn" data-mv-open="${esc(f.id)}">Close</button></div>`
       : queueRow(f, { who: waitingWho(f) }).replace(`data-q-open="${esc(f.id)}"`, `data-mv-open="${esc(f.id)}"`);
   return `<p class="mv-unblock-sub">Someone is waiting on your reply or review. Clear these first so their work keeps moving.</p>
-    <div class="q-list">${list.map(row).join("")}</div>`;
+    ${list.length ? `<div class="q-list">${list.map(row).join("")}</div>` : ""}
+    ${reviews.length ? `<div class="mv-sec"><span>Your QA <span class="mt-n">${reviews.length}</span></span><span class="meta">Tickets waiting on your QA, VQA or review</span></div><div class="mt-list">${reviews.map(myTicketRow).join("")}</div>` : ""}`;
 }
 
 $("focus")?.addEventListener("click", (event) => {
@@ -5869,7 +5895,7 @@ const TOC_GROUPS = {
 /** The badge beside a contents entry: a number and whether it is urgent, or null. */
 function tocBadge(id) {
   if (id === "focus") {
-    const waiting = unblockFlags().length;
+    const waiting = unblockFlags().length + myReviewTickets().length;
     if (waiting) return { text: String(waiting), cls: "urgent" };
     const p = moves.data?.picks ?? [];
     return p.length ? { text: `${p.filter((x) => x.doneAt).length}/${p.length}`, cls: p.every((x) => x.doneAt) ? "good" : "" } : null;
