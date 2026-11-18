@@ -1174,3 +1174,46 @@ body {
   #refresh { font-size: 0; padding: 4px 10px; line-height: 1; }
   #refresh::before { content: "↻"; font-size: 18px; }
 }
+
+/* ---------------------------------- glass, app-wide ----------------------------------
+   Every card, list row, table box and write-up panel is frosted glass over the tinted page:
+   translucent white, blurred, a light edge and a soft shadow. Coloured left edges stay, so
+   severity and state still read at a glance. */
+:root {
+  --glass-card: rgba(255, 255, 255, 0.64);
+  --glass-card-hover: rgba(255, 255, 255, 0.86);
+  --glass-edge: rgba(255, 255, 255, 0.9);
+  --glass-shadow: 0 8px 26px rgba(16, 38, 70, 0.09), 0 1px 2px rgba(16, 38, 70, 0.06);
+}
+body {
+  background:
+    radial-gradient(45% 35% at 0% 0%, rgba(0, 132, 124, 0.20), transparent 70%),
+    radial-gradient(40% 35% at 100% 30%, rgba(71, 109, 237, 0.20), transparent 70%),
+    radial-gradient(50% 40% at 30% 100%, rgba(83, 104, 194, 0.18), transparent 70%),
+    #e6edf3;
+  background-attachment: fixed;
+}
+.flag, .rock, .rock-row, .sp-row, .test-card, .scroll, .qp-scroll, .tile, .person-points, .su-card, .ix-card, .ds-speech,
+.sb-rock, .im-note, .lw-person, .nm-box, .qp-course-rock, .dod-tile, .up-text, .metric {
+  background: var(--glass-card);
+  -webkit-backdrop-filter: blur(14px) saturate(140%); backdrop-filter: blur(14px) saturate(140%);
+  border-top-color: var(--glass-edge); border-right-color: var(--glass-edge); border-bottom-color: var(--glass-edge);
+  border-radius: 12px;
+  box-shadow: var(--glass-shadow);
+}
+.flag.sev-p1 { background: rgba(253, 238, 236, 0.72); }
+.flag.sev-attention { background: rgba(253, 247, 234, 0.72); }
+.rock-row:hover, .sp-row:hover, .test-card:hover { background: var(--glass-card-hover); }
+.flag .advice { background: rgba(255, 255, 255, 0.8); border-color: var(--glass-edge); border-radius: 10px; }
+/* Tables inside a glass box: no second background, light row lines. */
+.scroll table, .qp-scroll table { background: transparent; }
+.scroll th, .scroll td { border-color: rgba(28, 43, 42, 0.08); }
+/* The sticky first column of the quarter plan keeps a solid background so rows do not show through. */
+.qp .qp-name { background: #f4f7fa; }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .flag, .rock-row, .sp-row, .test-card, .scroll, .su-card, .lw-person { background: rgba(250, 251, 252, 0.96); }
+}
+/* The queue keeps its own whiter cards on the band. */
+#start-here .flag { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.res-group { margin: 6px 10px 2px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.res-group:first-child { margin-top: 2px; }

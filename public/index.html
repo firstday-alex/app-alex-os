@@ -35,14 +35,21 @@
     <details class="res-menu" id="resources">
       <summary class="tab">Resources</summary>
       <div class="res-list">
+        <p class="res-group">Reporting</p>
         <a href="https://ecomreporting.netlify.app/" target="_blank" rel="noreferrer">
           <strong>Ecom Reporting Hub ↗</strong>
           <span>Store numbers, month to date and the conversion funnel</span>
         </a>
+        <p class="res-group">Planning</p>
         <a href="https://ecom-fd-roadmap.netlify.app/" target="_blank" rel="noreferrer">
           <strong>Ecom Roadmap ↗</strong>
           <span>What is planned and when</span>
         </a>
+        <a href="#ecomrocks">
+          <strong>Ecom Rocks</strong>
+          <span>Every rock with its owner, state and last mini readout</span>
+        </a>
+        <p class="res-group">Testing</p>
         <a href="https://ecom-fd-roadmap.netlify.app/?view=tests" target="_blank" rel="noreferrer">
           <strong>AB Testing ↗</strong>
           <span>Tests and the ones ready for a call: ship, iterate or kill</span>
@@ -92,16 +99,6 @@
         <div id="attention"></div>
       </details>
 
-      <details class="section" id="sec-layer1">
-        <summary><h2>Rocks at a glance</h2><span class="sec-count" id="sec-layer1-count"></span><span class="sec-hint">Every leadership rock with its owner, state and last mini readout. Use it to check nothing is ownerless or gone quiet.</span></summary>
-        <div id="layer1"></div>
-      </details>
-
-      <details class="section" id="sec-cross">
-        <summary><h2>Who has rock work</h2><span class="sec-count" id="sec-cross-count"></span><span class="sec-hint">Each person's sprint split into tickets on a rock and business as usual. Use it to spot anyone with no rock work.</span></summary>
-        <div id="cross"></div>
-      </details>
-
       <details class="section" id="sec-hygiene">
         <summary><h2>Tidy-ups</h2><span class="sec-count" id="sec-hygiene-count"></span><span class="sec-hint">Minor ClickUp housekeeping, kept out of your queue so it never escalates. Clear it when you have a spare few minutes.</span></summary>
         <div id="hygiene"></div>
@@ -116,6 +113,14 @@
         <summary>Plain text readout, byte for byte what goes to Slack</summary>
         <pre id="report-text"></pre>
       </details>
+    </section>
+
+    <!-- -------------------------------- ecom rocks -------------------------------- -->
+    <!-- Opened from Resources. Every leadership rock in one table, from the latest readout. -->
+    <section class="view hidden" id="view-ecomrocks">
+      <h2>Ecom Rocks</h2>
+      <p class="sub">Every leadership rock with its owner, state and last mini readout, from the latest readout. Use it to check nothing is ownerless or gone quiet. To edit a rock, use Team › Rocks.</p>
+      <div id="layer1"></div>
     </section>
 
     <!-- ----------------------------------- rocks ---------------------------------- -->

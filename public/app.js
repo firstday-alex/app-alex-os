@@ -99,8 +99,14 @@ async function load() {
 
 /* --------------------------------- render --------------------------------- */
 
+// Rules that no longer exist. Each run recomputes flags, so they only appear in a readout
+// saved before the rule went; hiding them here keeps an older readout from showing them.
+// The Project Owner (Task Owner) field was deleted in ClickUp: assignees are who a ticket belongs to.
+const RETIRED_RULES = new Set(["clickup.no_task_owner", "clickup.multiple_task_owners", "clickup.owner_field_missing"]);
+
 function render() {
   const report = state.report;
+  report.flags = (report.flags ?? []).filter((f) => !RETIRED_RULES.has(f.rule));
   const s = report.summary;
 
   $("chip-mode").textContent = { official: "8 AM readout", test: "test send" }[report.mode] ?? "refreshed";
@@ -140,7 +146,6 @@ function render() {
   };
   part("the flags", () => renderAllFlags({ rebuildTools: true }));
   part("Layer 1", () => renderLayer1(report));
-  part("the cross layer", () => renderCross(report));
   part("the sprint", () => renderLayer2(report));
   part("the backlog", () => renderBacklog());
   part("the update", () => renderUpdate(report));
@@ -826,7 +831,8 @@ function flagContext(flag) {
     case "person":
       owners = subject.label ? [subject.label] : [];
       links.push({ label: "Their rocks", href: `#rocks/${encodeURIComponent(subject.label ?? "")}` });
-      links.push({ label: "Cross layer", href: "#readout/cross" });
+      // Person subject ids start with their ClickUp id (`<id>:carried:<week>`); the 1:1 page opens on it.
+      if (subject.id) links.push({ label: "Their 1:1", href: `#people/${encodeURIComponent(String(subject.id).split(":")[0])}` });
       break;
     case "field":
       // The dropdown flags are fixed by relinking rocks; the missing-field ones in Setup.
@@ -1705,34 +1711,6 @@ function renderLayer1(report) {
     ${detail.backlog?.length ? `<h3>Leadership backlog</h3><p>${detail.backlog.map((i) => esc(i.title)).join("; ")}</p>` : ""}`;
 }
 
-function renderCross(report) {
-  const section = report.sections.crossLayer;
-  const detail = report.detail?.crossLayer;
-  if (!section?.present) {
-    $("cross").innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
-    sectionCount("cross", "missing", true);
-    return;
-  }
-  const without = (detail.people ?? []).filter((p) => p.totalTickets > 0 && p.distinctBigSwings === 0).length;
-  sectionCount("cross", without ? `${plural(without, "person", "people")} with no big swing` : `${plural((detail.people ?? []).length, "person", "people")}, all with a big swing`, without > 0);
-  const rows = (detail.people ?? [])
-    .map(
-      (person) => `<tr>
-        <td>${esc(person.name)}</td>
-        <td>${person.distinctBigSwings === 0 ? "<strong>0</strong>" : esc(person.distinctBigSwings)}</td>
-        <td>${esc(person.bauTickets.length)}</td>
-        <td>${esc(person.unrelatedTickets.length)}</td>
-        <td>${esc(person.totalTickets)}</td>
-      </tr>`,
-    )
-    .join("");
-  $("cross").innerHTML = `
-    <p class="sub">Every person's sprint should carry at least one big swing tied to a live leadership priority. Business as usual is expected; it just should not crowd the big swing out.</p>
-    <div class="scroll"><table>
-      <thead><tr><th>Person</th><th>Big swings</th><th>BAU</th><th>Unrelated</th><th>Tickets</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="5">Nobody on the roster.</td></tr>'}</tbody>
-    </table></div>`;
-}
 
 /* ------------------------------- staleness -------------------------------
    One label, used by both the sprint table and the staleness view, so the two cannot
@@ -5214,7 +5192,7 @@ const drawerPinned = matchMedia("(min-width: 1280px)");
 const groupOf = (view) => NAV_GROUPS.find((g) => g.pages.some(([v]) => v === view)) ?? null;
 // The page last open in each area, so going back to an area lands where you were.
 const lastInGroup = {};
-const VIEW_TITLES = { setup: "Setup" };
+const VIEW_TITLES = { setup: "Setup", ecomrocks: "Ecom Rocks" };
 
 function renderSubtabs(name) {
   const group = groupOf(name);
@@ -5953,7 +5931,6 @@ const TOC_GROUPS = {
   readout: [
     { label: "Start here", items: [["focus", "Rock moves", "1 to 3 things that move a rock today"], ["start-here", "Your queue", "Then clear these, top first"]] },
     { label: "Go deeper", items: [["sec-attention", "Every open flag", "The full list, to filter or triage in bulk"]] },
-    { label: "Team and rocks", items: [["sec-layer1", "Rocks at a glance", "Each rock's owner, state and last readout"], ["sec-cross", "Who has rock work", "Each person's tickets: rock vs business as usual"]] },
     { label: "Housekeeping", items: [["sec-hygiene", "Tidy-ups", "Minor ClickUp fixes, kept out of the queue"], ["sec-rules", "Noisy rules", "Flags you ignore, and turning them down"]] },
   ],
 };
@@ -5968,8 +5945,8 @@ function tocBadge(id) {
   const n = Number((el?.textContent ?? "").match(/^\d+/)?.[0] ?? 0);
   if (!n) return null;
   const urgent = el.classList.contains("urgent");
-  if (["sec-cross", "sec-rules"].includes(id) && !urgent) return null;
-  return ["sec-attention", "sec-hygiene", "sec-cross", "sec-rules"].includes(id) ? { text: String(n), cls: urgent ? "urgent" : "" } : null;
+  if (id === "sec-rules" && !urgent) return null;
+  return ["sec-attention", "sec-hygiene", "sec-rules"].includes(id) ? { text: String(n), cls: urgent ? "urgent" : "" } : null;
 }
 
 function buildToc() {
