@@ -1376,3 +1376,12 @@ body:has(#view-ecomrocks:not(.hidden)) main { max-width: 1480px; }
   background: var(--link-bg); border-radius: 8px; padding: 6px 0;
 }
 .q-run-rows { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+
+/* Slack to-dos in Today's moves. */
+.sl-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "kind text acts" "kind meta acts"; column-gap: 10px; align-items: center; border-radius: 10px; background: rgba(255, 255, 255, 0.7); border: 1px solid rgba(255, 255, 255, 0.85); padding: 8px 12px; }
+.sl-kind { grid-area: kind; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; background: #f3e8f7; color: #6b2d82; }
+.sl-ask .sl-kind { background: var(--red-bg); color: var(--red); }
+.sl-text { grid-area: text; font-weight: 600; font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sl-meta { grid-area: meta; font-size: 12px; color: var(--muted); }
+.sl-row .q-acts { grid-area: acts; }
+.sl-note { margin: 4px 0 8px; }

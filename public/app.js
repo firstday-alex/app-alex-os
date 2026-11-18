@@ -5717,9 +5717,78 @@ const FOCUS_MIN = 25;
 const COURSE_WORD = { off: "off course", drift: "drifting", on: "on course" };
 const WEEKDAY = (key) => new Date(`${key}T12:00:00Z`).toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
 
+/* --------------------------- Slack to-dos (Today's moves) ---------------------------
+   Read live from Slack with Alex's user token (netlify/functions/slack-todos.mjs): messages
+   that @mention Alex (asks: Unblock others), his open reminders and saved messages (My work). */
+const slackTodo = { data: null, error: null, loading: false };
+async function loadSlackTodos() {
+  if (slackTodo.loading) return;
+  slackTodo.loading = true;
+  try {
+    const res = await fetch(`${FN}/slack-todos`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    slackTodo.data = body;
+    slackTodo.error = null;
+  } catch (err) {
+    slackTodo.error = err.message;
+  } finally {
+    slackTodo.loading = false;
+    renderMoves();
+  }
+}
+function slackWhen(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const today = new Date().toDateString() === d.toDateString();
+  return today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+function slackRow(i) {
+  const label = { ask: "Ask", reminder: "Reminder", saved: "Saved" }[i.kind];
+  const meta = i.kind === "ask"
+    ? `${i.from} in ${i.where} · ${slackWhen(i.at)}`
+    : i.kind === "reminder"
+      ? `${i.at ? (Date.parse(i.at) < Date.now() ? `was due ${slackWhen(i.at)}` : `due ${slackWhen(i.at)}`) : "no time set"}${i.recurring ? " · repeats" : ""}`
+      : `${i.from} · saved ${slackWhen(i.at)}`;
+  return `<div class="sl-row sl-${i.kind}">
+      <span class="sl-kind">${esc(label)}</span>
+      <span class="sl-text" title="${esc(i.text)}">${esc(i.text)}</span>
+      <span class="sl-meta">${esc(meta)}</span>
+      <span class="q-acts">
+        ${i.url ? `<a class="ql" href="${esc(i.url)}" target="_blank" rel="noreferrer">Open in Slack ↗</a>` : ""}
+        <button type="button" class="ghost sm" data-sl-done="${esc(i.key)}"${i.reminderId ? ` data-sl-reminder="${esc(i.reminderId)}"` : ""} title="${i.kind === "reminder" ? "Complete the reminder in Slack" : "Hide it here"}">Done</button>
+      </span>
+    </div>`;
+}
+function slackSection(kinds, title, sub) {
+  if (slackTodo.error) return kinds.includes("ask") ? "" : `<p class="meta sl-note">From Slack: ${esc(slackTodo.error)}</p>`;
+  const d = slackTodo.data;
+  if (!d) return `<p class="meta sl-note">Reading Slack…</p>`;
+  const items = kinds.flatMap((k) => d[k] ?? []);
+  const notes = kinds.includes("reminders") ? d.notes ?? [] : (d.notes ?? []).filter((n) => /mentions/.test(n));
+  if (!items.length && !notes.length) return "";
+  return `<div class="mv-sec"><span>${esc(title)} ${items.length ? `<span class="mt-n">${items.length}</span>` : ""}</span><span class="meta">${esc(sub)}</span></div>
+    ${items.length ? `<div class="mt-list">${items.map(slackRow).join("")}</div>` : ""}
+    ${notes.map((n) => `<p class="meta sl-note">${esc(n)}</p>`).join("")}`;
+}
+document.addEventListener("click", async (event) => {
+  const b = event.target.closest("[data-sl-done]");
+  if (!b) return;
+  b.disabled = true;
+  const res = await fetch(`${FN}/slack-todos`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ done: b.dataset.slDone, reminderId: b.dataset.slReminder || undefined }) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    b.disabled = false;
+    return alert(`Not done: ${body.error ?? `HTTP ${res.status}`}`);
+  }
+  for (const k of ["asks", "reminders", "saved"]) if (slackTodo.data?.[k]) slackTodo.data[k] = slackTodo.data[k].filter((i) => i.key !== b.dataset.slDone);
+  renderMoves();
+});
+
 async function loadMoves() {
   if (moves.loading) return;
   moves.loading = true;
+  if (!slackTodo.data && !slackTodo.loading) loadSlackTodos();
   try {
     const res = await fetch(`${FN}/focus`);
     const body = await res.json().catch(() => ({}));
@@ -5942,10 +6011,12 @@ function renderMoves() {
   const unblock = unblockFlags();
   const reviews = myReviewTickets();
   // Unblocking others comes first; with nobody waiting, the rock work is shown.
-  const tab = moves.tab ?? (unblock.length + reviews.length ? "unblock" : "rock");
-  const waitingN = unblock.length + reviews.length;
+  const asks = slackTodo.data?.asks ?? [];
+  const mySlack = (slackTodo.data?.reminders ?? []).length + (slackTodo.data?.saved ?? []).length;
+  const tab = moves.tab ?? (unblock.length + reviews.length + asks.length ? "unblock" : "rock");
+  const waitingN = unblock.length + reviews.length + asks.length;
   const mineOpen = myOpenTickets();
-  const rockCount = mineOpen.moving.length + mineOpen.todo.length + open.length;
+  const rockCount = mineOpen.moving.length + mineOpen.todo.length + open.length + mySlack;
   const sugPool = d.suggestions.filter((m) => m.source !== "ticket");
   const sugs = room ? sugPool.slice(0, moves.more ? 6 : d.picks.length ? 2 : 3) : [];
   const hidden = sugPool.length - sugs.length;
@@ -5975,10 +6046,10 @@ function renderMoves() {
       </header>
       <div class="mv-tabs" role="tablist" aria-label="Today's moves">
         <button type="button" role="tab" class="mv-tab${tab === "unblock" ? " on" : ""}" aria-selected="${tab === "unblock"}" data-mv-tab="unblock">Unblock others${waitingN ? `<span class="mv-badge alert">${esc(waitingN)}</span>` : `<span class="mv-badge">0</span>`}</button>
-        <button type="button" role="tab" class="mv-tab${tab === "rock" ? " on" : ""}" aria-selected="${tab === "rock"}" data-mv-tab="rock">My rock work${rockCount ? `<span class="mv-badge">${esc(rockCount)}</span>` : ""}${d.picks.length ? `<span class="mv-tab-sub">${esc(done.length)}/${esc(d.picks.length)} done</span>` : ""}</button>
+        <button type="button" role="tab" class="mv-tab${tab === "rock" ? " on" : ""}" aria-selected="${tab === "rock"}" data-mv-tab="rock">My work${rockCount ? `<span class="mv-badge">${esc(rockCount)}</span>` : ""}${d.picks.length ? `<span class="mv-tab-sub">${esc(done.length)}/${esc(d.picks.length)} done</span>` : ""}</button>
       </div>
       ${moves.error ? `<p class="triage-error">${esc(moves.error)}</p>` : ""}
-      ${tab === "unblock" ? unblockList(unblock, reviews) : `${myTicketsHtml()}${myTicketsHtml() ? `<div class="mv-sec"><span>Rock moves</span><span class="meta">Decisions and plan items that move a rock</span></div>` : ""}
+      ${tab === "unblock" ? unblockList(unblock, reviews) + slackSection(["asks"], "Asked in Slack", "Messages that @mention you, last two working days") : `${slackSection(["reminders", "saved"], "From Slack", "Your reminders and saved messages")}${myTicketsHtml()}${myTicketsHtml() ? `<div class="mv-sec"><span>Rock moves</span><span class="meta">Decisions and plan items that move a rock</span></div>` : ""}
       ${open.length ? `<div class="mv-list">${open.map(moveCard).join("")}</div>` : ""}
       ${done.length ? `<div class="mv-list mv-done-list">${done.map(moveCard).join("")}</div>` : ""}
       ${sugs.length ? `${d.picks.length || hidden > 0 || moves.more ? `<div class="mv-sec"><span>${d.picks.length ? "More that would move a rock" : ""}</span>${hidden > 0 || moves.more ? `<button type="button" class="link-btn" data-mv="more">${moves.more ? "Fewer" : `${hidden} more`}</button>` : ""}</div>` : ""}
@@ -6104,7 +6175,7 @@ function myTicketsHtml() {
 
 /** The people waiting on Alex, one row each; a row opens to the full card (reply, Done, ×). */
 function unblockList(list, reviews = []) {
-  if (!list.length && !reviews.length) return `<p class="sub mv-clear">✓ Nobody is waiting on you right now.</p>`;
+  if (!list.length && !reviews.length) return (slackTodo.data?.asks ?? []).length ? "" : `<p class="sub mv-clear">✓ Nobody is waiting on you in ClickUp right now.</p>`;
   const row = (f) =>
     moves.open.has(f.id)
       ? `<div class="q-opened">${flagCard(f)}<button type="button" class="link-btn" data-mv-open="${esc(f.id)}">Close</button></div>`
@@ -6238,13 +6309,13 @@ let tocTargets = [];
    short names and a count where a count says something. Other pages list their headings. */
 const TOC_GROUPS = {
   readout: [
-    { label: "Start here", items: [["focus", "Today's moves", "Unblock others, then your rock work"], ["start-here", "Your queue", "Everything else, with filters"]] },
+    { label: "Start here", items: [["focus", "Today's moves", "Unblock others, then your work"], ["start-here", "Your queue", "Everything else, with filters"]] },
   ],
 };
 /** The badge beside a contents entry: a number and whether it is urgent, or null. */
 function tocBadge(id) {
   if (id === "focus") {
-    const waiting = unblockFlags().length + myReviewTickets().length;
+    const waiting = unblockFlags().length + myReviewTickets().length + (slackTodo.data?.asks ?? []).length;
     if (waiting) return { text: String(waiting), cls: "urgent" };
     const p = moves.data?.picks ?? [];
     return p.length ? { text: `${p.filter((x) => x.doneAt).length}/${p.length}`, cls: p.every((x) => x.doneAt) ? "good" : "" } : null;
