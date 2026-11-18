@@ -363,7 +363,30 @@ function triageShort(t) {
   return TRIAGE_LABEL[t.status] ?? t.status;
 }
 
-/** One line: severity, what, who and how long, the main link, and Done / × (or Bring back). */
+/** Whom a flag's nudge goes to: the first person on it who is not Alex. */
+function nudgeTarget(flag) {
+  const me = String(state.alexName ?? "").toLowerCase();
+  return flagContext(flag).owners.find((o) => String(o).toLowerCase() !== me) ?? null;
+}
+// Replies Alex owes are his to answer, not someone to nudge.
+const canNudge = (flag) => Boolean(nudgeTarget(flag)) && !UNBLOCK_RULES.has(flag.rule);
+
+/* Nudge on a row: open the row's full card, then its nudge draft. */
+document.addEventListener("click", (event) => {
+  const b = event.target.closest("[data-q-nudge]");
+  if (!b) return;
+  const id = b.dataset.qNudge;
+  const row = b.closest(".q-row");
+  row?.querySelector("[data-q-open], [data-ns-open], [data-mv-open]")?.click();
+  requestAnimationFrame(() => {
+    const card = [...document.querySelectorAll(`.q-opened .flag[data-flag="${CSS.escape(id)}"]`)].find((el) => el.getClientRects().length);
+    if (!card) return;
+    openPanel(card, "nudge");
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+});
+
+/** One line: severity, what, who and how long, the main link, Nudge, and Done / × (or Bring back). */
 function queueRow(flag, { also = 0, who = null } = {}) {
   const ctx = flagContext(flag);
   const t = triageOf(flag);
@@ -378,7 +401,8 @@ function queueRow(flag, { also = 0, who = null } = {}) {
         ${link ? `<a class="ql" href="${esc(link.href)}"${link.external ? ' target="_blank" rel="noreferrer"' : ""}>${esc(link.label)}${link.external ? " ↗" : ""}</a>` : ""}
         ${t
           ? `<button type="button" class="ghost sm" data-triage="clear">Bring back</button>`
-          : `<button type="button" class="ghost sm" data-triage="done" title="Handled. Hidden until the condition clears and comes back.">Done</button>
+          : `${canNudge(flag) ? `<button type="button" class="ghost sm" data-q-nudge="${esc(flag.id)}" title="Draft a nudge to ${esc(nudgeTarget(flag))}, to copy or schedule in Slack">Nudge</button>` : ""}
+             <button type="button" class="ghost sm" data-triage="done" title="Handled. Hidden until the condition clears and comes back.">Done</button>
              <button type="button" class="q-x" data-triage="hide-today" title="Hide for today. It goes to Hidden or handled below, and is back tomorrow if it still holds." aria-label="Hide for today">×</button>`}
       </span>
     </div>`;
@@ -1783,6 +1807,16 @@ function nudgeText(flag) {
   const task = subject.type === "task" ? state.flagCtx?.tasks.get(baseId(subject.id)) : null;
   const to = peopleFor(flag)[0] ?? null;
   if (task) return ticketNudge(task, url, to);
+  // A flag about several tickets (carried over, not started, ...): one bullet per ticket.
+  const listed = (flag.values?.tickets ?? []).map((t) => state.flagCtx?.tasks.get(String(t.id)) ?? null).filter(Boolean);
+  if (listed.length) {
+    return [
+      nudgeEmojis(listed),
+      `${to ? `@${to} ` : ""}Can you give me a quick update on ${listed.length === 1 ? "this one" : "these"}?`,
+      listed.map((t) => { const f = ticketFacts(t); return `• "${t.name}": ${f.where} ${f.ask}${t.url ? ` ${t.url}` : ""}`; }).join("\n"),
+      NUDGE_CLOSE.replace("keep it moving", listed.length === 1 ? "keep it moving" : "keep them moving"),
+    ].filter(Boolean).join("\n\n");
+  }
   return `${to ? `@${to} ` : ""}Can you give me a quick update on this? ${flag.message}\n\nWhat's the next step, and when do you think it moves? ${NUDGE_CLOSE}${url ? `\n${url}` : ""}`;
 }
 
