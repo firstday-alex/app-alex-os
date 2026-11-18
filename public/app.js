@@ -215,6 +215,7 @@ function fmtDay(key) {
 /** Everything that shows flags, redrawn together so a triage moves a flag everywhere at once. */
 function renderAllFlags({ rebuildTools = false } = {}) {
   const flags = state.report?.flags ?? [];
+  if (moves.data) renderMoves();
   renderTopThree(flags);
   // The 1:1 view shows the same flags, so a triage there redraws it too.
   if (!$("view-people")?.classList.contains("hidden")) renderPeople();
@@ -363,12 +364,12 @@ function triageShort(t) {
 }
 
 /** One line: severity, what, who and how long, the main link, and Done / × (or Bring back). */
-function queueRow(flag, { also = 0 } = {}) {
+function queueRow(flag, { also = 0, who = null } = {}) {
   const ctx = flagContext(flag);
   const t = triageOf(flag);
   const link = ctx.links.find((l) => l.clickup) ?? ctx.links.find((l) => l.external) ?? ctx.links.find((l) => !l.more);
   const age = flag.isNew ? "new today" : flag.openDays ? `${plural(flag.openDays, "day", "days")} open` : "";
-  const meta = [ctx.owners.join(", "), age, flag.escalated ? "escalated" : "", also ? `+${also} more on this ticket` : "", t ? triageShort(t) : ""].filter(Boolean).join(" · ");
+  const meta = [who ?? ctx.owners.join(", "), age, flag.escalated ? "escalated" : "", also ? `+${also} more on this ticket` : "", t ? triageShort(t) : ""].filter(Boolean).join(" · ");
   return `<div class="flag q-row sev-${esc(flag.severity)}"${t ? " data-triaged" : ""} data-flag="${esc(flag.id)}" data-key="${esc(keyOf(flag))}" data-layer="${esc(flag.layer)}">
       <span class="q-sev">${esc(SEV_SHORT[flag.severity] ?? flag.severity)}</span>
       <button type="button" class="q-msg" data-q-open="${esc(flag.id)}" title="Open the full card">${esc(flag.message)}</button>
@@ -429,9 +430,10 @@ function groupRow(g) {
  */
 function inRockMoves(flags) {
   const d = moves.data;
-  if (!d) return new Set();
+  const unblock = new Set(flags.filter((f) => UNBLOCK_RULES.has(f.rule)).map((f) => f.id));
+  if (!d) return unblock;
   const rocks = new Set([...d.picks, ...d.suggestions].filter((m) => m.source === "course").map((m) => String(m.impact?.rockId)));
-  return new Set(flags.filter((f) => f.rule === "leadership.rock_off_course" && rocks.has(String(f.subject?.id ?? "").split(":")[0])).map((f) => f.id));
+  return new Set([...unblock, ...flags.filter((f) => f.rule === "leadership.rock_off_course" && rocks.has(String(f.subject?.id ?? "").split(":")[0])).map((f) => f.id)]);
 }
 
 /* The queue's filters: which pile (open, waiting, handled), what kind (P1, P2, decision,
@@ -495,7 +497,12 @@ function renderTopThree(flags) {
     : `${plural(pool.length, "item", "items")} ${f.view === "waiting" ? "waiting on someone" : "done, snoozed or hidden"}`;
   $("q-score").innerHTML = `<span class="q-big">${esc(openPool.length)}</span><span class="q-big-k">open</span>${cleared ? `<span class="q-cleared">✓ ${esc(cleared)} cleared</span>` : ""}`;
   $("q-moved").innerHTML = covered.size && f.view === "open"
-    ? `<button type="button" class="q-moved" data-q-focus>↑ ${esc(plural(covered.size, "rock decision is", "rock decisions are"))} in Today's rock moves</button>` : "";
+    ? (() => {
+        const waiting = flags.filter((x) => covered.has(x.id) && UNBLOCK_RULES.has(x.rule) && viewOf(x) === "open").length;
+        const rocks = flags.filter((x) => covered.has(x.id) && !UNBLOCK_RULES.has(x.rule) && viewOf(x) === "open").length;
+        const bits = [waiting ? plural(waiting, "person waiting on you", "people waiting on you") : "", rocks ? plural(rocks, "rock decision", "rock decisions") : ""].filter(Boolean);
+        return bits.length ? `<button type="button" class="q-moved" data-q-focus>↑ ${esc(bits.join(" and "))} in Today's moves</button>` : "";
+      })() : "";
 
   // Filters. People and areas come from the whole pile, so a choice never hides itself.
   const owners = [...new Set(pool.flatMap((x) => { const o = flagContext(x).owners; return o.length ? o : [NO_OWNER]; }))]
@@ -5172,7 +5179,18 @@ function parseHash(hash) {
    Top of What needs you: the few things that move a rock today, each with what it moves
    and why now, picked by Alex and ticked off. See src/focus/moves.js. */
 
-const moves = { data: null, loading: false, busy: false, adding: false, more: false, error: null, just: null, copied: null };
+const moves = { data: null, loading: false, busy: false, adding: false, more: false, error: null, just: null, copied: null, tab: null, open: new Set() };
+
+/* Unblock others: the people waiting on Alex right now. Someone asked in ClickUp
+   (reply owed), or a ticket sits in QA or ready for deploy waiting on Alex. Alex's own
+   due tickets are not here: nobody else is blocked on them. */
+const UNBLOCK_RULES = new Set(["nextstep.reply_owed", "nextstep.awaiting_you"]);
+function unblockFlags() {
+  const sev = { p1: 0, attention: 1, prompt: 2, info: 3 };
+  return (state.report?.flags ?? [])
+    .filter((f) => UNBLOCK_RULES.has(f.rule) && viewOf(f) === "open")
+    .sort((a, b) => (sev[a.severity] ?? 9) - (sev[b.severity] ?? 9) || Boolean(b.isNew) - Boolean(a.isNew) || (b.openDays ?? 0) - (a.openDays ?? 0));
+}
 const FOCUS_MIN = 25;
 const COURSE_WORD = { off: "off course", drift: "drifting", on: "on course" };
 const WEEKDAY = (key) => new Date(`${key}T12:00:00Z`).toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
@@ -5399,6 +5417,10 @@ function renderMoves() {
   const open = d.picks.filter((p) => !p.doneAt).sort((a, b) => Boolean(b.startedAt) - Boolean(a.startedAt));
   const done = d.picks.filter((p) => p.doneAt);
   const room = open.length < 3;
+  const unblock = unblockFlags();
+  // Unblocking others comes first; with nobody waiting, the rock work is shown.
+  const tab = moves.tab ?? (unblock.length ? "unblock" : "rock");
+  const rockCount = open.length + (room ? d.suggestions.length : 0);
   const sugs = room ? d.suggestions.slice(0, moves.more ? 6 : d.picks.length ? 2 : 3) : [];
   const hidden = d.suggestions.length - sugs.length;
 
@@ -5422,16 +5444,18 @@ function renderMoves() {
   host.innerHTML = `
     <div class="glass mv-glass">
       <header class="mv-header">
-        <div>
-          <h2>Today's rock moves</h2>
-          <p class="mv-sub">${d.picks.length ? [`${done.length} of ${d.picks.length} done`, open.some((p) => p.startedAt) ? `${open.filter((p) => p.startedAt).length} in progress` : ""].filter(Boolean).map(esc).join(" · ") : "Start one before you open the queue"}</p>
-        </div>
-        <div class="mv-meter" aria-label="${esc(done.length)} of ${esc(d.picks.length)} done">${meter}</div>
+        <h2>Today's moves</h2>
+        ${tab === "rock" && d.picks.length ? `<div class="mv-meter" title="${esc(done.length)} of ${esc(d.picks.length)} rock moves done" aria-label="${esc(done.length)} of ${esc(d.picks.length)} done">${meter}</div>` : ""}
       </header>
+      <div class="mv-tabs" role="tablist" aria-label="Today's moves">
+        <button type="button" role="tab" class="mv-tab${tab === "unblock" ? " on" : ""}" aria-selected="${tab === "unblock"}" data-mv-tab="unblock">Unblock others${unblock.length ? `<span class="mv-badge alert">${esc(unblock.length)}</span>` : `<span class="mv-badge">0</span>`}</button>
+        <button type="button" role="tab" class="mv-tab${tab === "rock" ? " on" : ""}" aria-selected="${tab === "rock"}" data-mv-tab="rock">My rock work${rockCount ? `<span class="mv-badge">${esc(rockCount)}</span>` : ""}${d.picks.length ? `<span class="mv-tab-sub">${esc(done.length)}/${esc(d.picks.length)} done</span>` : ""}</button>
+      </div>
       ${moves.error ? `<p class="triage-error">${esc(moves.error)}</p>` : ""}
+      ${tab === "unblock" ? unblockList(unblock) : `
       ${open.length ? `<div class="mv-list">${open.map(moveCard).join("")}</div>` : ""}
       ${done.length ? `<div class="mv-list mv-done-list">${done.map(moveCard).join("")}</div>` : ""}
-      ${sugs.length ? `<div class="mv-sec"><span>${d.picks.length ? "More that would move a rock" : "Suggested for today"}</span>${hidden > 0 || moves.more ? `<button type="button" class="link-btn" data-mv="more">${moves.more ? "Fewer" : `${hidden} more`}</button>` : ""}</div>
+      ${sugs.length ? `${d.picks.length || hidden > 0 || moves.more ? `<div class="mv-sec"><span>${d.picks.length ? "More that would move a rock" : ""}</span>${hidden > 0 || moves.more ? `<button type="button" class="link-btn" data-mv="more">${moves.more ? "Fewer" : `${hidden} more`}</button>` : ""}</div>` : ""}
         <div class="mv-list">${sugs.map(suggestionRow).join("")}</div>` : ""}
       ${!d.suggestions.length && !d.picks.length ? `<p class="sub">Nothing suggested: every rock is on course and nothing on a rock is planned or yours this week. Add your own below.</p>` : ""}
       ${room ? (moves.adding
@@ -5445,12 +5469,39 @@ function renderMoves() {
         <span class="mv-k">This week</span>
         <span class="mv-days">${days}</span>
         ${breakdown}
-      </footer>
+      </footer>`}
     </div>`;
   tickMoves();
 }
 
+/** Who is blocked: the person who asked, or whoever is doing the ticket. */
+function waitingWho(f) {
+  const v = f.values ?? {};
+  if (f.rule === "nextstep.reply_owed" && v.who) return `${v.who} is waiting on your reply`;
+  if (f.rule === "nextstep.awaiting_you") return v.doing ? `${v.doing} waiting on your review` : "Waiting on your review";
+  return null;
+}
+
+/** The people waiting on Alex, one row each; a row opens to the full card (reply, Done, ×). */
+function unblockList(list) {
+  if (!list.length) return `<p class="sub mv-clear">✓ Nobody is waiting on you right now.</p>`;
+  const row = (f) =>
+    moves.open.has(f.id)
+      ? `<div class="q-opened">${flagCard(f)}<button type="button" class="link-btn" data-mv-open="${esc(f.id)}">Close</button></div>`
+      : queueRow(f, { who: waitingWho(f) }).replace(`data-q-open="${esc(f.id)}"`, `data-mv-open="${esc(f.id)}"`);
+  return `<p class="mv-unblock-sub">Someone is waiting on your reply or review. Clear these first so their work keeps moving.</p>
+    <div class="q-list">${list.map(row).join("")}</div>`;
+}
+
 $("focus")?.addEventListener("click", (event) => {
+  const t = event.target.closest("[data-mv-tab]");
+  if (t) { moves.tab = t.dataset.mvTab; return renderMoves(); }
+  const o = event.target.closest("[data-mv-open]");
+  if (o) {
+    const id = o.dataset.mvOpen;
+    moves.open.has(id) ? moves.open.delete(id) : moves.open.add(id);
+    return renderMoves();
+  }
   const b = event.target.closest("[data-mv]");
   if (!b) return;
   const id = b.dataset.mvId;
@@ -5543,12 +5594,14 @@ let tocTargets = [];
    short names and a count where a count says something. Other pages list their headings. */
 const TOC_GROUPS = {
   readout: [
-    { label: "Start here", items: [["focus", "Rock moves", "1 to 3 things that move a rock today"], ["start-here", "Your queue", "Everything else, with filters"]] },
+    { label: "Start here", items: [["focus", "Today's moves", "Unblock others, then your rock work"], ["start-here", "Your queue", "Everything else, with filters"]] },
   ],
 };
 /** The badge beside a contents entry: a number and whether it is urgent, or null. */
 function tocBadge(id) {
   if (id === "focus") {
+    const waiting = unblockFlags().length;
+    if (waiting) return { text: String(waiting), cls: "urgent" };
     const p = moves.data?.picks ?? [];
     return p.length ? { text: `${p.filter((x) => x.doneAt).length}/${p.length}`, cls: p.every((x) => x.doneAt) ? "good" : "" } : null;
   }
