@@ -477,6 +477,87 @@ function queuePool(flags, view, covered) {
   return [...rankedFlags(flags), ...tidy].filter((f) => !covered.has(f.id));
 }
 
+/* A test's alerts as one line: every metric that moved, every probability crossed and the
+   verdict, under the test's name, placed where its highest-ranked alert would be. */
+const TEST_RULE_WORD = {
+  "intelligems.ready_for_call": "ready for a call",
+  "intelligems.verdict_changed": "verdict changed",
+  "intelligems.gate_disagreement": "past the readiness gate",
+  "intelligems.probability_crossed": "crossed 95%",
+};
+function foldTests(items) {
+  const byTest = new Map();
+  const out = [];
+  for (const i of items) {
+    const f = i.kind === "flag" || !i.kind ? i.flag ?? i : null;
+    const sub = f ? subjectOf(f) : null;
+    if (sub?.type === "test" && sub.label) {
+      if (!byTest.has(sub.label)) {
+        const g = { kind: "test", name: sub.label, flags: [] };
+        byTest.set(sub.label, g);
+        out.push(g);
+      }
+      byTest.get(sub.label).flags.push(f);
+    } else out.push(i.kind ? i : { kind: "flag", flag: i });
+  }
+  return out.map((i) => (i.kind === "test" && i.flags.length === 1 ? { kind: "flag", flag: i.flags[0] } : i));
+}
+const testKey = (g) => `test:${g.name}`;
+
+/** "6 updates: 3 metrics moved (conversion rate, …) · crossed 95% ×3". */
+function testSummary(g) {
+  const metrics = [];
+  const counts = new Map();
+  for (const f of g.flags) {
+    if (f.rule === "intelligems.p1_out_of_band") {
+      const m = String(f.message).match(/:\s*([^:]+?)(?:,| moved)/);
+      if (m) metrics.push(m[1].trim());
+      continue;
+    }
+    const w = TEST_RULE_WORD[f.rule] ?? ruleLabel(f.rule);
+    counts.set(w, (counts.get(w) ?? 0) + 1);
+  }
+  const bits = [];
+  if (metrics.length) bits.push(`${plural(metrics.length, "metric", "metrics")} moved (${[...new Set(metrics)].join(", ")})`);
+  for (const [w, n] of counts) bits.push(n > 1 ? `${w} ×${n}` : w);
+  return `${plural(g.flags.length, "update", "updates")}: ${bits.join(" · ")}`;
+}
+
+function testRow(g) {
+  const sev = g.flags.some((f) => f.severity === "p1") ? "p1" : g.flags.some((f) => f.severity === "attention") ? "attention" : g.flags[0].severity;
+  const isNew = g.flags.some((f) => f.isNew);
+  const days = Math.max(...g.flags.map((f) => f.openDays ?? 0));
+  return `<div class="flag q-row q-group-row q-test-row sev-${esc(sev)}">
+      <span class="q-sev">${esc(SEV_SHORT[sev] ?? sev)} ×${esc(g.flags.length)}</span>
+      <button type="button" class="q-msg" data-q-open="${esc(testKey(g))}" title="Open each update">"${esc(g.name)}" · ${esc(testSummary(g))}</button>
+      <span class="q-meta">Test · ${esc(isNew ? "new today" : days ? `${plural(days, "day", "days")} open` : "")}</span>
+      <span class="q-acts">
+        <a class="ql" href="${AB_TESTING}" target="_blank" rel="noreferrer">AB Testing ↗</a>
+        <button type="button" class="ghost sm" data-q-open="${esc(testKey(g))}">Open</button>
+        <button type="button" class="ghost sm" data-test-done="${esc(g.name)}" title="Mark all ${g.flags.length} updates on this test Done">Done all</button>
+      </span>
+    </div>`;
+}
+
+function testOpened(g, close) {
+  return `<div class="q-opened q-test-open">
+      <p class="q-test-head">"${esc(g.name)}" <span class="meta">${esc(testSummary(g))}</span>
+        <button type="button" class="ghost sm" data-test-done="${esc(g.name)}">Done all</button></p>
+      <div class="q-list">${g.flags.map((f) => queueRow(f)).join("")}</div>
+      ${close}
+    </div>`;
+}
+
+document.addEventListener("click", async (event) => {
+  const b = event.target.closest("[data-test-done]");
+  if (!b) return;
+  b.disabled = true;
+  const name = b.dataset.testDone;
+  const flags = (state.report?.flags ?? []).filter((f) => subjectOf(f).type === "test" && subjectOf(f).label === name && !triageOf(f));
+  const failed = await saveTriageMany(flags, { status: "done", note: "all updates on this test handled" });
+  if (failed.length) alert(`Not saved on ${failed.length}: ${failed[0]}`);
+});
+
 function queueMatches(f, { kind = true } = {}) {
   const { person, area } = queue.f;
   const q = queue.f.q.trim().toLowerCase();
@@ -564,20 +645,25 @@ function renderTopThree(flags) {
 
   // Filtered, or a pile other than open: a flat list, newest decisions first as ranked.
   if (f.view !== "open" || queueFiltered()) {
-    const list = queue.all ? shownFlags : shownFlags.slice(0, 25);
-    body.innerHTML = `${f.view === "waiting" ? scheduledList() : ""}<div class="q-list">${list.map(row).join("")}</div>${more(shownFlags.length > 25 ? shownFlags.length : 0)}`;
+    const folded = foldTests(shownFlags.map((x) => ({ kind: "flag", flag: x })));
+    const list = queue.all ? folded : folded.slice(0, 25);
+    const line = (i) => (i.kind === "test" ? (queue.open.has(testKey(i)) ? testOpened(i, close(testKey(i))) : testRow(i)) : row(i.flag));
+    body.innerHTML = `${f.view === "waiting" ? scheduledList() : ""}<div class="q-list">${list.map(line).join("")}</div>${more(folded.length > 25 ? folded.length : 0)}`;
     return;
   }
 
   // Unfiltered open queue: routine sprint checks fold into one line per person, top three in full.
-  const { items, groups } = groupByPerson(shownFlags, groupOpts());
+  const grouped = groupByPerson(shownFlags, groupOpts());
+  const groups = grouped.groups;
+  const items = foldTests(grouped.items);
   state.queueGroups = new Map(groups.map((g) => [g.person, g]));
   const top = items.slice(0, 3);
   const rest = items.slice(3);
   const shown = queue.all ? rest : rest.slice(0, QUEUE_ROWS);
-  const card = (i) => (i.kind === "group" ? groupCard(i) : flagCard(i.flag));
+  const card = (i) => (i.kind === "group" ? groupCard(i) : i.kind === "test" ? testOpened(i, "") : flagCard(i.flag));
   const line = (i) => {
     if (i.kind === "group") return queue.open.has(groupId(i)) ? `<div class="q-opened">${groupCard(i)}${close(groupId(i))}</div>` : groupRow(i);
+    if (i.kind === "test") return queue.open.has(testKey(i)) ? testOpened(i, close(testKey(i))) : testRow(i);
     return row(i.flag);
   };
   body.innerHTML = `
