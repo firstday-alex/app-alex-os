@@ -1,4 +1,4 @@
-// Alex's Impact: an append-only ledger of what Alex and the team got done, grouped into
+// Overall Impact: an append-only ledger of what Alex and the team got done, grouped into
 // themes that get regrouped as the record grows.
 //
 // Two halves, and only the second one is agentic:

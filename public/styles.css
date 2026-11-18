@@ -228,10 +228,13 @@ main { max-width: 940px; margin: 0 auto; padding: 22px 18px 80px; }
 .toc-group { margin: 0 0 14px; }
 .toc-group-label { margin: 0 0 4px; padding: 0 10px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .toc-grouped .toc-item {
-  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; white-space: normal;
   font-size: 14px; padding: 6px 10px; border-radius: 8px; box-shadow: inset 2px 0 0 transparent;
 }
 .toc-grouped .toc-item.current { background: rgba(63, 107, 74, 0.10); color: var(--green); box-shadow: inset 3px 0 0 var(--green); }
+.toc-text { display: grid; min-width: 0; text-align: left; }
+.toc-hint { font-size: 11.5px; color: var(--muted); font-weight: 400; white-space: normal; line-height: 1.3; }
+.toc-grouped .toc-item.current .toc-hint { color: var(--green); opacity: .8; }
 .toc-badge { flex-shrink: 0; min-width: 22px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: rgba(28, 43, 42, 0.08); color: var(--muted); font-variant-numeric: tabular-nums; }
 .toc-badge.urgent { background: var(--red-bg); color: var(--red); }
 .toc-badge.good { background: rgba(63, 107, 74, 0.14); color: var(--green); }
@@ -566,7 +569,7 @@ select.sm { font: inherit; font-size: 13px; border: 1px solid var(--line); borde
 
 /* Readout sections: collapsed to start, the header and its count are the summary */
 details.section > summary {
-  display: flex; align-items: baseline; gap: 10px; cursor: pointer; list-style: none;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; cursor: pointer; list-style: none;
   margin: 34px 0 8px; border-bottom: 2px solid var(--green); padding-bottom: 6px;
 }
 details.section > summary::-webkit-details-marker { display: none; }
@@ -575,6 +578,8 @@ details.section[open] > summary::before { transform: rotate(90deg); }
 details.section > summary h2 { margin: 0; border: 0; padding: 0; }
 .sec-count { font-size: 13px; color: var(--muted); }
 .sec-count.urgent { color: var(--red); font-weight: 600; }
+/* What the section is and when to use it, under its name. */
+.sec-hint { flex-basis: 100%; padding-left: 22px; font-size: 13px; color: var(--muted); font-weight: 400; }
 
 /* Site-wide moves: context above the store tiles, not flags */
 .store-context { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--amber); border-radius: 4px; padding: 10px 14px; margin: 0 0 12px; }

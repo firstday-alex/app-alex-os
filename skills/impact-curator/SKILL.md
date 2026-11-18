@@ -3,12 +3,12 @@ name: impact-curator
 description: Daily. Regroups Alex's impact record (everything Alex and the team got done) into themes and sub-themes that show organizational impact, without ever dropping an item.
 runs_as: agentic
 implemented_by: src/agents/impact.js
-invoked_by: impact-scheduled at 9 AM Central on working days, and Alex pressing "Reorganize now" on the Alex's Impact tab.
+invoked_by: impact-scheduled at 9 AM Central on working days, and Alex pressing "Reorganize now" on the Overall Impact tab.
 ---
 
 # Impact curator
 
-Alex leads the ecomm team. The Alex's Impact tab is the running record of what Alex and
+Alex leads the ecomm team. The Overall Impact tab is the running record of what Alex and
 the team have shipped: tickets done, experiments launched and concluded, rocks shipped,
 and the days Alex spent building the management operating system. It is what Alex
 points to when asked "what has your org delivered?"

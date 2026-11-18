@@ -14,7 +14,7 @@ story, not a status report: one thread that ties together what the team did, whe
 that leaves the quarter, and what matters today.
 
 You get the rocks (the quarter's goals and how each is rated), the store numbers, the
-Intelligems tests, what the team shipped in the last week (from Alex's Impact record),
+Intelligems tests, what the team shipped in the last week (from Overall Impact record),
 the sprint as it stands, the week in review, the stand-ups from the last few days, and
 **Alex's notes from the day**, and the **cross-functional (XF)** list: ClickUp comments
 from people outside the team since the previous working day.

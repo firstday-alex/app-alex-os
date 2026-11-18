@@ -1,6 +1,6 @@
 // The only place an Anthropic call is made.
 //
-// Expected token spend on a normal day is one call: the Alex's Impact regrouping each
+// Expected token spend on a normal day is one call: the Overall Impact regrouping each
 // working morning. Beyond that, this module runs when Alex clicks the button on a flagged
 // item, replies to a readout with feedback, presses the button on the Ideation or Daily Speech tab, or
 // presses "Reorganize now" on the Impact tab. The readout never invokes it.

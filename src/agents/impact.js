@@ -1,4 +1,4 @@
-// Alex's Impact, the daily pass. Harvest is plain code (src/impact/ledger.js); the
+// Overall Impact, the daily pass. Harvest is plain code (src/impact/ledger.js); the
 // regrouping is one Anthropic call a working day, which the code then holds to the rule
 // that nothing is ever deleted.
 //

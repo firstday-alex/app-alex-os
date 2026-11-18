@@ -241,7 +241,7 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
           `CHANGES TO PRODUCTION IN THE LAST ${SHIPPED_LOOKBACK_DAYS} DAYS (from the firstday.com changelog sheet, newest first; what actually changed on the live site)`,
           production == null ? "Not available this run." : production.length ? JSON.stringify(production, null, 2) : "Nothing logged.",
           "",
-          `SHIPPED IN THE LAST ${SHIPPED_LOOKBACK_DAYS} DAYS (from Alex's Impact record)`,
+          `SHIPPED IN THE LAST ${SHIPPED_LOOKBACK_DAYS} DAYS (from Overall Impact record)`,
           context.shippedThisWeek.length ? JSON.stringify(context.shippedThisWeek, null, 2) : "Nothing recorded.",
           "",
           "ALEX'S NOTES FROM THE DAY (typed or pasted by Alex, oldest first; often what other teams said)",

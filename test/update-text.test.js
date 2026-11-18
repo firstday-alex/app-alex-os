@@ -142,3 +142,16 @@ test("\"dont use\" (complete, renamed in ClickUp 2026-11-17) is last sprint's wo
   );
   assert.deepEqual(wins.rocks.flatMap((r) => r.tasks.map((t) => t.id)), ["a"]);
 });
+
+test("this week's wins: tickets done this sprint, by rock, with kudos; last sprint's are left out", async () => {
+  const { buildThisWeekWins, lastWeekText } = await import("../public/update-text.js");
+  const u = { id: "1", username: "Robson Lopes" };
+  const tasks = [
+    { id: "a", name: "Bundle page", status: "done (this sprint)", assignees: [u], bigSwing: { label: "Bundles 2.0" }, dateDone: 2 },
+    { id: "b", name: "Old thing", status: "dont use", assignees: [u], bigSwing: { label: "Bundles 2.0" }, dateClosed: 1 },
+    { id: "c", name: "In flight", status: "in-progress", assignees: [u], bigSwing: null },
+  ];
+  const wins = buildThisWeekWins(tasks, { handleFor: (x) => x.username.split(" ")[0] });
+  assert.equal(wins.count, 1);
+  assert.equal(lastWeekText(wins, new Set(), { title: "This week's wins" }), "This week's wins, by rock\nBundles 2.0: Bundle page\n\nKudos\n🙌 Robson (Bundles 2.0): Bundle page");
+});

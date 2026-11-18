@@ -6,7 +6,7 @@
 
 import { groupByPerson, groupLine, YOU, NOBODY } from "./flag-groups.js";
 import { weekStartOf as qWeekStartOf, monthName as qMonthName, shortDay as qShortDay } from "./quarter.js";
-import { buildAccomplishments, buildChanges, buildLastWeekWins, buildStandupUpdate, buildUpdate, changeLine, changesText, groupsText, lastWeekText, standupUpdateText, windowStart } from "./update-text.js";
+import { buildChanges, buildLastWeekWins, buildStandupUpdate, buildThisWeekWins, changeLine, changesText, lastWeekText, standupUpdateText, windowStart } from "./update-text.js";
 
 const $ = (id) => document.getElementById(id);
 const layerLabel = (layer) => (layer === "cross" ? "CROSS" : layer === 0 ? "STORE" : `L${layer}`);
@@ -146,7 +146,6 @@ function render() {
     }
   };
   part("the flags", () => renderAllFlags({ rebuildTools: true }));
-  part("the week", () => renderWeek(report));
   part("Layer 1", () => renderLayer1(report));
   part("the cross layer", () => renderCross(report));
   part("the sprint", () => renderLayer2(report));
@@ -291,7 +290,7 @@ function renderRuleCheck() {
   const isQuiet = (rule) => Object.hasOwn(quiet, rule);
   const suggested = h.rules.filter((r) => r.suggest && !isQuiet(r.rule));
   const quieted = Object.keys(quiet);
-  sectionCount("rules", [suggested.length ? `${suggested.length} suggested for Hygiene` : "", quieted.length ? `${quieted.length} in Hygiene` : ""].filter(Boolean).join(" · ") || "nothing to change", suggested.length > 0);
+  sectionCount("rules", [suggested.length ? `${suggested.length} suggested for Tidy-ups` : "", quieted.length ? `${quieted.length} in Tidy-ups` : ""].filter(Boolean).join(" · ") || "nothing to change", suggested.length > 0);
 
   const row = (r) => {
     const v = RULE_VERDICT[r.verdict] ?? RULE_VERDICT.mixed;
@@ -299,11 +298,11 @@ function renderRuleCheck() {
     const button = q
       ? `<button type="button" class="ghost sm" data-quiet="${esc(r.rule)}" data-on="0">Bring back to the queue</button>`
       : r.canQuiet
-        ? `<button type="button" class="${r.suggest ? "sm" : "ghost sm"}" data-quiet="${esc(r.rule)}" data-on="1">Move to Hygiene</button>`
+        ? `<button type="button" class="${r.suggest ? "sm" : "ghost sm"}" data-quiet="${esc(r.rule)}" data-on="1">Move to Tidy-ups</button>`
         : `<span class="meta" title="Raised as a P1, so it is never moved out of the queue">P1 rule</span>`;
     return `<tr${r.suggest && !q ? ' class="rc-suggest"' : ""}>
         <td class="wrap"><strong>${esc(ruleLabel(r.rule))}</strong><br><span class="meta">${esc(r.rule)}</span></td>
-        <td><span class="chip ${esc(v.cls)}"${v.sub ? ` title="${esc(v.sub)}"` : ""}>${esc(q ? "In Hygiene" : v.label)}</span></td>
+        <td><span class="chip ${esc(v.cls)}"${v.sub ? ` title="${esc(v.sub)}"` : ""}>${esc(q ? "In Tidy-ups" : v.label)}</span></td>
         <td class="wrap">${esc(ruleHealthText(r))}</td>
         <td>${button}</td>
       </tr>`;
@@ -312,9 +311,9 @@ function renderRuleCheck() {
   const missing = quieted.filter((rule) => !h.rules.some((r) => r.rule === rule)).map((rule) => ({ rule, raised: 0, acted: 0, verdict: "mixed", canQuiet: true }));
   host.innerHTML = `
     <p class="sub">${esc(plural(h.readouts, "readout", "readouts"))} since ${esc(fmtDay(h.since))}: how many flags each rule raised and what became of them.
-      A rule you never act on, whose flags mostly sit untouched, is suggested for Hygiene. There it is still listed, but it stays out of the queue and never escalates.
+      A rule you never act on, whose flags mostly sit untouched, is suggested for Tidy-ups. There it is still listed, but it stays out of the queue and never escalates.
       Changes apply from the next refresh. Acted on means marked Done or Waiting on, here or in Slack.</p>
-    ${suggested.length ? "" : `<p class="sub"><strong>No rule qualifies for Hygiene right now.</strong> ${esc(h.rules.filter((r) => r.verdict === "clears itself").length ? "Several clear within two days without you, shown below; that may be the readout working, so they are shown, not suggested." : "")}</p>`}
+    ${suggested.length ? "" : `<p class="sub"><strong>No rule qualifies for Tidy-ups right now.</strong> ${esc(h.rules.filter((r) => r.verdict === "clears itself").length ? "Several clear within two days without you, shown below; that may be the readout working, so they are shown, not suggested." : "")}</p>`}
     <p class="triage-error hidden" id="rule-check-error"></p>
     <div class="scroll"><table class="rule-check">
       <thead><tr><th>Rule</th><th>Verdict</th><th>Last two weeks</th><th></th></tr></thead>
@@ -666,37 +665,6 @@ $("start-here").addEventListener("click", (event) => {
 $("start-here").addEventListener("toggle", (event) => {
   if (event.target.classList?.contains("q-tray")) queue.trayOpen = event.target.open;
 }, true);
-
-/**
- * This week: the Friday roll-up, any day. The same lines the Friday readout leads with,
- * and a button to copy them, for a summary to leadership.
- */
-function renderWeek(report) {
-  const host = $("week");
-  if (!host) return;
-  const w = report.detail?.weekly;
-  if (!w?.lines) {
-    host.innerHTML = `<p class="sub">The week in review appears after the next refresh.</p>`;
-    sectionCount("week", "");
-    return;
-  }
-  sectionCount("week", `${plural(w.rocks.shipped.length, "rock shipped", "rocks shipped")} · ${plural(w.tickets.closed, "ticket closed", "tickets closed")}`);
-  host.innerHTML = `
-    <p class="sub">Since ${esc(new Date(w.since).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }))}. Friday's readout opens with this.</p>
-    <ul class="week-lines">${w.lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>
-    <div class="bar" style="margin-top:8px"><button type="button" class="ghost sm" id="copy-week">Copy the week</button><span class="meta" id="copy-week-note"></span></div>`;
-}
-
-document.addEventListener("click", async (event) => {
-  if (event.target.id !== "copy-week") return;
-  const lines = state.report?.detail?.weekly?.lines ?? [];
-  try {
-    await navigator.clipboard.writeText(["The week in review", ...lines.map((l) => `- ${l}`)].join("\n"));
-    $("copy-week-note").textContent = "Copied.";
-  } catch {
-    $("copy-week-note").textContent = "The browser would not copy. Select the lines and copy them by hand.";
-  }
-});
 
 function sectionCount(name, text, urgent = false) {
   const el = $(`sec-${name}-count`);
@@ -2361,19 +2329,9 @@ $("layer2")?.addEventListener("click", (event) => {
   if (state.report) renderLayer2(state.report);
 });
 
-/* ------------------------- update and accomplishments -------------------------
-   Two pasteable lists, built in update-text.js from the tickets the report already holds;
-   this only draws them and copies them. Update is what moved since the previous working
-   day; Accomplishments is what got done over a window. */
-
-const DAY_MS_UPD = 86_400_000;
-// Accomplishments windows, in days. 30 is the default.
-const WIN_WINDOWS = { 30: "Last 30 days", 7: "Last 7 days" };
-
-const pasteViews = {
-  update: { el: "update", excluded: new Set(), groups: [], changes: [] },
-  wins: { el: "wins", excluded: new Set(), groups: [], days: 30 },
-};
+/* ------------------------------- write-ups -------------------------------
+   Pasteable lists, built in update-text.js from the tickets the report already holds;
+   this only draws them and copies them. */
 
 /** The @name for a ClickUp user: their handle from the roster, else their first name. */
 function handleFor(user) {
@@ -2382,40 +2340,45 @@ function handleFor(user) {
 }
 
 function renderUpdate(report) {
-  renderPasteView("update", report);
-  renderPasteView("wins", report);
-  renderLastWeek(report);
+  renderWins("thisweek", report);
+  renderWins("lastweek", report);
   if (standup.data) renderUpsu();
 }
 
-/* ------------------------------ last week's wins ------------------------------ */
+/* ---------------------------- this / last week's wins ----------------------------
+   The same write-up twice: this week's from tickets done this sprint, last week's from
+   last sprint's closed status. By rock, then kudos by person; untick, then copy. */
 
-const lastWeek = { excluded: new Set(), wins: null };
+const winsViews = {
+  thisweek: { title: "This week's wins", build: buildThisWeekWins, excluded: new Set(), wins: null, empty: 'No tickets are in "done (this sprint)" right now.' },
+  lastweek: { title: "Last week's wins", build: buildLastWeekWins, excluded: new Set(), wins: null, empty: 'No tickets are in last sprint\'s closed status ("dont use", formerly "complete") right now.' },
+};
 
-function renderLastWeek(report) {
-  const root = $("lastweek");
+function renderWins(kind, report) {
+  const v = winsViews[kind];
+  const root = $(kind);
   if (!root) return;
   const section = report.sections.clickup;
   if (!section?.present) {
     root.innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
     return;
   }
-  const wins = (lastWeek.wins = buildLastWeekWins(report.detail?.clickup?.tasks ?? [], { handleFor }));
+  const wins = (v.wins = v.build(report.detail?.clickup?.tasks ?? [], { handleFor }));
   if (!wins.count) {
-    root.innerHTML = `<p class="sub">No tickets are in last sprint's closed status ("dont use", formerly "complete") right now.</p>`;
+    root.innerHTML = `<p class="sub">${esc(v.empty)}</p>`;
     return;
   }
   const day = (ms) => new Date(ms).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  const text = lastWeekText(wins, lastWeek.excluded);
+  const text = lastWeekText(wins, v.excluded, { title: v.title });
   const item = (t) => `<label class="up-item">
-      <input type="checkbox" data-lw-task="${esc(t.id)}"${lastWeek.excluded.has(String(t.id)) ? "" : " checked"}>
+      <input type="checkbox" data-wins-kind="${kind}" data-wins-task="${esc(t.id)}"${v.excluded.has(String(t.id)) ? "" : " checked"}>
       <span>${esc(t.plainName ?? t.name)}</span>
       ${t.url ? `<a class="meta" href="${esc(t.url)}" target="_blank" rel="noreferrer">open</a>` : ""}
     </label>`;
   root.innerHTML = `
     <p class="meta">${esc(plural(wins.count, "ticket", "tickets"))} done ${wins.from ? `${esc(day(wins.from))} to ${esc(day(wins.to))}` : ""} · ${esc(plural(wins.rocks.length, "rock", "rocks"))} · ${esc(plural(wins.kudos.length, "person", "people"))}. From ClickUp as pulled ${esc(new Date(report.generatedAt).toLocaleString())}.</p>
-    <div class="bar up-bar"><button type="button" id="lw-copy">Copy all</button><span class="meta" id="lw-note"></span></div>
-    <textarea class="up-text" id="lw-text" rows="${Math.min(20, text.split("\n").length + 1)}" readonly>${esc(text)}</textarea>
+    <div class="bar up-bar"><button type="button" data-wins-copy="${kind}">Copy all</button><span class="meta" data-wins-note="${kind}"></span></div>
+    <textarea class="up-text" data-wins-text="${kind}" rows="${Math.min(20, text.split("\n").length + 1)}" readonly>${esc(text)}</textarea>
     <h3 class="lw-head">By rock</h3>
     ${wins.rocks
       .map(
@@ -2437,98 +2400,25 @@ function renderLastWeek(report) {
 }
 
 document.addEventListener("change", (event) => {
-  const id = event.target.dataset?.lwTask;
-  if (!id || !lastWeek.wins) return;
-  if (event.target.checked) lastWeek.excluded.delete(id);
-  else lastWeek.excluded.add(id);
-  $("lw-text").value = lastWeekText(lastWeek.wins, lastWeek.excluded);
+  const kind = event.target.dataset?.winsKind;
+  const v = winsViews[kind];
+  if (!v?.wins) return;
+  const id = event.target.dataset.winsTask;
+  if (event.target.checked) v.excluded.delete(id);
+  else v.excluded.add(id);
+  document.querySelector(`[data-wins-text="${kind}"]`).value = lastWeekText(v.wins, v.excluded, { title: v.title });
 });
 document.addEventListener("click", async (event) => {
-  if (event.target.id !== "lw-copy") return;
+  const kind = event.target.dataset?.winsCopy;
+  if (!kind) return;
+  const note = document.querySelector(`[data-wins-note="${kind}"]`);
   try {
-    await navigator.clipboard.writeText($("lw-text").value);
-    $("lw-note").textContent = "Copied.";
+    await navigator.clipboard.writeText(document.querySelector(`[data-wins-text="${kind}"]`).value);
+    note.textContent = "Copied.";
   } catch {
-    $("lw-note").textContent = "The browser would not copy. Select the text and copy it by hand.";
+    note.textContent = "The browser would not copy. Select the text and copy it by hand.";
   }
 });
-
-function renderPasteView(key, report) {
-  const view = pasteViews[key];
-  const root = $(view.el);
-  if (!root) return;
-  const section = report.sections.clickup;
-  if (!section?.present) {
-    root.innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
-    return;
-  }
-  const wins = key === "wins";
-  const since = wins ? Date.now() - view.days * DAY_MS_UPD : windowStart();
-  const tasks = report.detail?.clickup?.tasks ?? [];
-  view.groups = wins ? buildAccomplishments(tasks, { since, handleFor }) : buildUpdate(tasks, { since, handleFor });
-  const pulled = new Date(report.generatedAt);
-  const stale = Date.now() - pulled.getTime() > 2 * 3600_000;
-  // The Update also carries what changed on the site in production, from the changelog sheet.
-  view.changes = wins ? [] : buildChanges(report.detail?.changelog, { since });
-  const text = pasteText(view);
-  const count = view.groups.reduce((n, g) => n + g.tasks.length, 0) + view.changes.length;
-  const sinceText = new Date(since).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
-
-  root.innerHTML = `
-    ${
-      wins
-        ? `<div class="dod-windows" role="group" aria-label="Window">${Object.entries(WIN_WINDOWS)
-            .map(([d, label]) => `<button type="button" class="ghost dod-window${Number(d) === view.days ? " on" : ""}" data-wins-days="${d}" aria-pressed="${Number(d) === view.days}">${esc(label)}</button>`)
-            .join("")}</div>`
-        : ""
-    }
-    <p class="meta">${wins ? "Done since" : "Since"} ${esc(sinceText)}. From ClickUp as pulled ${esc(pulled.toLocaleString())}${stale ? `: press <strong>Refresh</strong> to include today so far` : ""}.</p>
-    ${
-      count
-        ? `<div class="bar up-bar"><button type="button" data-copy-paste="${key}">Copy all</button><span class="meta" data-copy-note="${key}">${esc(plural(count - view.changes.length, "ticket", "tickets"))} across ${esc(plural(view.groups.length, "Big Swing", "Big Swings"))}${view.changes.length ? ` · ${esc(plural(view.changes.length, "change", "changes"))} to production` : ""}</span></div>
-      <textarea class="up-text" data-paste-text="${key}" rows="${Math.min(24, text.split("\n").length + 1)}" readonly>${esc(text)}</textarea>
-      ${view.groups
-        .map(
-          (g) => `<section class="up-group">
-          <div class="sp-group-head"><h3>${esc(g.label)}</h3><span class="meta">${esc(plural(g.tasks.length, "ticket", "tickets"))}</span></div>
-          ${g.tasks
-            .map(
-              ({ task, text: line }) => `<label class="up-item">
-              <input type="checkbox" data-paste-task="${esc(task.id)}" data-paste-view="${key}"${view.excluded.has(String(task.id)) ? "" : " checked"}>
-              <span>${esc(line)}</span>
-              ${task.url ? `<a class="meta" href="${esc(task.url)}" target="_blank" rel="noreferrer">open</a>` : ""}
-            </label>`,
-            )
-            .join("")}
-        </section>`,
-        )
-        .join("")}
-      ${view.changes.length ? changesSection(view, key) : ""}`
-        : `<p class="sub">${wins ? "Nothing was done in this window." : "Nothing on the sprint has been touched and nothing went to production since then."}</p>`
-    }
-    ${wins ? "" : changelogNote(report.detail?.changelog)}`;
-}
-
-/** Everything a paste view copies: the tickets, then for the Update the production changes. */
-function pasteText(view) {
-  return [groupsText(view.groups, view.excluded), changesText(view.changes ?? [], view.excluded)].filter(Boolean).join("\n\n");
-}
-
-/** The "Changes to production" group: one row per changelog entry, untickable like a ticket. */
-function changesSection(view, key) {
-  return `<section class="up-group">
-    <div class="sp-group-head"><h3>Changes to production</h3><span class="meta">from the changelog sheet</span></div>
-    ${view.changes
-      .map(
-        (e) => `<label class="up-item">
-        <input type="checkbox" data-paste-task="change:${esc(e.row)}" data-paste-view="${key}"${view.excluded.has(`change:${e.row}`) ? "" : " checked"}>
-        <span>${esc(changeLine(e))}</span>
-        ${e.testLink ? `<a class="meta" href="${esc(e.testLink)}" target="_blank" rel="noreferrer">test</a>` : ""}
-      </label>`,
-      )
-      .join("")}
-  </section>`;
-}
 
 /** Where the changelog was read from, or why it was not. */
 function changelogNote(changelog) {
@@ -2537,35 +2427,6 @@ function changelogNote(changelog) {
   const link = changelog.sheet?.url ? `<a href="${esc(changelog.sheet.url)}" target="_blank" rel="noreferrer">${esc(changelog.sheet.tab ?? "changelog")}</a>` : "the changelog sheet";
   return `<p class="meta">Changes to production from ${link}, read ${esc(new Date(changelog.takenAt).toLocaleString())}${changelog.latest ? `; latest row ${esc(changelog.latest)}` : ""}.</p>`;
 }
-
-document.addEventListener("change", (event) => {
-  const key = event.target.dataset?.pasteView;
-  if (!key) return;
-  const view = pasteViews[key];
-  const id = event.target.dataset.pasteTask;
-  if (event.target.checked) view.excluded.delete(id);
-  else view.excluded.add(id);
-  // Only the text changes; redrawing everything would drop the scroll position.
-  document.querySelector(`[data-paste-text="${key}"]`).value = pasteText(view);
-});
-
-document.addEventListener("click", async (event) => {
-  const days = event.target.closest("[data-wins-days]")?.dataset.winsDays;
-  if (days) {
-    pasteViews.wins.days = Number(days);
-    if (state.report) renderPasteView("wins", state.report);
-    return;
-  }
-  const key = event.target.dataset?.copyPaste;
-  if (!key) return;
-  const note = document.querySelector(`[data-copy-note="${key}"]`);
-  try {
-    await navigator.clipboard.writeText(document.querySelector(`[data-paste-text="${key}"]`).value);
-    note.textContent = "Copied.";
-  } catch {
-    note.textContent = "The browser would not copy. Select the text and copy it by hand.";
-  }
-});
 
 /* -------------------------- day over day: windows --------------------------
    The 8 AM readout always compares against the previous working day's 8 AM snapshot.
@@ -5158,7 +5019,7 @@ document.addEventListener("click", async (event) => {
 });
 
 /* ---------------------------------- impact ----------------------------------
-   Alex's Impact: the append-only record of what Alex and the team shipped, in themes.
+   Overall Impact (was Alex's Impact): the append-only record of what Alex and the team shipped, in themes.
    The server harvests and regroups it each working morning; this draws it and can start
    a pass on demand. */
 
@@ -5369,7 +5230,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 const NAV_GROUPS = [
   { id: "today", pages: [["readout", "What needs you"], ["speech", "Daily Speech"], ["standup", "Stand-up"]] },
   { id: "team", pages: [["sprint", "Sprint"], ["backlog", "Backlog"], ["rocks", "Rocks"], ["plan", "Quarter"], ["tests", "Tests"], ["people", "1:1"], ["ideation", "Ideation"]] },
-  { id: "writeups", pages: [["mystandup", "My stand-up"], ["update", "Update"], ["upsu", "Update + Stand-up"], ["lastweek", "Last week's wins"], ["wins", "Accomplishments"], ["impact", "Alex's Impact"]] },
+  { id: "writeups", pages: [["mystandup", "My stand-up"], ["upsu", "Update + Stand-up"], ["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["impact", "Overall Impact"]] },
 ];
 // On a wide screen the drawer stays open beside the page and is the nav.
 const drawerPinned = matchMedia("(min-width: 1280px)");
@@ -6061,7 +5922,11 @@ $("focus")?.addEventListener("submit", (event) => {
   movesChange({ pick: { text, rockId }, start: !(event.submitter && "later" in event.submitter.dataset) });
 });
 
+// Pages that were folded into others: an old link or bookmark lands on the one that replaced it.
+const MOVED_VIEWS = { update: "upsu", wins: "impact" };
+
 function showView(name) {
+  name = MOVED_VIEWS[name] ?? name;
   for (const section of document.querySelectorAll(".view")) {
     section.classList.toggle("hidden", section.id !== `view-${name}`);
   }
@@ -6109,10 +5974,10 @@ let tocTargets = [];
    short names and a count where a count says something. Other pages list their headings. */
 const TOC_GROUPS = {
   readout: [
-    { label: "Act now", items: [["focus", "Rock moves"], ["start-here", "Your queue"], ["sec-prompts", "Decisions due"], ["sec-attention", "Needs your attention"]] },
-    { label: "How it's going", items: [["sec-week", "This week"]] },
-    { label: "By layer", items: [["sec-layer1", "Leadership"], ["sec-cross", "Cross layer"], ["sec-hygiene", "Hygiene"]] },
-    { label: "Tune the readout", items: [["sec-rules", "Rule check"]] },
+    { label: "Start here", items: [["focus", "Rock moves", "1 to 3 things that move a rock today"], ["start-here", "Your queue", "Then clear these, top first"]] },
+    { label: "Go deeper", items: [["sec-prompts", "Tests ready for a call", "Ship, iterate or kill, not yet decided"], ["sec-attention", "Every open flag", "The full list, to filter or triage in bulk"]] },
+    { label: "Team and rocks", items: [["sec-layer1", "Rocks at a glance", "Each rock's owner, state and last readout"], ["sec-cross", "Who has rock work", "Each person's tickets: rock vs business as usual"]] },
+    { label: "Housekeeping", items: [["sec-hygiene", "Tidy-ups", "Minor ClickUp fixes, kept out of the queue"], ["sec-rules", "Noisy rules", "Flags you ignore, and turning them down"]] },
   ],
 };
 /** The badge beside a contents entry: a number and whether it is urgent, or null. */
@@ -6141,12 +6006,12 @@ function buildToc() {
     const groups = TOC_GROUPS[name]
       .map((g) => {
         const rows = g.items
-          .map(([id, label]) => {
+          .map(([id, label, hint]) => {
             const el = $(id);
             if (!el || !el.getClientRects().length) return "";
             const i = tocTargets.push(el) - 1;
             const b = tocBadge(id);
-            return `<button type="button" class="toc-link toc-item" data-toc="${i}"><span>${esc(label)}</span>${b ? `<span class="toc-badge ${b.cls}">${esc(b.text)}</span>` : ""}</button>`;
+            return `<button type="button" class="toc-link toc-item" data-toc="${i}" title="${esc(hint ?? label)}"><span class="toc-text"><span>${esc(label)}</span>${hint ? `<span class="toc-hint">${esc(hint)}</span>` : ""}</span>${b ? `<span class="toc-badge ${b.cls}">${esc(b.text)}</span>` : ""}</button>`;
           })
           .join("");
         return rows ? `<div class="toc-group"><p class="toc-group-label">${esc(g.label)}</p>${rows}</div>` : "";

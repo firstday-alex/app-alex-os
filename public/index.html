@@ -80,40 +80,34 @@
 
       <!-- Every section starts collapsed: the headers, with their counts, are the
            summary, and a section is opened when it is needed. -->
-      <details class="section" id="sec-week">
-        <summary><h2>This week</h2><span class="sec-count" id="sec-week-count"></span></summary>
-        <div id="week"></div>
+      <details class="section" id="sec-prompts">
+        <summary><h2>Tests ready for a call</h2><span class="sec-count" id="sec-prompts-count"></span><span class="sec-hint">Intelligems tests that reached Ship, Iterate or Kill with no decision written in their notes. Use it to make the call.</span></summary>
+        <div id="prompts"></div>
       </details>
 
       <details class="section" id="sec-attention">
-        <summary><h2>Needs your attention</h2><span class="sec-count" id="sec-attention-count"></span></summary>
+        <summary><h2>Every open flag</h2><span class="sec-count" id="sec-attention-count"></span><span class="sec-hint">The full list behind your queue. Use it to filter, group or triage many at once.</span></summary>
         <div class="bar attn-bar" id="attention-tools"></div>
         <div id="attention"></div>
       </details>
 
-      <details class="section" id="sec-prompts">
-        <summary><h2>Decisions due</h2><span class="sec-count" id="sec-prompts-count"></span></summary>
-        <p class="sub">Tests that have reached a call (Ship, Iterate or Kill) with no decision recorded in their notes.</p>
-        <div id="prompts"></div>
-      </details>
-
       <details class="section" id="sec-layer1">
-        <summary><h2>Layer 1. Leadership priorities</h2><span class="sec-count" id="sec-layer1-count"></span></summary>
+        <summary><h2>Rocks at a glance</h2><span class="sec-count" id="sec-layer1-count"></span><span class="sec-hint">Every leadership rock with its owner, state and last mini readout. Use it to check nothing is ownerless or gone quiet.</span></summary>
         <div id="layer1"></div>
       </details>
 
       <details class="section" id="sec-cross">
-        <summary><h2>Cross layer</h2><span class="sec-count" id="sec-cross-count"></span></summary>
+        <summary><h2>Who has rock work</h2><span class="sec-count" id="sec-cross-count"></span><span class="sec-hint">Each person's sprint split into tickets on a rock and business as usual. Use it to spot anyone with no rock work.</span></summary>
         <div id="cross"></div>
       </details>
 
       <details class="section" id="sec-hygiene">
-        <summary><h2>Hygiene</h2><span class="sec-count" id="sec-hygiene-count"></span></summary>
+        <summary><h2>Tidy-ups</h2><span class="sec-count" id="sec-hygiene-count"></span><span class="sec-hint">Minor ClickUp housekeeping, kept out of your queue so it never escalates. Clear it when you have a spare few minutes.</span></summary>
         <div id="hygiene"></div>
       </details>
 
       <details class="section" id="sec-rules">
-        <summary><h2>Rule check</h2><span class="sec-count" id="sec-rules-count"></span></summary>
+        <summary><h2>Noisy rules</h2><span class="sec-count" id="sec-rules-count"></span><span class="sec-hint">Which flag rules you keep ignoring, and one click to move them to Tidy-ups. Check it every couple of weeks.</span></summary>
         <div id="rule-check"></div>
       </details>
 
@@ -182,12 +176,6 @@
     </section>
 
     <!-- ----------------------------------- update --------------------------------- -->
-    <section class="view hidden" id="view-update">
-      <h2>Update</h2>
-      <p class="sub">Every sprint ticket touched since the start of the previous working day (updated, closed or commented on) that is to do, in progress, in QA or VQA, ready for deploy, or done (this sprint). Complete tickets are left out. Grouped by Big Swing, one per line. Untick anything that should not go in.</p>
-      <div id="update"></div>
-    </section>
-
     <!-- ----------------------------- update + stand-up ----------------------------- -->
     <section class="view hidden" id="view-upsu">
       <h2>Update + Stand-up</h2>
@@ -195,17 +183,17 @@
       <div id="upsu"></div>
     </section>
 
-    <!-- ------------------------------- accomplishments ------------------------------ -->
+    <!-- ------------------------------ wins write-ups ------------------------------ -->
+    <section class="view hidden" id="view-thisweek">
+      <h2>This week's wins</h2>
+      <p class="sub">Every ticket in "done (this sprint)", summed up by the ClickUp ROCK field, then kudos by person. Use it for a mid-week or Friday shout-out; untick anything that should not go in, then copy.</p>
+      <div id="thisweek"></div>
+    </section>
+
     <section class="view hidden" id="view-lastweek">
       <h2>Last week's wins</h2>
       <p class="sub">Every ticket in "dont use" (formerly "complete": last sprint's work), summed up by the ClickUp ROCK field, then kudos by person. Each line is the ticket names ClickUp holds; untick anything that should not go in, then copy.</p>
       <div id="lastweek"></div>
-    </section>
-
-    <section class="view hidden" id="view-wins">
-      <h2>Accomplishments</h2>
-      <p class="sub">Every sprint ticket in done (this sprint) or "dont use" (formerly complete), by the date it was done, grouped by Big Swing, newest first. Untick anything that should not go in.</p>
-      <div id="wins"></div>
     </section>
 
     <!-- ---------------------------------- stand-up -------------------------------- -->
@@ -224,7 +212,7 @@
 
     <section class="view hidden" id="view-speech">
       <h2>Daily Speech</h2>
-      <p class="sub">The day's storyline to give the team: one headline, the win, the stakes, today, and a line to close. Written from the latest readout, the last three days of stand-ups, what Alex's Impact recorded as shipped this week, your notes from the day, and ClickUp comments from people outside the team. Add notes as things come in (a Slack ask, a meeting takeaway): each speech reads everything from midnight of the previous working day up to when you press the button, so Monday's reaches back to Friday. Every figure is checked against that data and any it can't find is flagged before you say it. Runs only when you press the button, as one call to Claude.</p>
+      <p class="sub">The day's storyline to give the team: one headline, the win, the stakes, today, and a line to close. Written from the latest readout, the last three days of stand-ups, what Overall Impact recorded as shipped this week, your notes from the day, and ClickUp comments from people outside the team. Add notes as things come in (a Slack ask, a meeting takeaway): each speech reads everything from midnight of the previous working day up to when you press the button, so Monday's reaches back to Friday. Every figure is checked against that data and any it can't find is flagged before you say it. Runs only when you press the button, as one call to Claude.</p>
       <div id="speech"></div>
     </section>
 
@@ -237,7 +225,7 @@
 
     <!-- ---------------------------------- impact ---------------------------------- -->
     <section class="view hidden" id="view-impact">
-      <h2>Alex's Impact</h2>
+      <h2>Overall Impact</h2>
       <p class="sub">Everything Alex and the team have shipped, in themes, each item linked to the work: tickets done, tests launched and concluded, rocks shipped, and days building this system. It grows each working morning at 9 and gets regrouped as it grows. Nothing is ever removed; an item that loses its theme goes to "Not yet sorted".</p>
       <div id="impact"></div>
     </section>

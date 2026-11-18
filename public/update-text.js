@@ -16,6 +16,8 @@
 // Statuses the daily update covers, furthest along first. "complete" is deliberately absent.
 export const UPDATE_STATUSES = ["done (this sprint)", "done", "ready for deploy", "vqa", "qa", "in review", "in-progress", "in progress", "to do"];
 export const LAST_SPRINT_STATUSES = new Set(["complete", "dont use"]);
+// This sprint's finished work: "done (this sprint)" until the sprint rolls over.
+export const THIS_SPRINT_DONE_STATUSES = new Set(["done (this sprint)", "done"]);
 const DONE_STATUSES = new Set(["done (this sprint)", "done", ...LAST_SPRINT_STATUSES]);
 
 const STATUS_LABEL = {
@@ -138,8 +140,13 @@ export function listed(items) {
   return xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
 }
 
-export function buildLastWeekWins(tasks, { handleFor }) {
-  const done = (tasks ?? []).filter((t) => !t.archived && LAST_SPRINT_STATUSES.has(statusKey(t)));
+/** This week's wins: the same shape as last week's, from tickets done this sprint. */
+export function buildThisWeekWins(tasks, { handleFor }) {
+  return buildLastWeekWins(tasks, { handleFor, statuses: THIS_SPRINT_DONE_STATUSES });
+}
+
+export function buildLastWeekWins(tasks, { handleFor, statuses = LAST_SPRINT_STATUSES }) {
+  const done = (tasks ?? []).filter((t) => !t.archived && statuses.has(statusKey(t)));
   const dates = done.map(doneDate).filter(Boolean);
 
   const rocks = new Map();
@@ -188,10 +195,10 @@ export function kudosLine(p, excluded = new Set()) {
   return `🙌 ${p.who}${across}: ${tasks.map((t) => cleanName(t.plainName ?? t.name)).join(", ")}`;
 }
 
-export function lastWeekText(wins, excluded = new Set()) {
+export function lastWeekText(wins, excluded = new Set(), { title = "Last week's wins" } = {}) {
   const rocks = wins.rocks.map((r) => rockLine(r, excluded)).filter(Boolean);
   const kudos = wins.kudos.map((p) => kudosLine(p, excluded)).filter(Boolean);
-  return [rocks.length ? ["Last week's wins, by rock", ...rocks].join("\n") : "", kudos.length ? ["Kudos", ...kudos].join("\n") : ""]
+  return [rocks.length ? [`${title}, by rock`, ...rocks].join("\n") : "", kudos.length ? ["Kudos", ...kudos].join("\n") : ""]
     .filter(Boolean)
     .join("\n\n");
 }

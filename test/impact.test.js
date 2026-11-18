@@ -1,4 +1,4 @@
-// Alex's Impact: the record only grows, and no regrouping can lose an item.
+// Overall Impact: the record only grows, and no regrouping can lose an item.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
