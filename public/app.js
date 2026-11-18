@@ -705,9 +705,10 @@ $("start-here").addEventListener("click", async (event) => {
     const name = matchPerson(g.person)?.name ?? g.person;
     panel.dataset.kind = "nudge";
     panel.innerHTML = `
-      <label class="wide">To ${esc(name)} <span class="meta">For you to send yourself. Nothing is sent from here.</span>
+      <label class="wide">To ${esc(name)} <span class="meta">Copy it to send yourself, or schedule it below.</span>
         <textarea class="group-nudge-text" rows="${Math.min(14, g.flags.length + 4)}">${esc(groupNudgeText(g))}</textarea></label>
-      <button type="button" class="sm" data-group-act="nudge-copy">Copy, and mark all waiting on ${esc(name)}</button>`;
+      <button type="button" class="sm" data-group-act="nudge-copy">Copy, and mark all waiting on ${esc(name)}</button>
+      ${scheduleRow()}`;
     panel.classList.remove("hidden");
     return;
   }
@@ -1491,7 +1492,7 @@ function undoToast(flagId, key, layer) {
   document.getElementById("undo-toast")?.remove();
   const bar = document.createElement("div");
   bar.id = "undo-toast";
-  bar.innerHTML = `Hidden for today. It is under <strong>Hidden or handled</strong>. <button type="button" class="link-btn">Undo</button>`;
+  bar.innerHTML = `Hidden for today. It is under <strong>Handled</strong> in Your queue. <button type="button" class="link-btn">Undo</button>`;
   bar.querySelector("button").addEventListener("click", async () => {
     bar.remove();
     const holder = document.createElement("div");
@@ -1503,6 +1504,76 @@ function undoToast(flagId, key, layer) {
 }
 
 const findFlag = (card) => (state.report?.flags ?? []).find((f) => f.id === card.dataset.flag);
+
+/* ------------------------------ schedule a nudge ------------------------------
+   Under a drafted nudge: send it in Slack as a DM from Alex at a chosen time
+   (netlify/functions/slack-schedule.mjs). Alex chose this on 2026-11-17. A line saying
+   Claude drafted it is added at the end; nothing goes until Alex presses Schedule. */
+
+/** 9:00 on the next working day, as a datetime-local value. */
+function nextMorning() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  d.setHours(9, 0, 0, 0);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function scheduleRow() {
+  return `<div class="sched-row">
+      <label>Or send it in Slack as you, at <input type="datetime-local" class="sm" data-sched-at value="${esc(nextMorning())}"></label>
+      <button type="button" class="ghost sm" data-sched-send>Schedule in Slack</button>
+      <span class="meta">A DM from your account. "Drafted with Claude" is added at the end.</span>
+      <span class="sched-msg"></span>
+    </div>`;
+}
+
+function schedToast(result) {
+  document.getElementById("undo-toast")?.remove();
+  const bar = document.createElement("div");
+  bar.id = "undo-toast";
+  const when = new Date(result.postAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  bar.innerHTML = `Nudge to ${esc(result.to)} scheduled for ${esc(when)}. <button type="button" class="link-btn">Cancel it</button>`;
+  bar.querySelector("button").addEventListener("click", async () => {
+    const res = await fetch(`${FN}/slack-schedule`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cancel: { channel: result.channel, scheduledId: result.scheduledId } }) });
+    const body = await res.json().catch(() => ({}));
+    bar.innerHTML = res.ok ? `Cancelled. Nothing will be sent to ${esc(result.to)}.` : `Not cancelled: ${esc(body.error ?? `HTTP ${res.status}`)}`;
+    setTimeout(() => bar.remove(), 5000);
+  });
+  document.body.append(bar);
+  setTimeout(() => bar.remove(), 15000);
+}
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-sched-send]");
+  if (!button) return;
+  const panel = button.closest(".triage-panel, .group-panel");
+  const card = button.closest(".flag[data-key]");
+  const group = button.closest("[data-group-person]");
+  const msg = panel.querySelector(".sched-msg");
+  const say = (text, bad = true) => { msg.textContent = text; msg.classList.toggle("triage-error", bad); };
+  const text = panel.querySelector("#tp-text, .group-nudge-text")?.value ?? "";
+  const g = group ? state.queueGroups?.get(group.dataset.groupPerson) : null;
+  const to = g ? matchPerson(g.person)?.name ?? g.person : panel.querySelector("#tp-person")?.value;
+  if (!to || to === "__other") return say("Pick who it goes to.");
+  const at = panel.querySelector("[data-sched-at]")?.value;
+  if (!at) return say("Pick a time.");
+  button.disabled = true;
+  say("Scheduling…", false);
+  try {
+    const res = await fetch(`${FN}/slack-schedule`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to, text, postAt: new Date(at).toISOString() }) });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    schedToast(body);
+    // Scheduled is as good as sent: the card waits on them, as Copy does.
+    if (g) await saveTriageMany(g.flags.filter((f) => !triageOf(f)), { status: "waiting", waitingOn: body.to });
+    else if (card) await saveTriage(card, { status: "waiting", waitingOn: body.to });
+  } catch (err) {
+    button.disabled = false;
+    say(`Not scheduled: ${err.message}`);
+  }
+});
 
 async function saveTriage(card, payload) {
   const errorBox = card.querySelector(".triage-error");
@@ -1635,9 +1706,10 @@ function openPanel(card, kind) {
   } else if (kind === "nudge") {
     panel.innerHTML = `
       <label>To ${personSelect("tp-person")}</label>
-      <label class="wide">Message <span class="meta">For you to send yourself. Nothing is sent from here.</span>
+      <label class="wide">Message <span class="meta">Copy it to send yourself, or schedule it below.</span>
         <textarea id="tp-text" rows="4">${esc(nudgeText(flag))}</textarea></label>
-      <button type="button" class="sm" data-triage="nudge-copy">Copy, and mark waiting</button>`;
+      <button type="button" class="sm" data-triage="nudge-copy">Copy, and mark waiting</button>
+      ${scheduleRow()}`;
   }
   panel.classList.remove("hidden");
 }
