@@ -5633,6 +5633,8 @@ const NAV_GROUPS = [
   { id: "team", pages: [["sprint", "Sprint"], ["backlog", "Backlog"], ["rocks", "Rocks"], ["plan", "Quarter"], ["tests", "Tests"], ["people", "1:1"], ["ideation", "Ideation"]] },
   { id: "writeups", pages: [["mystandup", "My stand-up"], ["update", "Update"], ["upsu", "Update + Stand-up"], ["lastweek", "Last week's wins"], ["wins", "Accomplishments"], ["impact", "Alex's Impact"]] },
 ];
+// On a wide screen the drawer stays open beside the page and is the nav.
+const drawerPinned = matchMedia("(min-width: 1280px)");
 const groupOf = (view) => NAV_GROUPS.find((g) => g.pages.some(([v]) => v === view)) ?? null;
 // The page last open in each area, so going back to an area lands where you were.
 const lastInGroup = {};
@@ -6068,8 +6070,7 @@ function rockLabel(m) {
   const i = m.impact ?? {};
   const course = i.course ?? "on";
   return `<div class="mv-rock">
-      <span class="mv-dot ${esc(course)}" aria-hidden="true"></span>
-      <span class="mv-rock-name">${esc(i.rockTitle ?? "No rock")}</span>
+      <span class="mv-rock-name"><span class="mv-dot ${esc(course)}" aria-hidden="true"></span>${esc(i.rockTitle ?? "No rock")}</span>
       ${course !== "on" ? `<span class="mv-course ${esc(course)}">${esc(COURSE_WORD[course])}</span>` : ""}
       ${m.source ? `<span class="mv-src">${esc(SOURCE_WORD[m.source] ?? "")}</span>` : ""}
     </div>`;
@@ -6241,6 +6242,7 @@ function showView(name) {
     button.setAttribute("aria-selected", String(button.dataset.group === group?.id));
   }
   renderSubtabs(name);
+  for (const g of document.querySelectorAll("#drawer .nav-group")) g.classList.toggle("current", g.dataset.group === group?.id);
   $("view-title").textContent = group ? "" : VIEW_TITLES[name] ?? name;
   $("view-title").hidden = Boolean(group);
   // Keep an existing deep-link target: showView is also called on boot from the hash,
@@ -6278,6 +6280,8 @@ function buildToc() {
   const view = document.querySelector(".view:not(.hidden)");
   const nav = view && document.querySelector(`#drawer .nav[data-view="${view.id.replace(/^view-/, "")}"]`);
   if (!nav) return;
+  // Narrow screens hide the page list (the top tabs are the nav), so the contents go on their own.
+  const home = drawerPinned.matches || nav.classList.contains("nav-setup") ? null : $("toc-home");
   const pageName = nav.textContent.trim().toLowerCase();
   tocTargets = [...view.querySelectorAll(TOC_HEADINGS)].filter((el) => {
     const text = el.textContent.trim();
@@ -6294,13 +6298,15 @@ function buildToc() {
       return `<button type="button" class="toc-link${sub}" data-toc="${i}" title="${esc(text)}">${esc(text)}</button>`;
     })
     .join("");
-  nav.after(list);
+  if (home) {
+    list.insertAdjacentHTML("afterbegin", `<p class="drawer-label">On this page</p>`);
+    home.append(list);
+  } else nav.after(list);
   markTocCurrent();
 }
 
 /* On a wide screen the drawer stays open beside the page, so its contents follow the page:
    rebuilt when the page redraws, and the section you are reading is highlighted. */
-const drawerPinned = matchMedia("(min-width: 1280px)");
 let tocRebuild = null;
 new MutationObserver(() => {
   if (!drawerPinned.matches) return;
@@ -6366,6 +6372,12 @@ for (const button of document.querySelectorAll(".nav")) {
   button.addEventListener("click", () => showView(button.dataset.view));
 }
 for (const button of document.querySelectorAll("#tabs .tab")) {
+  button.addEventListener("click", () => {
+    const group = NAV_GROUPS.find((g) => g.id === button.dataset.group);
+    showView(lastInGroup[group.id] ?? group.pages[0][0]);
+  });
+}
+for (const button of document.querySelectorAll("#drawer .nav-area")) {
   button.addEventListener("click", () => {
     const group = NAV_GROUPS.find((g) => g.id === button.dataset.group);
     showView(lastInGroup[group.id] ?? group.pages[0][0]);
