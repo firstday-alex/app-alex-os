@@ -558,6 +558,36 @@ document.addEventListener("click", async (event) => {
   if (failed.length) alert(`Not saved on ${failed.length}: ${failed[0]}`);
 });
 
+/* Alerts of the same kind sit together within a priority, and a run of two or more gets a
+   thin vertical label ("No due date"), so a batch of the same fix is seen at once. */
+const itemRule = (i) => (i.kind === "flag" ? i.flag.rule : null);
+const itemSev = (i) => (i.kind === "flag" ? i.flag.severity : i.kind === "test" ? (i.flags.some((f) => f.severity === "p1") ? "p1" : "attention") : "attention");
+function clusterByKind(items) {
+  const order = new Map();
+  items.forEach((i, n) => {
+    const k = `${itemSev(i)}|${itemRule(i) ?? `#${n}`}`;
+    if (!order.has(k)) order.set(k, n);
+  });
+  const key = (i, n) => `${itemSev(i)}|${itemRule(i) ?? `#${n}`}`;
+  return items
+    .map((i, n) => ({ i, n, at: order.get(key(i, n)) }))
+    .sort((a, b) => a.at - b.at || a.n - b.n)
+    .map((x) => x.i);
+}
+function runs(list, line) {
+  const out = [];
+  for (let n = 0; n < list.length; ) {
+    const rule = itemRule(list[n]);
+    let m = n + 1;
+    while (rule && m < list.length && itemRule(list[m]) === rule) m++;
+    if (m - n >= 2) {
+      out.push(`<div class="q-run" title="${esc(m - n)} × ${esc(ruleLabel(rule))}"><span class="q-run-label">${esc(ruleLabel(rule))}</span><div class="q-run-rows">${list.slice(n, m).map(line).join("")}</div></div>`);
+    } else out.push(line(list[n]));
+    n = m;
+  }
+  return out.join("");
+}
+
 function queueMatches(f, { kind = true } = {}) {
   const { person, area } = queue.f;
   const q = queue.f.q.trim().toLowerCase();
@@ -645,10 +675,10 @@ function renderTopThree(flags) {
 
   // Filtered, or a pile other than open: a flat list, newest decisions first as ranked.
   if (f.view !== "open" || queueFiltered()) {
-    const folded = foldTests(shownFlags.map((x) => ({ kind: "flag", flag: x })));
+    const folded = clusterByKind(foldTests(shownFlags.map((x) => ({ kind: "flag", flag: x }))));
     const list = queue.all ? folded : folded.slice(0, 25);
     const line = (i) => (i.kind === "test" ? (queue.open.has(testKey(i)) ? testOpened(i, close(testKey(i))) : testRow(i)) : row(i.flag));
-    body.innerHTML = `${f.view === "waiting" ? scheduledList() : ""}<div class="q-list">${list.map(line).join("")}</div>${more(folded.length > 25 ? folded.length : 0)}`;
+    body.innerHTML = `${f.view === "waiting" ? scheduledList() : ""}<div class="q-list">${runs(list, line)}</div>${more(folded.length > 25 ? folded.length : 0)}`;
     return;
   }
 
@@ -658,7 +688,7 @@ function renderTopThree(flags) {
   const items = foldTests(grouped.items);
   state.queueGroups = new Map(groups.map((g) => [g.person, g]));
   const top = items.slice(0, 3);
-  const rest = items.slice(3);
+  const rest = clusterByKind(items.slice(3));
   const shown = queue.all ? rest : rest.slice(0, QUEUE_ROWS);
   const card = (i) => (i.kind === "group" ? groupCard(i) : i.kind === "test" ? testOpened(i, "") : flagCard(i.flag));
   const line = (i) => {
@@ -669,7 +699,7 @@ function renderTopThree(flags) {
   body.innerHTML = `
     ${top.length ? `<p class="q-label">Do first</p><div class="q-tops">${top.map((i, n) => `<div class="q-top"><span class="q-rank">${n + 1}</span>${card(i)}</div>`).join("")}</div>` : ""}
     ${rest.length ? `<p class="q-label">Then <span class="meta">${rest.length} more, highest first</span></p>
-      <div class="q-list">${shown.map(line).join("")}</div>
+      <div class="q-list">${runs(shown, line)}</div>
       ${rest.length > QUEUE_ROWS ? more(rest.length) : ""}` : ""}`;
 }
 

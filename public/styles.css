@@ -1368,3 +1368,11 @@ body:has(#view-ecomrocks:not(.hidden)) main { max-width: 1480px; }
 .q-test-open { padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.5); }
 .due-fix { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
 .due-fix input[type="date"] { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+/* A run of the same kind of alert: a thin vertical label down the left. */
+.q-run { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 6px; align-items: stretch; }
+.q-run-label {
+  writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--link);
+  background: var(--link-bg); border-radius: 8px; padding: 6px 0;
+}
+.q-run-rows { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
