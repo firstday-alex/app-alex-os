@@ -5725,7 +5725,12 @@ function myTicketRow(t) {
   const due = dueText(t);
   const late = /^overdue/.test(due) || due === "due today";
   const open = moves.delegate === String(t.id);
-  const people = (state.people ?? []).filter((p) => String(p.clickupUserId) !== String(state.me)).map((p) => p.name);
+  // Whoever is already on the ticket (for a QA, the person waiting on it) goes last.
+  const onIt = new Set((t.assignees ?? []).map((u) => String(u.id)));
+  const people = (state.people ?? [])
+    .filter((p) => String(p.clickupUserId) !== String(state.me))
+    .sort((a, b) => onIt.has(String(a.clickupUserId)) - onIt.has(String(b.clickupUserId)))
+    .map((p) => p.name);
   return `<div class="mt-row${open ? " open" : ""}">
       <div class="mt-line">
         <span class="mt-status st-${esc(stage.id)}">${esc(t.status ?? "open")}</span>
