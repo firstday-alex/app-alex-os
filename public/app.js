@@ -725,18 +725,31 @@ function groupRow(g) {
     </div>`;
 }
 
+/**
+ * Rock decisions that Today's rock moves already offers (or that Alex picked), so the queue
+ * does not show the same decision a second time. They stay under Needs your attention.
+ */
+function inRockMoves(flags) {
+  const d = moves.data;
+  if (!d) return new Set();
+  const rocks = new Set([...d.picks, ...d.suggestions].filter((m) => m.source === "course").map((m) => String(m.impact?.rockId)));
+  return new Set(flags.filter((f) => f.rule === "leadership.rock_off_course" && rocks.has(String(f.subject?.id ?? "").split(":")[0])).map((f) => f.id));
+}
+
 function renderTopThree(flags) {
   const host = $("start-here");
   if (!host) return;
-  const ranked = rankedFlags(flags);
+  const covered = inRockMoves(flags);
+  const ranked = rankedFlags(flags).filter((f) => !covered.has(f.id));
   const { items, groups } = groupByPerson(ranked, groupOpts());
   state.queueGroups = new Map(groups.map((g) => [g.person, g]));
   const set = flags.filter((f) => !isContextFlag(f) && viewOf(f) !== "open");
   const count = (sev) => ranked.filter((f) => f.severity === sev).length;
-  const chip = (n, label, cls = "") => (n ? `<span class="chip ${cls}">${n} ${esc(label)}</span>` : "");
+  const pill = (n, label, cls = "") => (n ? `<span class="q-pill ${cls}">${n} ${esc(label)}</span>` : "");
   const summary = ranked.length
-    ? `${chip(count("p1"), "P1", "bad")}${chip(count("attention"), "P2", "warn")}${chip(count("prompt"), count("prompt") === 1 ? "decision due" : "decisions due")}${chip(flagsForView("waiting").length, "waiting on someone")}${groups.length ? `<span class="meta">in ${esc(plural(items.length, "line", "lines"))}</span>` : ""}`
+    ? `${pill(count("p1"), "P1", "p1")}${pill(count("attention"), "P2", "p2")}${pill(count("prompt"), count("prompt") === 1 ? "decision" : "decisions")}${pill(flagsForView("waiting").length, "waiting")}`
     : `<span class="meta">Nothing open that needs you.</span>`;
+  const cleared = set.filter((f) => triageOf(f)?.status === "done").length;
 
   const top = items.slice(0, 3);
   const rest = items.slice(3);
@@ -748,16 +761,27 @@ function renderTopThree(flags) {
     return queue.open.has(i.flag.id) ? `<div class="q-opened">${flagCard(i.flag)}${close(i.flag.id)}</div>` : queueRow(i.flag);
   };
 
-  host.innerHTML = `
-    <div class="start-here-head"><h2>Your queue</h2><span class="q-summary">${summary}</span></div>
-    ${top.length ? `<p class="q-label">Do first</p>${top.map(card).join("")}` : ""}
-    ${rest.length ? `<p class="q-label">Then <span class="meta">${rest.length} more, highest first. Click one to open it.</span></p>
+  host.innerHTML = `<div class="glass q-glass">
+    <header class="q-header">
+      <div>
+        <h2>Your queue</h2>
+        <div class="q-summary">${summary}</div>
+      </div>
+      <div class="q-score">
+        <span class="q-big">${esc(items.length)}</span><span class="q-big-k">${items.length === 1 ? "line open" : "lines open"}</span>
+        ${cleared ? `<span class="q-cleared">✓ ${esc(cleared)} cleared</span>` : ""}
+      </div>
+    </header>
+    ${covered.size ? `<button type="button" class="q-moved" data-q-focus>↑ ${esc(plural(covered.size, "rock decision is", "rock decisions are"))} in Today's rock moves</button>` : ""}
+    ${top.length ? `<p class="q-label">Do first</p><div class="q-tops">${top.map((i, n) => `<div class="q-top"><span class="q-rank">${n + 1}</span>${card(i)}</div>`).join("")}</div>` : ""}
+    ${rest.length ? `<p class="q-label">Then <span class="meta">${rest.length} more, highest first</span></p>
       <div class="q-list">${shown.map(line).join("")}</div>
-      ${rest.length > shown.length ? `<button type="button" class="ghost sm" data-q-more>Show all ${rest.length}</button>` : queue.all && rest.length > QUEUE_ROWS ? `<button type="button" class="ghost sm" data-q-more>Show fewer</button>` : ""}` : ""}
+      ${rest.length > shown.length ? `<button type="button" class="link-btn q-all" data-q-more>Show all ${rest.length}</button>` : queue.all && rest.length > QUEUE_ROWS ? `<button type="button" class="link-btn q-all" data-q-more>Show fewer</button>` : ""}` : ""}
     ${set.length ? `<details class="q-tray"${queue.trayOpen ? " open" : ""}>
-        <summary>Hidden or handled <span class="meta">${set.length} · nothing is lost: bring any back</span></summary>
+        <summary>Hidden or handled <span class="meta">${set.length} · bring any back</span></summary>
         <div class="q-list">${set.map(queueRow).join("")}</div>
-      </details>` : ""}`;
+      </details>` : ""}
+  </div>`;
 }
 
 /**
@@ -894,6 +918,7 @@ $("start-here").addEventListener("click", async (event) => {
 });
 
 $("start-here").addEventListener("click", (event) => {
+  if (event.target.closest("[data-q-focus]")) return $("focus")?.scrollIntoView({ behavior: "smooth", block: "start" });
   const more = event.target.closest("[data-q-more]");
   const open = event.target.closest("[data-q-open]");
   if (more) queue.all = !queue.all;
@@ -6003,7 +6028,8 @@ function focusTest(testId, { attempt = 0 } = {}) {
    Top of What needs you: the few things that move a rock today, each with what it moves
    and why now, picked by Alex and ticked off. See src/focus/moves.js. */
 
-const moves = { data: null, loading: false, busy: false, adding: false, more: false, error: null, just: null };
+const moves = { data: null, loading: false, busy: false, adding: false, more: false, error: null, just: null, copied: null };
+const FOCUS_MIN = 25;
 const COURSE_WORD = { off: "off course", drift: "drifting", on: "on course" };
 const WEEKDAY = (key) => new Date(`${key}T12:00:00Z`).toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
 
@@ -6021,6 +6047,7 @@ async function loadMoves() {
   } finally {
     moves.loading = false;
     renderMoves();
+    if (state.report) renderTopThree(state.report.flags ?? []);
   }
 }
 
@@ -6038,6 +6065,7 @@ async function movesChange(change) {
   } finally {
     moves.busy = false;
     renderMoves();
+    if (state.report) renderTopThree(state.report.flags ?? []);
   }
 }
 
@@ -6093,6 +6121,71 @@ function impactFacts(i, { full }) {
   return `<dl class="mv-facts">${rows.map(([k, v]) => `<dt>${k}</dt><dd title="${esc(v.replace(/<[^>]+>/g, ""))}">${v}</dd>`).join("")}</dl>`;
 }
 
+/* Focus blocks: a 25-minute timer per move, kept in this browser only (a convenience; the
+   start time itself is saved with the move). */
+function focusTimers() {
+  try { return JSON.parse(localStorage.getItem("mv-focus") ?? "{}") ?? {}; } catch { return {}; }
+}
+function setFocusTimer(id, endsAt) {
+  const all = focusTimers();
+  if (endsAt) all[id] = endsAt; else delete all[id];
+  try { localStorage.setItem("mv-focus", JSON.stringify(all)); } catch { /* private window: the timer just is not kept */ }
+}
+const mins = (ms) => Math.max(0, Math.round(ms / 60000));
+function tickMoves() {
+  const now = Date.now();
+  for (const el of document.querySelectorAll("[data-mv-since]")) {
+    const m = mins(now - Date.parse(el.dataset.mvSince));
+    el.textContent = m < 1 ? "just started" : m < 60 ? `${m} min in` : `${Math.floor(m / 60)} h ${m % 60} min in`;
+  }
+  for (const el of document.querySelectorAll("[data-mv-ends]")) {
+    const left = Number(el.dataset.mvEnds) - now;
+    if (left > 0) {
+      const sec = Math.ceil(left / 1000);
+      el.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")} left`;
+    } else if (!el.classList.contains("up")) {
+      el.classList.add("up");
+      el.textContent = "Time's up. Done, or another 25?";
+    }
+  }
+}
+setInterval(tickMoves, 1000);
+
+/** What to copy to get it moving: a note to the rock owner, or the stand-up line. */
+function kickoffNote(m, parts) {
+  const i = m.impact ?? {};
+  const lower = (x) => (x ? x[0].toLowerCase() + x.slice(1) : x);
+  if (parts.withWhom) {
+    return {
+      label: `Copy note to ${parts.withWhom}`,
+      text: `Hi ${parts.withWhom}, quick one on ${i.rockTitle}: ${lower(m.why ?? parts.title)}.${parts.how ? ` Can you ${lower(parts.how)}?` : ""} Thanks!`,
+    };
+  }
+  return { label: "Copy stand-up line", text: `Today: ${parts.title} (moves ${i.rockTitle})` };
+}
+
+/** The started move: how long it has run, the first step, and one click to each place the work happens. */
+function kickoff(m, parts) {
+  const i = m.impact ?? {};
+  const ends = focusTimers()[m.id];
+  const note = kickoffNote(m, parts);
+  const links = [
+    m.url ? `<a class="mv-go primary" href="${esc(m.url)}" target="_blank" rel="noreferrer">Open in ClickUp ↗</a>` : "",
+    i.rockId ? `<a class="mv-go" href="#rocks/${encodeURIComponent(i.rockId)}">Open rock</a>` : "",
+    m.source === "plan" ? `<a class="mv-go" href="#plan">Quarter plan</a>` : "",
+  ].join("");
+  return `<div class="mv-kick">
+      <div class="mv-live"><span class="mv-pulse" aria-hidden="true"></span>In progress · <span data-mv-since="${esc(m.startedAt)}"></span>
+        ${ends ? `<span class="mv-timer" data-mv-ends="${esc(ends)}"></span>` : ""}</div>
+      ${parts.how ? `<p class="mv-step"><span class="mv-k">First step</span> ${esc(parts.how)}.</p>` : ""}
+      <div class="mv-kick-acts">
+        ${links}
+        <button type="button" class="mv-go" data-mv="copy" data-mv-id="${esc(m.id)}">${moves.copied === m.id ? "Copied ✓" : esc(note.label)}</button>
+        <button type="button" class="mv-go" data-mv="focus" data-mv-id="${esc(m.id)}">${ends && Number(ends) > Date.now() ? "Stop timer" : `Focus ${FOCUS_MIN} min`}</button>
+      </div>
+    </div>`;
+}
+
 function moveCard(m) {
   const parts = moveParts(m);
   if (m.doneAt) {
@@ -6104,16 +6197,20 @@ function moveCard(m) {
         <button type="button" class="link-btn" data-mv="undo" data-mv-id="${esc(m.id)}">Undo</button>
       </div>`;
   }
-  return `<div class="mv-card">
+  const started = Boolean(m.startedAt);
+  return `<div class="mv-card${started ? " started" : ""}">
       ${rockLabel(m)}
       <div class="mv-head">
         ${moveTitle(m, parts)}
         <span class="mv-acts">
-          <button type="button" class="sm" data-mv="done" data-mv-id="${esc(m.id)}">Done</button>
+          ${started
+            ? `<button type="button" class="sm" data-mv="done" data-mv-id="${esc(m.id)}">Done</button>`
+            : `<button type="button" class="sm" data-mv="start" data-mv-id="${esc(m.id)}">Start</button>
+               <button type="button" class="ghost sm" data-mv="done" data-mv-id="${esc(m.id)}">Done</button>`}
           <button type="button" class="link-btn" data-mv="remove" data-mv-id="${esc(m.id)}" title="Take it off today's list">Drop</button>
         </span>
       </div>
-      ${parts.how ? `<p class="mv-how">${esc(parts.how)}.</p>` : ""}
+      ${started ? kickoff(m, parts) : parts.how ? `<p class="mv-how">${esc(parts.how)}.</p>` : ""}
       ${m.why && m.source !== "plan" ? `<p class="mv-why" title="${esc(m.why)}"><span class="mv-k">Why now</span> ${esc(m.why)}</p>` : ""}
       ${impactFacts(m.impact, { full: true })}
     </div>`;
@@ -6125,7 +6222,10 @@ function suggestionRow(m) {
       ${rockLabel(m)}
       <div class="mv-head">
         ${moveTitle(m, parts)}
-        <span class="mv-acts"><button type="button" class="ghost sm" data-mv="pick" data-mv-id="${esc(m.id)}">Do today</button></span>
+        <span class="mv-acts">
+          <button type="button" class="sm" data-mv="start-new" data-mv-id="${esc(m.id)}" title="Add it to today and start now">Start now</button>
+          <button type="button" class="ghost sm" data-mv="pick" data-mv-id="${esc(m.id)}" title="Add it to today's list to start later">Later today</button>
+        </span>
       </div>
       ${m.why && m.source !== "plan" ? `<p class="mv-why" title="${esc(m.why)}">${esc(m.why)}</p>` : ""}
       ${impactFacts(m.impact, { full: false })}
@@ -6149,10 +6249,10 @@ function renderMoves() {
   if (!host) return;
   const d = moves.data;
   if (!d) {
-    host.innerHTML = `<div class="mv-glass">${moves.error ? `<p class="triage-error">${esc(moves.error)}</p>` : `<p class="meta">Loading today's rock moves…</p>`}</div>`;
+    host.innerHTML = `<div class="glass mv-glass">${moves.error ? `<p class="triage-error">${esc(moves.error)}</p>` : `<p class="meta">Loading today's rock moves…</p>`}</div>`;
     return;
   }
-  const open = d.picks.filter((p) => !p.doneAt);
+  const open = d.picks.filter((p) => !p.doneAt).sort((a, b) => Boolean(b.startedAt) - Boolean(a.startedAt));
   const done = d.picks.filter((p) => p.doneAt);
   const room = open.length < 3;
   const sugs = room ? d.suggestions.slice(0, moves.more ? 6 : d.picks.length ? 2 : 3) : [];
@@ -6176,11 +6276,11 @@ function renderMoves() {
     : `<span class="meta">Nothing done yet this week</span>`;
 
   host.innerHTML = `
-    <div class="mv-glass">
+    <div class="glass mv-glass">
       <header class="mv-header">
         <div>
           <h2>Today's rock moves</h2>
-          <p class="mv-sub">${d.picks.length ? `${esc(done.length)} of ${esc(d.picks.length)} done` : "Pick up to 3 before you open the queue"}</p>
+          <p class="mv-sub">${d.picks.length ? [`${done.length} of ${d.picks.length} done`, open.some((p) => p.startedAt) ? `${open.filter((p) => p.startedAt).length} in progress` : ""].filter(Boolean).map(esc).join(" · ") : "Start one before you open the queue"}</p>
         </div>
         <div class="mv-meter" aria-label="${esc(done.length)} of ${esc(d.picks.length)} done">${meter}</div>
       </header>
@@ -6194,7 +6294,7 @@ function renderMoves() {
         ? `<form class="mv-add" data-mv-form>
             <input type="text" name="text" maxlength="200" placeholder="What will you do today?" required>
             <select name="rockId" required aria-label="Rock it moves"><option value="">Rock it moves…</option>${d.rocks.map((r) => `<option value="${esc(r.id)}">${esc(r.title)}</option>`).join("")}</select>
-            <button type="submit" class="sm">Add</button><button type="button" class="link-btn" data-mv="cancel">Cancel</button>
+            <button type="submit" class="sm">Start now</button><button type="submit" class="ghost sm" data-later>Later today</button><button type="button" class="link-btn" data-mv="cancel">Cancel</button>
           </form>`
         : `<button type="button" class="link-btn mv-add-btn" data-mv="add">+ Add your own</button>`) : ""}
       <footer class="mv-week">
@@ -6203,6 +6303,7 @@ function renderMoves() {
         ${breakdown}
       </footer>
     </div>`;
+  tickMoves();
 }
 
 $("focus")?.addEventListener("click", (event) => {
@@ -6214,7 +6315,24 @@ $("focus")?.addEventListener("click", (event) => {
   if (act === "add") { moves.adding = true; renderMoves(); return $("focus").querySelector("[data-mv-form] input")?.focus(); }
   if (act === "cancel") { moves.adding = false; return renderMoves(); }
   if (act === "pick") return movesChange({ pick: { id } });
-  if (act === "done") { moves.just = id; return movesChange({ done: id }); }
+  if (act === "start-new") return movesChange({ pick: { id }, start: true });
+  if (act === "start") return movesChange({ start: id });
+  if (act === "focus") {
+    const on = Number(focusTimers()[id] ?? 0) > Date.now();
+    setFocusTimer(id, on ? null : Date.now() + FOCUS_MIN * 60000);
+    return renderMoves();
+  }
+  if (act === "copy") {
+    const m = moves.data?.picks.find((p) => p.id === id);
+    if (!m) return;
+    navigator.clipboard?.writeText(kickoffNote(m, moveParts(m)).text).then(() => {
+      moves.copied = id;
+      renderMoves();
+      setTimeout(() => { moves.copied = null; renderMoves(); }, 2000);
+    }).catch(() => { moves.error = "Could not copy: the browser blocked the clipboard."; renderMoves(); });
+    return;
+  }
+  if (act === "done") { moves.just = id; setFocusTimer(id, null); return movesChange({ done: id }); }
   if (act === "undo") return movesChange({ undo: id });
   if (act === "remove") return movesChange({ remove: id });
 });
@@ -6227,7 +6345,7 @@ $("focus")?.addEventListener("submit", (event) => {
   const rockId = form.rockId.value;
   if (!text || !rockId) return;
   moves.adding = false;
-  movesChange({ pick: { text, rockId } });
+  movesChange({ pick: { text, rockId }, start: !(event.submitter && "later" in event.submitter.dataset) });
 });
 
 function showView(name) {
@@ -6242,7 +6360,6 @@ function showView(name) {
     button.setAttribute("aria-selected", String(button.dataset.group === group?.id));
   }
   renderSubtabs(name);
-  for (const g of document.querySelectorAll("#drawer .nav-group")) g.classList.toggle("current", g.dataset.group === group?.id);
   $("view-title").textContent = group ? "" : VIEW_TITLES[name] ?? name;
   $("view-title").hidden = Boolean(group);
   // Keep an existing deep-link target: showView is also called on boot from the hash,
@@ -6278,11 +6395,10 @@ let tocTargets = [];
 function buildToc() {
   document.getElementById("drawer-toc")?.remove();
   const view = document.querySelector(".view:not(.hidden)");
-  const nav = view && document.querySelector(`#drawer .nav[data-view="${view.id.replace(/^view-/, "")}"]`);
-  if (!nav) return;
-  // Narrow screens hide the page list (the top tabs are the nav), so the contents go on their own.
-  const home = drawerPinned.matches || nav.classList.contains("nav-setup") ? null : $("toc-home");
-  const pageName = nav.textContent.trim().toLowerCase();
+  if (!view) return;
+  const name = view.id.replace(/^view-/, "");
+  const home = $("toc-home");
+  const pageName = String(groupOf(name)?.pages.find(([v]) => v === name)?.[1] ?? VIEW_TITLES[name] ?? name).toLowerCase();
   tocTargets = [...view.querySelectorAll(TOC_HEADINGS)].filter((el) => {
     const text = el.textContent.trim();
     // The page's own title repeats the nav entry above it, and hidden parts are not there to jump to.
@@ -6298,10 +6414,8 @@ function buildToc() {
       return `<button type="button" class="toc-link${sub}" data-toc="${i}" title="${esc(text)}">${esc(text)}</button>`;
     })
     .join("");
-  if (home) {
-    list.insertAdjacentHTML("afterbegin", `<p class="drawer-label">On this page</p>`);
-    home.append(list);
-  } else nav.after(list);
+  list.insertAdjacentHTML("afterbegin", `<p class="drawer-label">On this page</p>`);
+  home.append(list);
   markTocCurrent();
 }
 
@@ -6372,12 +6486,6 @@ for (const button of document.querySelectorAll(".nav")) {
   button.addEventListener("click", () => showView(button.dataset.view));
 }
 for (const button of document.querySelectorAll("#tabs .tab")) {
-  button.addEventListener("click", () => {
-    const group = NAV_GROUPS.find((g) => g.id === button.dataset.group);
-    showView(lastInGroup[group.id] ?? group.pages[0][0]);
-  });
-}
-for (const button of document.querySelectorAll("#drawer .nav-area")) {
   button.addEventListener("click", () => {
     const group = NAV_GROUPS.find((g) => g.id === button.dataset.group);
     showView(lastInGroup[group.id] ?? group.pages[0][0]);

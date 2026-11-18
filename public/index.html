@@ -40,50 +40,10 @@
 
   <nav id="drawer" aria-hidden="true">
     <p class="drawer-brand">Turnpups MOS</p>
-    <!-- One nav per screen: on a wide screen this list is the nav (the top tabs are hidden)
-         and only the open area is unfolded; on a narrow one the top tabs are the nav and
-         this list is hidden, leaving the page's contents, Setup and the tools. -->
-    <div id="drawer-nav">
-      <div class="nav-group" data-group="today">
-        <button type="button" class="nav-area" data-group="today">Today</button>
-        <div class="nav-pages">
-          <button class="nav" data-view="readout">What needs you</button>
-          <button class="nav" data-view="speech">Daily Speech</button>
-          <button class="nav" data-view="standup">Stand-up</button>
-        </div>
-      </div>
-      <div class="nav-group" data-group="team">
-        <button type="button" class="nav-area" data-group="team">Team</button>
-        <div class="nav-pages">
-          <button class="nav" data-view="sprint">Sprint</button>
-          <button class="nav" data-view="backlog">Backlog</button>
-          <button class="nav" data-view="rocks">Rocks</button>
-          <button class="nav" data-view="plan">Quarter plan</button>
-          <button class="nav" data-view="tests">Tests</button>
-          <button class="nav" data-view="people">1:1</button>
-          <button class="nav" data-view="ideation">Ideation</button>
-        </div>
-      </div>
-      <div class="nav-group" data-group="writeups">
-        <button type="button" class="nav-area" data-group="writeups">Write-ups</button>
-        <div class="nav-pages">
-          <button class="nav" data-view="mystandup">My stand-up</button>
-          <button class="nav" data-view="update">Update</button>
-          <button class="nav" data-view="upsu">Update + Stand-up</button>
-          <button class="nav" data-view="lastweek">Last week's wins</button>
-          <button class="nav" data-view="wins">Accomplishments</button>
-          <button class="nav" data-view="impact">Alex's Impact</button>
-        </div>
-      </div>
-    </div>
+    <!-- The pages are in the top bar. The menu holds what the top bar does not: the open
+         page's sections and Setup. -->
     <div id="toc-home"></div>
     <button class="nav nav-setup" data-view="setup">Setup &amp; open decisions</button>
-
-    <div class="drawer-tools">
-      <p class="drawer-label">Daily alert</p>
-      <button class="nav-tool" id="test-readout">Send a test readout</button>
-      <p class="meta" id="test-readout-note">Posts the readout to Slack now, labelled as a test. It does not replace or block the 8&nbsp;AM send.</p>
-    </div>
 
     <div class="drawer-foot">
       <p class="meta" id="drawer-baseline">—</p>
@@ -302,6 +262,11 @@
       <h2>Still to decide</h2>
       <p class="sub">Open items the config carries. Each is a decision waiting on a person, not a bug.</p>
       <div id="open-items"></div>
+          <h2>Daily alert</h2>
+      <div class="bar">
+        <button class="ghost" id="test-readout">Send a test readout</button>
+        <span class="meta" id="test-readout-note">Posts the readout to Slack now, labelled as a test. It does not replace or block the 8&nbsp;AM send.</span>
+      </div>
     </section>
   </main>
 </div>

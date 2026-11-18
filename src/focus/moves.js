@@ -163,6 +163,7 @@ export class FocusStore {
   /**
    * One change to a day's moves:
    *   { pick: {id, text, why?, url?, source?, impact?} }   at most MAX_PICKS a day
+   *   { start: id }   started now (kept if already started)
    *   { done: id, note? }   { undo: id }   { remove: id }
    */
   async apply(dateKey, change, { now = new Date() } = {}) {
@@ -190,9 +191,13 @@ export class FocusStore {
         source: ["course", "plan", "ticket", "own"].includes(m.source) ? m.source : "own",
         impact,
         pickedAt: at,
+        startedAt: change.start ? at : null,
         doneAt: null,
         note: null,
       });
+    } else if (change?.start) {
+      const p = find(change.start);
+      p.startedAt = p.startedAt ?? at;
     } else if (change?.done) {
       const p = find(change.done);
       p.doneAt = at;
@@ -201,11 +206,12 @@ export class FocusStore {
       const p = find(change.undo);
       p.doneAt = null;
       p.note = null;
+      p.startedAt = p.startedAt ?? null;
     } else if (change?.remove) {
       find(change.remove);
       doc.picks = doc.picks.filter((p) => p.id !== String(change.remove));
     } else {
-      throw new FocusError("Pick, done, undo or remove?");
+      throw new FocusError("Pick, start, done, undo or remove?");
     }
     doc.updatedAt = at;
     await this.backend.set(FocusStore.key(dateKey), doc);

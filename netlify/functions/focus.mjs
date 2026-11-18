@@ -4,6 +4,8 @@
 //                               tally and the tickets on rocks Alex shipped this week
 //   POST /focus  { change }     { pick: {id} }               a suggestion, looked up here
 //                               { pick: {text, rockId} }     Alex's own move on a rock
+//                               either with start: true      picked and started at once
+//                               { start: id }                started now
 //                               { done: id, note? } | { undo: id } | { remove: id }
 //
 // A picked suggestion is resolved on the server from the latest readout, so what is
@@ -65,12 +67,12 @@ export default async (req) => {
           const all = suggestions({ report, plan, dateKey: today, timeZone: tz, alex: config.people?.alex ?? {}, picked: day.picks, limit: 100 });
           const move = all.find((m) => m.id === String(change.pick.id));
           if (!move) throw new FocusError("That suggestion is no longer on offer. Reload and try again.", 409);
-          await focus.apply(today, { pick: move });
+          await focus.apply(today, { pick: move, start: Boolean(change.start) });
         } else {
           const rock = rocks.find((r) => r.id === String(change.pick.rockId ?? ""));
           if (!rock) throw new FocusError("Which rock does it move?");
           const course = (report?.detail?.rockCourse ?? []).find((c) => c.id === rock.id) ?? null;
-          await focus.apply(today, { pick: { text: change.pick.text, source: "own", why: "Your own move", impact: impactOf(rock, course, today) } });
+          await focus.apply(today, { pick: { text: change.pick.text, source: "own", why: "Your own move", impact: impactOf(rock, course, today) }, start: Boolean(change.start) });
         }
       } else {
         await focus.apply(today, change);
