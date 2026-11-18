@@ -1864,35 +1864,178 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+/* -------------------------------- Ecom Rocks map --------------------------------
+   Each rock as a hub: a circle with its title and owner, ringed by its course; its
+   tactics branch out with their owners and status. Click a tactic for the tickets on it;
+   click a rock to fold its tactics away (and back). Tickets are placed as the rock check
+   places them (src/delta/rock-course.js placeTicket): a TACTIC value naming one of the
+   rock's tactics, else a ROCK option the rock or a tactic is linked through, else a ROCK
+   label equal to the rock's title. */
+
+const rmap = { collapsed: new Set(), tactic: null, rockTickets: null };
+
+function placeTicketOnRock(rocks, task) {
+  const ids = (xs) => (xs ?? []).filter(Boolean).map(String);
+  const tacticOpt = task?.leadershipPriority?.optionId == null ? null : String(task.leadershipPriority.optionId);
+  const swingOpt = task?.bigSwing?.optionId == null ? null : String(task.bigSwing.optionId);
+  const swingLabel = String(task?.bigSwing?.label ?? "").trim().toLowerCase();
+  const swingsOf = (r) => ids(r.clickupBigSwingOptionIds ?? (r.clickupBigSwingOptionId ? [r.clickupBigSwingOptionId] : []));
+  const rock =
+    rocks.find((r) => tacticOpt && ids(r.clickupTacticOptionIds).includes(tacticOpt)) ??
+    (swingOpt ? rocks.find((r) => swingsOf(r).includes(swingOpt)) : null) ??
+    (swingLabel ? rocks.find((r) => String(r.title ?? "").trim().toLowerCase() === swingLabel) : null);
+  if (!rock) return null;
+  const tactic = (rock.tactics ?? []).find(
+    (t) => (tacticOpt && String(t.clickupTacticOptionId ?? "") === tacticOpt) || (swingOpt && String(t.clickupBigSwingOptionId ?? "") === swingOpt),
+  );
+  return { rockId: rock.id, tacticId: tactic?.id ?? null };
+}
+
+const ownerName = (o) => (o && typeof o === "object" ? o.name : o) || null;
+const initials = (name) => (name ? String(name).trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase() : "?");
+const TACTIC_TONE = { done: "done", shipped: "done", on_track: "on", at_risk: "risk", off_track: "off", overdue: "off", blocked: "off" };
+const TACTIC_WORD = { done: "done", shipped: "shipped", on_track: "on track", at_risk: "at risk", off_track: "off track", overdue: "overdue", blocked: "blocked" };
+
 function renderLayer1(report) {
+  const host = $("layer1");
+  if (!host) return;
   const section = report.sections.leadership;
   const detail = report.detail?.leadership;
   if (!section?.present) {
-    $("layer1").innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
+    host.innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
     return;
   }
-  const rows = (detail.queue ?? [])
-    .map(
-      (item) => `<tr>
-        <td class="wrap">${esc(item.title)}</td>
-        <td>${esc(item.state)}</td>
-        <td>${item.owner ? esc(item.owner.name) : '<strong>no owner</strong>'}</td>
-        <td>${esc(item.type ?? "—")}</td>
-        <td>${esc(item.shippedAt ?? "—")}</td>
-        <td>${esc(item.lastMiniReadoutAt ?? "never")}</td>
-      </tr>`,
-    )
-    .join("");
-  const s = detail.summary;
-  sectionCount("layer1", `${s.activeCount} active · ${s.shippedCount} shipped · ${s.backlogCount} backlog`);
-  $("layer1").innerHTML = `
-    <p class="sub">${s.activeCount} active, ${s.shippedCount} shipped, ${s.backlogCount} in the backlog. ${s.peopleAtCapacity} of ${s.rosterSize} people at capacity. Every item here is a P1.</p>
-    <div class="scroll"><table>
-      <thead><tr><th>Priority</th><th>State</th><th>Owner</th><th>Type</th><th>Shipped</th><th>Last mini readout</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="6">The leadership queue is empty.</td></tr>'}</tbody>
-    </table></div>
-    ${detail.backlog?.length ? `<h3>Leadership backlog</h3><p>${detail.backlog.map((i) => esc(i.title)).join("; ")}</p>` : ""}`;
+  const rocks = (detail.queue ?? []).filter((r) => r.state === "active");
+  const courses = new Map((report.detail?.rockCourse ?? []).map((c) => [c.id, c]));
+  const tasks = [...(report.detail?.clickup?.tasks ?? []), ...(report.detail?.backlog?.items ?? []).map((t) => ({ ...t, fromBacklog: true }))]
+    .filter((t) => !t.archived);
+  // tickets per rock and per tactic
+  const onRock = new Map();
+  const onTactic = new Map();
+  for (const t of tasks) {
+    const place = placeTicketOnRock(rocks, t);
+    if (!place) continue;
+    const key = place.tacticId ? `${place.rockId}:${place.tacticId}` : place.rockId;
+    const map = place.tacticId ? onTactic : onRock;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(t);
+  }
+  const allIds = rocks.map((r) => r.id);
+  const allFolded = allIds.length && allIds.every((id) => rmap.collapsed.has(id));
+
+  const ticketList = (list, title) => {
+    const open = list.filter((t) => t.bucket !== "done");
+    const done = list.length - open.length;
+    return `<div class="rm-tickets">
+        <p class="rm-tickets-head">${esc(title)} <span class="meta">${esc(plural(open.length, "open ticket", "open tickets"))}${done ? ` · ${esc(done)} done` : ""}</span></p>
+        ${list.length
+          ? `<ul class="plain">${[...list].sort((a, b) => (a.bucket === "done") - (b.bucket === "done")).map((t) => `<li class="${t.bucket === "done" ? "rm-done" : ""}">
+              <span class="mt-status st-${esc(stageOf(t).id)}">${esc(t.status ?? "")}</span>
+              ${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)}
+              <span class="meta">${esc((t.assignees ?? []).map((u) => String(u.username ?? "").split(/\s+/)[0]).join(", ") || "nobody")}${t.fromBacklog ? " · backlog" : ""}${t.dueDate && t.bucket !== "done" ? ` · ${esc(dueText(t))}` : ""}</span>
+            </li>`).join("")}</ul>`
+          : `<p class="meta">No tickets carry this in ClickUp yet. Set the ticket's ROCK or TACTIC to it.</p>`}
+      </div>`;
+  };
+
+  const card = (rock) => {
+    const course = courses.get(rock.id)?.course ?? "on";
+    const tactics = rock.tactics ?? [];
+    const folded = rmap.collapsed.has(rock.id);
+    // Drawn at about the card's real width, so text shows at its normal size.
+    const W = 860;
+    const rowH = 64;
+    const H = folded || !tactics.length ? 170 : Math.max(170, tactics.length * rowH + 20);
+    const cx = 92;
+    const cy = H / 2;
+    const R = 66;
+    const tx = 330;
+    const owner = ownerName(rock.owner);
+    const nodes = folded ? "" : tactics.map((t, i) => {
+      const ty = tactics.length === 1 ? cy : 15 + rowH / 2 + i * ((H - 30 - rowH) / Math.max(1, tactics.length - 1));
+      const key = `${rock.id}:${t.id}`;
+      const tickets = onTactic.get(key) ?? [];
+      const openN = tickets.filter((x) => x.bucket !== "done").length;
+      const tone = TACTIC_TONE[t.status] ?? "on";
+      const tOwner = ownerName(t.owner);
+      const picked = rmap.tactic === key;
+      return `<g class="rm-tactic tone-${tone}${picked ? " picked" : ""}" data-rm-tactic="${esc(key)}" tabindex="0" role="button" aria-label="${esc(t.title)}: show its tickets">
+          <path class="rm-link" d="M ${cx + R} ${cy} C ${cx + R + 70} ${cy}, ${tx - 90} ${ty}, ${tx - 26} ${ty}" />
+          <circle class="rm-tnode" cx="${tx}" cy="${ty}" r="26" />
+          <text class="rm-tinit" x="${tx}" y="${ty + 5}" text-anchor="middle">${esc(tOwner ? initials(tOwner) : "–")}</text>
+          ${openN ? `<circle class="rm-count" cx="${tx + 20}" cy="${ty - 20}" r="10" /><text class="rm-count-n" x="${tx + 20}" y="${ty - 16}" text-anchor="middle">${openN}</text>` : ""}
+          <foreignObject x="${tx + 36}" y="${ty - 30}" width="${W - tx - 40}" height="62">
+            <div xmlns="http://www.w3.org/1999/xhtml" class="rm-tlabel">
+              <span class="rm-ttitle">${esc(t.title)}</span>
+              <span class="rm-tmeta">${esc(tOwner ?? "No owner")} · <span class="rm-tstatus tone-${tone}">${esc(TACTIC_WORD[t.status] ?? t.status ?? "")}</span>${tickets.length ? ` · ${esc(plural(tickets.length, "ticket", "tickets"))}` : ""}</span>
+            </div>
+          </foreignObject>
+        </g>`;
+    }).join("");
+    const rockTickets = onRock.get(rock.id) ?? [];
+    const pickedTactic = rmap.tactic?.startsWith(`${rock.id}:`) ? tactics.find((t) => `${rock.id}:${t.id}` === rmap.tactic) : null;
+    return `<section class="glass rm-card course-${esc(course)}">
+        <div class="rm-scroll"><svg class="rm-svg" viewBox="0 0 ${W} ${H}" role="group" aria-label="${esc(rock.title)} and its tactics">
+          <g class="rm-rock" data-rm-rock="${esc(rock.id)}" tabindex="0" role="button" aria-expanded="${!folded}" aria-label="${esc(rock.title)}: ${folded ? "show" : "hide"} its tactics">
+            <circle class="rm-halo" cx="${cx}" cy="${cy}" r="${R + 8}" />
+            <circle class="rm-hub" cx="${cx}" cy="${cy}" r="${R}" />
+            <foreignObject x="${cx - R + 10}" y="${cy - R + 12}" width="${2 * R - 20}" height="${2 * R - 24}">
+              <div xmlns="http://www.w3.org/1999/xhtml" class="rm-hub-text">
+                <span class="rm-title">${esc(rock.title)}</span>
+                <span class="rm-owner"><span class="rm-av">${esc(initials(owner))}</span>${esc(owner ? owner.split(/\s+/)[0] : "No owner")}</span>
+              </div>
+            </foreignObject>
+          </g>
+          ${folded && tactics.length ? `<g class="rm-folded" data-rm-rock="${esc(rock.id)}"><path class="rm-link" d="M ${cx + R} ${cy} L ${cx + R + 50} ${cy}" /><text x="${cx + R + 58}" y="${cy + 5}" class="rm-more">+${tactics.length} ${tactics.length === 1 ? "tactic" : "tactics"} · click the rock to show</text></g>` : ""}
+          ${!tactics.length ? `<text x="${cx + R + 30}" y="${cy + 5}" class="rm-more">No tactics in the standup yet</text>` : ""}
+          ${nodes}
+        </svg></div>
+        <div class="rm-foot">
+          <span class="rm-course course-${esc(course)}">${esc(COURSE_WORD[course] ?? course)}</span>
+          ${rock.targetMonth ? `<span class="meta">due ${esc(qMonthName(rock.targetMonth))}</span>` : ""}
+          <span class="meta">last mini readout ${esc(rock.lastMiniReadoutAt ?? "never")}</span>
+          ${rockTickets.length ? `<button type="button" class="link-btn" data-rm-rocktickets="${esc(rock.id)}">${esc(plural(rockTickets.length, "ticket", "tickets"))} on the rock itself</button>` : ""}
+          <a class="meta rm-edit" href="#rocks/${encodeURIComponent(rock.id)}">Edit rock →</a>
+        </div>
+        ${pickedTactic && !folded ? ticketList(onTactic.get(rmap.tactic) ?? [], pickedTactic.title) : ""}
+        ${rmap.rockTickets === rock.id ? ticketList(rockTickets, `${rock.title}, no tactic`) : ""}
+      </section>`;
+  };
+
+  host.innerHTML = `
+    <div class="rm-bar">
+      <span class="meta">${esc(plural(rocks.length, "active rock", "active rocks"))} · ${esc(plural(rocks.reduce((n, r) => n + (r.tactics ?? []).length, 0), "tactic", "tactics"))}. Click a tactic for its tickets; click a rock to fold its tactics.</span>
+      <button type="button" class="ghost sm" data-rm-all="${allFolded ? "open" : "fold"}">${allFolded ? "Show all tactics" : "Fold all"}</button>
+    </div>
+    <div class="rm-grid">${rocks.map(card).join("")}</div>`;
 }
+
+$("layer1")?.addEventListener("click", (event) => {
+  const all = event.target.closest("[data-rm-all]");
+  const rock = event.target.closest("[data-rm-rock]");
+  const tactic = event.target.closest("[data-rm-tactic]");
+  const rockT = event.target.closest("[data-rm-rocktickets]");
+  if (all) {
+    const ids = (state.report?.detail?.leadership?.queue ?? []).filter((r) => r.state === "active").map((r) => r.id);
+    rmap.collapsed = all.dataset.rmAll === "fold" ? new Set(ids) : new Set();
+    rmap.tactic = null;
+  } else if (rock) {
+    const id = rock.dataset.rmRock;
+    rmap.collapsed.has(id) ? rmap.collapsed.delete(id) : rmap.collapsed.add(id);
+    if (rmap.tactic?.startsWith(`${id}:`)) rmap.tactic = null;
+  } else if (tactic) {
+    rmap.tactic = rmap.tactic === tactic.dataset.rmTactic ? null : tactic.dataset.rmTactic;
+  } else if (rockT) {
+    rmap.rockTickets = rmap.rockTickets === rockT.dataset.rmRocktickets ? null : rockT.dataset.rmRocktickets;
+  } else return;
+  if (state.report) renderLayer1(state.report);
+});
+$("layer1")?.addEventListener("keydown", (event) => {
+  if ((event.key === "Enter" || event.key === " ") && event.target.closest("[data-rm-rock], [data-rm-tactic]")) {
+    event.preventDefault();
+    event.target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+});
 
 
 /* ------------------------------- staleness -------------------------------
