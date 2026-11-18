@@ -750,6 +750,8 @@ function renderTopThree(flags) {
     ? `${pill(count("p1"), "P1", "p1")}${pill(count("attention"), "P2", "p2")}${pill(count("prompt"), count("prompt") === 1 ? "decision" : "decisions")}${pill(flagsForView("waiting").length, "waiting")}`
     : `<span class="meta">Nothing open that needs you.</span>`;
   const cleared = set.filter((f) => triageOf(f)?.status === "done").length;
+  queue.lines = items.length;
+  queue.p1 = count("p1");
 
   const top = items.slice(0, 3);
   const rest = items.slice(3);
@@ -6392,12 +6394,62 @@ function showView(name) {
 const TOC_HEADINGS = "h2, h3, .su-head > strong, .test-name";
 let tocTargets = [];
 
+/* What needs you is long, so its contents are grouped by what you are there to do, with
+   short names and a count where a count says something. Other pages list their headings. */
+const TOC_GROUPS = {
+  readout: [
+    { label: "Act now", items: [["focus", "Rock moves"], ["start-here", "Your queue"], ["sec-prompts", "Decisions due"], ["sec-attention", "Needs your attention"]] },
+    { label: "How it's going", items: [["sec-week", "This week"], ["sec-store", "Store"]] },
+    { label: "By layer", items: [["sec-layer1", "Leadership"], ["sec-cross", "Cross layer"], ["sec-hygiene", "Hygiene"]] },
+    { label: "Tune the readout", items: [["sec-rules", "Rule check"]] },
+  ],
+};
+/** The badge beside a contents entry: a number and whether it is urgent, or null. */
+function tocBadge(id) {
+  if (id === "focus") {
+    const p = moves.data?.picks ?? [];
+    return p.length ? { text: `${p.filter((x) => x.doneAt).length}/${p.length}`, cls: p.every((x) => x.doneAt) ? "good" : "" } : null;
+  }
+  if (id === "start-here") return queue.lines ? { text: String(queue.lines), cls: queue.p1 ? "urgent" : "" } : null;
+  const el = $(`${id}-count`);
+  const n = Number((el?.textContent ?? "").match(/^\d+/)?.[0] ?? 0);
+  if (!n) return null;
+  const urgent = el.classList.contains("urgent");
+  if (["sec-cross", "sec-rules"].includes(id) && !urgent) return null;
+  return ["sec-attention", "sec-prompts", "sec-hygiene", "sec-cross", "sec-rules"].includes(id) ? { text: String(n), cls: urgent ? "urgent" : "" } : null;
+}
+
 function buildToc() {
   document.getElementById("drawer-toc")?.remove();
   const view = document.querySelector(".view:not(.hidden)");
   if (!view) return;
   const name = view.id.replace(/^view-/, "");
   const home = $("toc-home");
+  if (TOC_GROUPS[name]) {
+    tocTargets = [];
+    const groups = TOC_GROUPS[name]
+      .map((g) => {
+        const rows = g.items
+          .map(([id, label]) => {
+            const el = $(id);
+            if (!el || !el.getClientRects().length) return "";
+            const i = tocTargets.push(el) - 1;
+            const b = tocBadge(id);
+            return `<button type="button" class="toc-link toc-item" data-toc="${i}"><span>${esc(label)}</span>${b ? `<span class="toc-badge ${b.cls}">${esc(b.text)}</span>` : ""}</button>`;
+          })
+          .join("");
+        return rows ? `<div class="toc-group"><p class="toc-group-label">${esc(g.label)}</p>${rows}</div>` : "";
+      })
+      .join("");
+    if (!groups) return;
+    const list = document.createElement("div");
+    list.id = "drawer-toc";
+    list.className = "toc-grouped";
+    list.innerHTML = groups;
+    home.append(list);
+    markTocCurrent();
+    return;
+  }
   const pageName = String(groupOf(name)?.pages.find(([v]) => v === name)?.[1] ?? VIEW_TITLES[name] ?? name).toLowerCase();
   tocTargets = [...view.querySelectorAll(TOC_HEADINGS)].filter((el) => {
     const text = el.textContent.trim();

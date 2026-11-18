@@ -225,6 +225,16 @@ main { max-width: 940px; margin: 0 auto; padding: 22px 18px 80px; }
 }
 .nav-setup { margin-top: 14px; color: var(--muted); font-size: 14px; }
 #toc-home #drawer-toc { margin: 0; padding-left: 0; border-left: 0; }
+.toc-group { margin: 0 0 14px; }
+.toc-group-label { margin: 0 0 4px; padding: 0 10px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.toc-grouped .toc-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  font-size: 14px; padding: 6px 10px; border-radius: 8px; box-shadow: inset 2px 0 0 transparent;
+}
+.toc-grouped .toc-item.current { background: rgba(63, 107, 74, 0.10); color: var(--green); box-shadow: inset 3px 0 0 var(--green); }
+.toc-badge { flex-shrink: 0; min-width: 22px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: rgba(28, 43, 42, 0.08); color: var(--muted); font-variant-numeric: tabular-nums; }
+.toc-badge.urgent { background: var(--red-bg); color: var(--red); }
+.toc-badge.good { background: rgba(63, 107, 74, 0.14); color: var(--green); }
 #toc-home .drawer-label { padding: 0 8px; }
 .toc-link.current { color: var(--green); font-weight: 600; background: var(--code); }
 
@@ -956,25 +966,32 @@ ul.plain .qp-sig { list-style: none; }
 .ms-why li { margin: 2px 0; }
 
 /* ------------------------------ today's rock moves ------------------------------ */
-/* Glass: a frosted panel over a soft wash of the palette, so it reads as the top layer. */
-.focus { position: relative; isolation: isolate; margin: 14px 0 26px; }
-.focus::before {
-  content: ""; position: absolute; inset: -18px 0; z-index: -1; pointer-events: none; border-radius: 32px;
-  background:
-    radial-gradient(45% 60% at 8% 12%, rgba(63, 107, 74, 0.38), transparent 70%),
-    radial-gradient(40% 55% at 95% 8%, rgba(199, 154, 63, 0.32), transparent 70%),
-    radial-gradient(50% 60% at 65% 100%, rgba(44, 93, 143, 0.20), transparent 70%);
-  filter: blur(18px);
-}
-/* The page sits on a deeper, tinted backdrop so the glass reads as a bright layer above it. */
+.focus { margin: 0 0 22px; }
+/* The page: a light brand-blue backdrop; the glass panels get the deep band (.hero). */
 body {
   background:
-    radial-gradient(55% 45% at 0% 0%, rgba(63, 107, 74, 0.30), transparent 65%),
-    radial-gradient(45% 40% at 100% 6%, rgba(199, 154, 63, 0.24), transparent 65%),
-    radial-gradient(60% 50% at 40% 100%, rgba(44, 93, 143, 0.20), transparent 65%),
-    #d9e1dd;
+    radial-gradient(50% 40% at 100% 100%, rgba(71, 109, 237, 0.14), transparent 65%),
+    radial-gradient(45% 40% at 0% 60%, rgba(0, 132, 124, 0.10), transparent 65%),
+    #e9eff4;
   background-attachment: fixed;
 }
+#shell { overflow-x: clip; }
+/* The band behind the two glass panels on What needs you, full width under the top bar:
+   First Day teal (jungle) into navy, lit by noon blue (#476DED) and late-noon blue (#5368C2),
+   from firstday.com's own colour tokens. It fades into the page at the bottom. */
+.hero { position: relative; isolation: isolate; margin: -22px 0 30px; padding: 28px 0 40px; }
+.hero::before {
+  content: ""; position: absolute; z-index: -1; top: 0; bottom: 0; left: 50%; width: 100vw; transform: translateX(-50%);
+  background:
+    radial-gradient(45% 55% at 8% 0%, rgba(0, 132, 124, 0.95), transparent 70%),
+    radial-gradient(40% 45% at 96% 12%, rgba(71, 109, 237, 0.85), transparent 70%),
+    radial-gradient(60% 40% at 30% 55%, rgba(0, 132, 124, 0.35), transparent 70%),
+    radial-gradient(60% 50% at 80% 85%, rgba(83, 104, 194, 0.65), transparent 70%),
+    linear-gradient(165deg, #0b3a33 0%, #102f45 45%, #18264f 100%);
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 120px), transparent);
+  mask-image: linear-gradient(#000 calc(100% - 120px), transparent);
+}
+.hero .glass { background: rgba(255, 255, 255, 0.87); border-color: rgba(255, 255, 255, 0.55); box-shadow: 0 24px 60px rgba(4, 18, 40, 0.45), 0 2px 6px rgba(4, 18, 40, 0.2), inset 0 1px 0 #fff; }
 #topbar { background: rgba(247, 249, 248, 0.72); -webkit-backdrop-filter: blur(16px) saturate(150%); backdrop-filter: blur(16px) saturate(150%); border-bottom-color: rgba(255, 255, 255, 0.7); }
 .glass {
   background: rgba(255, 255, 255, 0.62);
