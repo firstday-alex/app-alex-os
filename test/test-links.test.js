@@ -73,9 +73,3 @@ test("an encoded id round-trips, so an id with a slash still resolves", () => {
   const parse = parseHash();
   assert.equal(parse(`#tests/${encodeURIComponent("a b/c")}`).target, "a b/c");
 });
-
-test("every test card carries its experience id, which is what a deep link resolves", () => {
-  // Position would break the moment a test starts or ends. The id does not.
-  assert.match(app, /data-test-id="\$\{esc\(test\.id\)\}"/);
-  assert.match(app, /\.test-card\[data-test-id=/);
-});

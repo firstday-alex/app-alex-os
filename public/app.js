@@ -38,7 +38,7 @@ function sessionExpired() {
   $("password").value = "";
   $("password").focus();
 }
-let state = { report: null, openItems: [], advisorButtonText: "Ask for recommendation", rocks: null, settings: null, testNotes: null, openTests: new Set(), showQuiet: false };
+let state = { report: null, openItems: [], advisorButtonText: "Ask for recommendation", rocks: null, settings: null, testNotes: null };
 
 /* ---------------------------------- auth ---------------------------------- */
 
@@ -88,7 +88,6 @@ async function load() {
 
   if (body.empty) {
     $("banners").innerHTML = `<div class="note"><strong>Nothing yet.</strong> ${esc(body.message)}</div>`;
-    renderOpenItems();
     return;
   }
   state.report = body.report;
@@ -149,8 +148,6 @@ function render() {
   part("the sprint", () => renderLayer2(report));
   part("the backlog", () => renderBacklog());
   part("the update", () => renderUpdate(report));
-  part("the tests", () => renderTests());
-  part("the open decisions", () => renderOpenItems());
   $("report-text").textContent = report.text ?? "";
   if (failed.length) {
     $("banners").insertAdjacentHTML(
@@ -898,7 +895,7 @@ function flagContext(flag) {
       const owner = named ?? test?.owner?.name;
       if (owner) owners = [owner];
       url = test?.consoleUrl ?? null;
-      if (test) links.push({ label: "Test readout", href: `#tests/${encodeURIComponent(id)}` });
+      if (test) links.push({ label: "AB Testing", href: AB_TESTING, external: true });
       if (url) links.push({ label: "Intelligems", href: url, external: true });
       break;
     }
@@ -907,7 +904,7 @@ function flagContext(flag) {
       if (rock?.owner?.name) owners = [rock.owner.name];
       links.push({ label: "Edit rock", href: `#rocks/${encodeURIComponent(id)}` });
       if (rock?.intelligemsExperienceId) {
-        links.push({ label: "Test readout", href: `#tests/${encodeURIComponent(rock.intelligemsExperienceId)}` });
+        links.push({ label: "AB Testing", href: AB_TESTING, external: true });
       }
       break;
     }
@@ -2572,396 +2569,15 @@ function renderDayOverDay(delta) {
     <ul class="dod-list">${rows.map(item).join("")}</ul>`;
 }
 
-/* ------------------------- Layer 3. experiment trees -------------------------
-   Quiet by default. A tree where every row shouts is a tree nobody reads: the
-   inconclusive rows are the majority and they are exactly the ones that should
-   not draw the eye. They stay, dimmed and compact, and can be hidden entirely. */
-
-const SIG_TONE = { win: "win", loss: "loss", flat: "flat", none: "none" };
-const QUIET_LEVELS = new Set(["inconclusive", "no_data"]);
-
-function fmtMetric(value, format) {
-  if (value == null) return "—";
-  if (format === "money") return `$${Number(value).toFixed(2)}`;
-  if (format === "percent") return `${(Number(value) * 100).toFixed(1)}%`;
-  return Number(value).toFixed(2);
-}
-
-/** Only significant nodes get a chip. Labelling noise "Inconclusive" IS the noise. */
-function sigChip(sig) {
-  if (!sig || QUIET_LEVELS.has(sig.level)) return "";
-  const tone = SIG_TONE[sig.tone] ?? "flat";
-  const p = sig.probability != null ? ` · p ${(sig.probability * 100).toFixed(0)}%` : "";
-  return `<span class="sig-chip ${tone}" title="${esc(sig.reason ?? "")}${esc(p)}">${esc(sig.label)}</span>`;
-}
-
-function nodeIsQuiet(node) {
-  const own = QUIET_LEVELS.has(node.significance?.level);
-  const anyChildLoud = (node.children ?? []).some((c) => !nodeIsQuiet(c));
-  return own && !anyChildLoud;
-}
-
-function renderNode(node, depth, path) {
-  const quiet = nodeIsQuiet(node);
-  if (quiet && !state.showQuiet && depth > 0) return "";
-
-  const hasChildren = (node.children ?? []).length > 0;
-  const open = state.openTests.has(path);
-  const up = (node.upliftPct ?? 0) > 0;
-  const good = node.upliftPct == null ? null : node.goodDirection === "down" ? !up : up;
-  const upliftText = node.upliftPct == null ? "—" : `${up ? "+" : ""}${node.upliftPct.toFixed(1)}%`;
-  const caret = hasChildren ? `<span class="caret ${open ? "open" : ""}">▸</span>` : `<span class="caret leafdot"></span>`;
-
-  // Attribution is a sentence, not a row of chips. "AOV carried it" is the finding.
-  let attribution = "";
-  if (node.attribution && node.attribution.length) {
-    const sorted = [...node.attribution].sort((a, b) => Math.abs(b.contributionPct) - Math.abs(a.contributionPct));
-    const lead = sorted[0];
-    const rest = sorted.slice(1);
-    attribution = `<div class="attribution">${esc(lead.label)} accounts for ${lead.contributionPct > 0 ? "+" : ""}${lead.contributionPct.toFixed(1)}pp of this${
-      rest.length ? `, ${esc(rest.map((r) => `${r.label} ${r.contributionPct > 0 ? "+" : ""}${r.contributionPct.toFixed(1)}pp`).join(", "))}` : ""
-    }</div>`;
-  }
-
-  const weaker = node.childrenSignificance && node.childrenSignificance.rank < (node.significance?.rank ?? 0);
-  const rollup = weaker ? `<span class="rollup" title="The components beneath this are weaker than the headline.">components weaker</span>` : "";
-
-  const children = hasChildren && open
-    ? `<div class="tchildren">${node.children.map((c, i) => renderNode(c, depth + 1, `${path}.${i}`)).join("")}</div>`
-    : "";
-
-  const hiddenCount = hasChildren && open && !state.showQuiet
-    ? node.children.filter((c) => nodeIsQuiet(c)).length
-    : 0;
-
-  return `<div class="tnode${quiet ? " quiet" : ""}">
-      <button class="tnode-head${hasChildren ? "" : " leaf"}" ${hasChildren ? `data-node="${esc(path)}"` : "disabled"}
-        title="control ${esc(fmtMetric(node.control, node.format))}">
-        ${caret}
-        <span class="tnode-label">${esc(node.label)}</span>
-        <span class="tnode-value">${esc(fmtMetric(node.value, node.format))}</span>
-        <span class="tnode-uplift ${good === null ? "" : good ? "good" : "bad"}">${esc(upliftText)}</span>
-        ${sigChip(node.significance)}
-        ${rollup}
-      </button>
-      ${attribution}
-      ${children}
-      ${hiddenCount ? `<div class="tnode-hidden">${hiddenCount} inconclusive hidden</div>` : ""}
-    </div>`;
-}
-
-/* --------------------------- future value, on demand --------------------------- */
-
-function renderFutureValue(testId, fv) {
-  const key = `fv:${testId}`;
-  if (!state.openTests.has(key)) {
-    return `<div class="fv-ask">
-        <button class="ghost" data-node="${esc(key)}">Project ${esc(fv?.horizonMonths ?? 12)} month value</button>
-        <span class="meta">Values each variant on the customer mix it produces, not on this order alone.</span>
-      </div>`;
-  }
-  if (!fv) return "";
-  if (!fv.available) return `<div class="note"><strong>Cannot project.</strong> ${esc(fv.reason)}</div>`;
-
-  const money = (v) => (v == null ? "—" : `$${Number(v).toFixed(2)}`);
-  const pct = (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`);
-  const share = (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
-
-  const rows = fv.variants
-    .map((v) => `<tr>
-        <td>${esc(v.name)}</td>
-        <td>${esc(money(v.valuePerVisitor))}</td>
-        <td class="${v.upliftPct == null ? "" : v.upliftPct > 0 ? "good" : "bad"}">${esc(pct(v.upliftPct))}</td>
-        <td class="${v.immediateUpliftPct == null ? "" : v.immediateUpliftPct > 0 ? "good" : "bad"}">${esc(pct(v.immediateUpliftPct))}</td>
-        <td>${esc(share(v.subscriptionShare))}</td>
-      </tr>`)
-    .join("");
-
-  const conflict = fv.variants.filter((v) => v.disagreesWithImmediate);
-  return `<div class="fv">
-      <div class="bar">
-        <strong>${esc(fv.horizonMonths)} month value</strong>
-        <span class="meta">${fv.method === "multiplier"
-          ? `subscriber ${esc(fv.subscriptionMultiplier)}x · one-time ${esc(fv.oneTimeMultiplier)}x first order`
-          : `subscriber ${esc(money(fv.subscriptionLtv))} · one-time ${esc(money(fv.oneTimeLtv))}`}</span>
-        <span class="grow"></span>
-        <button class="ghost" data-node="${esc(key)}">Hide</button>
-      </div>
-      ${fv.references.stale ? `<div class="note">${esc(fv.references.note)}</div>` : ""}
-      ${conflict.length ? `<div class="note"><strong>Lifetime and immediate disagree on ${esc(conflict.map((v) => v.name).join(", "))}.</strong> That disagreement is the decision.</div>` : ""}
-      <div class="scroll"><table>
-        <thead><tr><th>Variation</th><th>Value / visitor</th><th>Lifetime</th><th>Immediate</th><th>Sub share</th></tr></thead>
-        <tbody>
-          <tr class="control-row"><td>${esc(fv.control.name)} (control)</td><td>${esc(money(fv.control.valuePerVisitor))}</td><td>—</td><td>—</td><td>${esc(share(fv.control.subscriptionShare))}</td></tr>
-          ${rows}
-        </tbody>
-      </table></div>
-    </div>`;
-}
-
-/* ------------------------------- test notes ------------------------------- */
-
-function renderNotes(testId) {
-  const all = state.testNotes?.notes ?? {};
-  const note = all[testId] ?? {};
-  const fields = state.testNotes?.fields ?? {};
-  const key = `notes:${testId}`;
-  const open = state.openTests.has(key);
-  const filled = Object.keys(fields).filter((f) => note[f]).length;
-
-  const people = state.testNotes?.assignees ?? [];
-  const owner = people.find((p) => p.id === note.assignee);
-
-  if (!open) {
-    const summary = note.hypothesis || note.decision || note.notes;
-    return `<div class="notes-peek">
-        <button class="ghost" data-node="${esc(key)}">${filled || note.assignee ? "Notes" : "Add notes"}</button>
-        ${owner ? `<span class="chip owner">${esc(owner.name)}</span>` : '<span class="chip warn">no owner</span>'}
-        ${summary ? `<span class="meta">${esc(String(summary).slice(0, 100))}${String(summary).length > 100 ? "…" : ""}</span>` : '<span class="meta">hypothesis, observations, the decision and why</span>'}
-        ${(note.tags ?? []).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}
-      </div>`;
-  }
-
-  const inputs = Object.entries(fields)
-    .map(([k, spec]) => `<label class="wide">${esc(spec.label)}
-        <textarea class="nt" data-f="${esc(k)}" rows="${k === "notes" ? 3 : 2}" placeholder="${esc(spec.help)}">${esc(note[k] ?? "")}</textarea>
-      </label>`)
-    .join("");
-
-  const options = [`<option value="">no owner</option>`]
-    .concat(people.map((p) => `<option value="${esc(p.id)}"${p.id === note.assignee ? " selected" : ""}>${esc(p.name)}</option>`))
-    .join("");
-
-  return `<div class="notes-edit" data-test="${esc(testId)}">
-      <label class="wide">Owner
-        <select class="nt" data-f="assignee">${options}</select>
-        <span class="meta">One accountable person, from the ClickUp roster. Stored as their id, so a rename does not break it.</span>
-      </label>
-      ${inputs}
-      <label class="wide">Tags<input class="nt" data-f="tags" value="${esc((note.tags ?? []).join(", "))}" placeholder="comma separated"></label>
-      <div class="bar">
-        <button class="note-save" data-test="${esc(testId)}">Save notes</button>
-        <button class="ghost" data-node="${esc(key)}">Close</button>
-        <span class="meta note-msg"></span>
-        ${note.updatedAt ? `<span class="meta">last saved ${esc(new Date(note.updatedAt).toLocaleString())}</span>` : ""}
-      </div>
-    </div>`;
-}
-
-/* --------------------- what is different, control vs variant --------------------- */
-
-function renderExperienceDiff(diff) {
-  if (!diff) return "";
-
-  const variation = (v) => `<div class="vdiff${v.isControl ? " control" : ""}">
-      <div class="vdiff-head">
-        <strong>${esc(v.name)}</strong>
-        ${v.isControl ? '<span class="chip">control</span>' : ""}
-        ${v.percentage != null ? `<span class="meta">${esc(v.percentage)}% of traffic</span>` : ""}
-        ${v.unchanged ? '<span class="meta">unchanged baseline</span>' : ""}
-      </div>
-      ${v.changes.length
-        ? `<ul class="vdiff-changes">${v.changes
-            .map((c) => `<li>${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noreferrer">${esc(c.text)}</a>` : esc(c.text)}</li>`)
-            .join("")}</ul>`
-        : '<p class="meta">No configuration of its own.</p>'}
-    </div>`;
-
-  return `<div class="ediff">
-      <div class="bar">
-        ${diff.types.map((x) => `<span class="chip">${esc(x)}</span>`).join("")}
-        <span class="meta">${esc(diff.audience)}</span>
-        ${diff.previewPath ? `<a class="meta" href="${esc(diff.previewPath)}" target="_blank" rel="noreferrer">preview the page</a>` : ""}
-      </div>
-      ${diff.description
-        ? `<p class="ediff-desc">${esc(diff.description)}</p>`
-        : '<p class="meta ediff-missing">No description written in Intelligems. What follows is derived from the variation configuration: it says what the test changes, not why.</p>'}
-      <div class="vdiffs">${[diff.control, ...diff.variants].filter(Boolean).map(variation).join("")}</div>
-    </div>`;
-}
-
-
-/* ----------------------- where the test won or lost ----------------------- */
-
-function renderAudiences(audiences) {
-  const shown = (audiences ?? []).filter((a) => a.rows?.length);
-  if (!shown.length) return "";
-
-  const pct = (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`);
-
-  const block = (a) => {
-    const rows = a.rows
-      .flatMap((row) =>
-        row.variants.map((v) => {
-          const tone = v.significance.tone === "win" ? "good" : v.significance.tone === "loss" ? "bad" : "";
-          return `<tr class="${v.underpowered ? "underpowered" : ""}">
-              <td>${esc(row.segment)}</td>
-              <td>${esc(v.name ?? "")}</td>
-              <td>${esc((v.orders ?? 0).toLocaleString())}</td>
-              <td class="${tone}">${esc(pct(v.upliftPct))}</td>
-              <td><span class="sig-chip ${esc(v.significance.tone === "none" ? "flat" : v.significance.tone)}" title="${esc(v.significance.reason ?? "")}">${esc(v.significance.label)}</span></td>
-            </tr>`;
-        }),
-      )
-      .join("");
-
-    const findings = a.divergent.length
-      ? `<div class="note"><strong>Segments disagree with the overall result.</strong> ${a.divergent
-          .map((d) => `${esc(d.segment)} is a ${esc(d.direction)}${d.overallDirection ? ` while the test overall is a ${esc(d.overallDirection)}` : " while the test overall is inconclusive"}`)
-          .join("; ")}. Worth shipping to the segment rather than calling the whole test.</div>`
-      : "";
-
-    return `<div class="aud-block">
-        <div class="aud-head">By ${esc(a.dimension.replace(/_/g, " "))}<span class="meta"> · judged on ${esc(a.metric)} · overall ${esc(a.overall?.label ?? "not judged")}</span></div>
-        ${findings}
-        <div class="scroll"><table>
-          <thead><tr><th>Segment</th><th>Variation</th><th>Orders</th><th>Uplift</th><th></th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table></div>
-      </div>`;
-  };
-
-  return `<h4 class="form-head">Where it won or lost</h4>
-    <p class="meta">A segment under the order bar is shown as Too small rather than as a result. Slicing until something looks significant is the failure this invites.</p>
-    ${shown.map(block).join("")}`;
-}
-
-/* -------------------------------- test card -------------------------------- */
-
-function renderTestCard(test, ti) {
-  const openKey = `t${test.id ?? ti}`;
-  const open = state.openTests.has(openKey);
-  const headline = (test.trees ?? [])[0]?.headline;
-  const gate = test.recommendation.gate.ready ? "" : "gate not met";
-
-  const trees = (test.trees ?? [])
-    .map((tree, gi) => {
-      const roots = tree.roots.map((r, ri) => renderNode(r, 0, `${openKey}.g${gi}.r${ri}`)).join("");
-      return `<div class="tree-block"><div class="tree-head">${esc(tree.groupName)} vs control</div>${roots}</div>`;
-    })
-    .join("");
-
-  const body = open
-    ? `<div class="test-body">
-        <p class="meta">${esc(test.recommendation.reason)}</p>
-        ${renderExperienceDiff(test.experienceDiff)}
-        ${renderNotes(test.id)}
-        ${trees}
-        ${renderAudiences(test.audiences)}
-        <div class="bar tree-controls">
-          <button class="ghost" id="toggle-quiet-${esc(openKey)}" data-quiet="1">${state.showQuiet ? "Hide inconclusive" : "Show all rows"}</button>
-        </div>
-        ${renderFutureValue(test.id, test.futureValue)}
-      </div>`
-    : "";
-
-  const headlineChip = headline && !QUIET_LEVELS.has(headline.level)
-    ? `<span class="sig-chip ${SIG_TONE[headline.tone] ?? "flat"}">${esc(headline.label)} on ${esc(headline.label === "Strong" || headline.label === "Directional" ? headline.metric ?? "" : "")}</span>`
-    : "";
-
-  // id-based, so a deep link survives tests being added, removed or reordered.
-  return `<div class="test-card" id="test-${esc(test.id)}" data-test-id="${esc(test.id)}">
-      <button class="test-head" data-node="${esc(openKey)}">
-        <span class="caret ${open ? "open" : ""}">▸</span>
-        <span class="test-name">${esc(test.name)}</span>
-        <span class="chip ${test.recommendation.recommendation === "Kill" ? "bad" : test.recommendation.recommendation === "Ship" ? "good" : ""}">${esc(test.recommendation.recommendation)}</span>
-        ${headlineChip}
-        <span class="meta">${esc(test.daysRunning ?? "?")}d · ${esc(test.minOrdersPerGroup ?? "?")} orders${gate ? ` · ${esc(gate)}` : ""}</span>
-      </button>
-      ${
-        test.consoleUrl
-          ? `<a class="test-out" href="${esc(test.consoleUrl)}" target="_blank" rel="noreferrer" title="Open this test in Intelligems">Intelligems ↗</a>`
-          : ""
-      }
-      ${!open && test.experienceDiff?.summary ? `<div class="test-peek">${esc(test.experienceDiff.summary)}</div>` : ""}
-      ${body}
-    </div>`;
-}
-
-function renderTests() {
-  const report = state.report;
-  const section = report?.sections?.intelligems;
-  const delta = report?.detail?.intelligems;
-  const host = $("layer3");
-  if (!host) return;
-
-  if (!section?.present) {
-    host.innerHTML = `<div class="missing">Missing. ${esc(section?.reason ?? "not collected")}</div>`;
-    return;
-  }
-
-  const c = delta.counts;
-  const ended = (delta.ended ?? []).length
-    ? `<h3>Ended</h3><ul>${delta.ended.map((t) => `<li>${esc(t.name)} — final verdict ${esc(t.finalVerdict ?? "none recorded")}</li>`).join("")}</ul>`
-    : "";
-
-  // Not shown is not the same as not there. One quiet line rather than a card each.
-  const setAside = (delta.setAside ?? []).length
-    ? `<p class="meta">${esc(delta.setAside.length)} not shown — ${delta.setAside
-        .map((e) => `${esc(e.name)} (${esc(e.category)})`)
-        .join(", ")}. A personalization has no control group, so there is no verdict to reach.</p>`
-    : "";
-
-  host.innerHTML = `<p class="sub">${esc(c.running)} running · ${esc(c.readyForVerdict)} past the readiness gate · ${esc(c.notable)} moved · ${esc(c.quiet)} quiet</p>
-    ${setAside}
-    ${(delta.tests ?? []).map(renderTestCard).join("")}
-    ${ended}`;
-}
+/* Tests live in the Ecom Roadmap's AB Testing view (Resources). The test notes are still
+   read here, because a flag about a test names its owner from them. */
+const AB_TESTING = "https://ecom-fd-roadmap.netlify.app/?view=tests";
 
 async function loadTestNotes() {
   const res = await fetch(`${FN}/test-notes`).then((r) => r.json()).catch(() => null);
   if (res) state.testNotes = res;
 }
 
-document.addEventListener("click", async (event) => {
-  const quiet = event.target.closest("[data-quiet]");
-  if (quiet) {
-    state.showQuiet = !state.showQuiet;
-    renderTests();
-    return;
-  }
-
-  const save = event.target.closest("button.note-save");
-  if (save) {
-    const wrap = save.closest(".notes-edit");
-    const msg = wrap.querySelector(".note-msg");
-    const note = {};
-    for (const el of wrap.querySelectorAll(".nt")) {
-      note[el.dataset.f] = el.dataset.f === "tags" ? el.value.split(",").map((s) => s.trim()).filter(Boolean) : el.value;
-    }
-    msg.textContent = "saving…";
-    const res = await fetch(`${FN}/test-notes`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ experienceId: save.dataset.test, note, version: state.testNotes?.version }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      msg.textContent = body.error ?? `HTTP ${res.status}`;
-      if (res.status === 409) await loadTestNotes();
-      return;
-    }
-    await loadTestNotes();
-    renderTests();
-    return;
-  }
-
-  const head = event.target.closest("[data-node]");
-  if (!head) return;
-  const key = head.dataset.node;
-  if (state.openTests.has(key)) state.openTests.delete(key);
-  else state.openTests.add(key);
-  renderTests();
-});
-
-function renderOpenItems() {
-  const items = state.openItems ?? [];
-  $("open-items").innerHTML = items.length
-    ? `<div class="scroll"><table><thead><tr><th>Config</th><th>Decision</th></tr></thead><tbody>${items
-        .map((i) => `<tr><td><code>${esc(i.at)}</code></td><td class="wrap">${esc(i.note)}</td></tr>`)
-        .join("")}</tbody></table></div>`
-    : '<p class="sub">Nothing outstanding. Every threshold is decided.</p>';
-}
 
 /* -------------------------------- actions -------------------------------- */
 
@@ -3266,7 +2882,7 @@ function renderRocks() {
               // experiment link with no experience id parsed out of it can only do the
               // latter.
               const inApp = l.experienceId
-                ? `<a href="#tests/${encodeURIComponent(l.experienceId)}" title="Open this test's readout in the Tests view">${label}</a>`
+                ? `<a href="${AB_TESTING}" target="_blank" rel="noreferrer" title="Open AB Testing in the Ecom Roadmap">${label} ↗</a>`
                 : `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${label}</a>`;
               const out = l.experienceId
                 ? `<a class="link-out" href="${esc(l.url)}" target="_blank" rel="noreferrer" title="Open ${label} in Intelligems">↗</a>`
@@ -5185,7 +4801,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 // top bar when open. The drawer lists the same groups (index.html).
 const NAV_GROUPS = [
   { id: "today", pages: [["readout", "What needs you"], ["speech", "Daily Speech"], ["standup", "Stand-up"]] },
-  { id: "team", pages: [["sprint", "Sprint"], ["backlog", "Backlog"], ["rocks", "Rocks"], ["plan", "Quarter"], ["tests", "Tests"], ["people", "1:1"], ["ideation", "Ideation"]] },
+  { id: "team", pages: [["sprint", "Sprint"], ["backlog", "Backlog"], ["rocks", "Rocks"], ["plan", "Quarter"], ["people", "1:1"], ["ideation", "Ideation"]] },
   { id: "writeups", pages: [["mystandup", "My stand-up"], ["upsu", "Update + Stand-up"], ["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["impact", "Overall Impact"]] },
 ];
 // On a wide screen the drawer stays open beside the page and is the nav.
@@ -5331,7 +4947,7 @@ function renderPeople() {
 
     ${data.doneThisWeek.length ? `<h3>Done this week</h3><ul class="plain">${data.doneThisWeek.map((t) => `<li>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)}</li>`).join("")}</ul>` : ""}
 
-    ${data.tests.length ? `<h3>Tests they own</h3><div class="flag-links">${data.tests.map((t) => `<a href="#tests/${encodeURIComponent(t.id)}">${esc(t.name)} · ${esc(t.recommendation?.recommendation ?? "")}</a>`).join("")}</div>` : ""}
+    ${data.tests.length ? `<h3>Tests they own</h3><div class="flag-links">${data.tests.map((t) => `<a href="${AB_TESTING}" target="_blank" rel="noreferrer">${esc(t.name)} · ${esc(t.recommendation?.recommendation ?? "")} ↗</a>`).join("")}</div>` : ""}
 
     <h3>Open flags about them</h3>
     <div id="people-flags">${data.openFlags.length ? data.openFlags.map(flagCard).join("") : `<p class="sub">None.</p>`}</div>
@@ -5418,12 +5034,6 @@ $("settings-save").addEventListener("click", async () => {
   state.settings = body;
   renderSettings();
 
-  // Every projection rests on these, so the tests view must not keep showing the old one.
-  const fresh = await fetch(`${FN}/report`).then((r) => r.json()).catch(() => null);
-  if (fresh && !fresh.empty) {
-    state.report = fresh.report;
-    renderTests();
-  }
 });
 
 
@@ -5511,14 +5121,7 @@ $("settings-audit-wrap")?.addEventListener("toggle", async (event) => {
     : '<p class="sub">No changes recorded yet.</p>';
 });
 
-/* ------------------------------ deep links ------------------------------
-   `#tests/<experienceId>` opens the Tests view with that test already expanded and
-   scrolled to. This is what makes a rock's experiment link useful: a big swing points at
-   the test that is meant to prove it, and following it should land on the answer rather
-   than on a list of nine cards to hunt through.
-
-   Keyed on the experience id rather than the card's position, so a link keeps working
-   as tests start and end. */
+/* ------------------------------ deep links ------------------------------ */
 
 function parseHash(hash) {
   const [raw, ...rest] = (hash || "#readout").slice(1).split("/");
@@ -5528,31 +5131,6 @@ function parseHash(hash) {
   return { name, target: rest.join("/") ? decodeURIComponent(rest.join("/")) : null };
 }
 
-/** Expands the named test and brings it into view. Safe to call before it has rendered. */
-function focusTest(testId, { attempt = 0 } = {}) {
-  if (!testId) return;
-
-  const card = document.querySelector(`.test-card[data-test-id="${CSS.escape(testId)}"]`);
-  if (!card) {
-    // The Tests view loads its notes asynchronously and re-renders. Retry briefly rather
-    // than silently doing nothing, then give up rather than spinning forever.
-    if (attempt < 20) setTimeout(() => focusTest(testId, { attempt: attempt + 1 }), 150);
-    return;
-  }
-
-  const key = card.querySelector(".test-head")?.dataset.node;
-  if (key && !state.openTests.has(key)) {
-    state.openTests.add(key);
-    renderTests();
-    // renderTests replaced the node, so re-find it before scrolling.
-    return focusTest(testId, { attempt });
-  }
-
-  card.scrollIntoView({ behavior: "smooth", block: "start" });
-  // A brief highlight, because scrolling alone leaves you unsure which card was meant.
-  card.classList.add("test-focused");
-  setTimeout(() => card.classList.remove("test-focused"), 2200);
-}
 
 /* ------------------------------ today's rock moves ------------------------------
    Top of What needs you: the few things that move a rock today, each with what it moves
@@ -5879,7 +5457,7 @@ $("focus")?.addEventListener("submit", (event) => {
 });
 
 // Pages that were folded into others: an old link or bookmark lands on the one that replaced it.
-const MOVED_VIEWS = { update: "upsu", wins: "impact" };
+const MOVED_VIEWS = { update: "upsu", wins: "impact", tests: "readout" };
 
 function showView(name) {
   name = MOVED_VIEWS[name] ?? name;
@@ -5914,7 +5492,6 @@ function showView(name) {
     if (!standup.data && !standup.loading) loadStandup();
     else renderUpsu();
   }
-  if (name === "tests" && !state.testNotes) loadTestNotes().then(renderTests);
 }
 
 /* ------------------------------ page contents ------------------------------
@@ -6098,7 +5675,6 @@ function focusRock(target, { attempt = 0 } = {}) {
 function routeFromHash() {
   const { name, target } = parseHash(location.hash);
   showView(name);
-  if (name === "tests" && target) focusTest(target);
   if (name === "rocks" && target) focusRock(target);
   if (name === "plan" && target) {
     plan.focus = target;

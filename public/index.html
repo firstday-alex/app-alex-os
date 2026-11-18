@@ -68,7 +68,7 @@
     <!-- The pages are in the top bar. The menu holds what the top bar does not: the open
          page's sections and Setup. -->
     <div id="toc-home"></div>
-    <button class="nav nav-setup" data-view="setup">Setup &amp; open decisions</button>
+    <button class="nav nav-setup" data-view="setup">Setup</button>
 
     <div class="drawer-foot">
       <p class="meta" id="drawer-baseline">—</p>
@@ -216,12 +216,6 @@
       <div id="impact"></div>
     </section>
 
-    <!-- ------------------------------------ tests --------------------------------- -->
-    <section class="view hidden" id="view-tests">
-      <h2>Layer 3. Active tests</h2>
-      <div id="layer3"></div>
-    </section>
-
     <!-- ------------------------------------ setup --------------------------------- -->
     <section class="view hidden" id="view-setup">
       <h2>Lifetime value references</h2>
@@ -236,10 +230,7 @@
       <div id="ltv-result"></div>
       <details id="settings-audit-wrap"><summary>Change history</summary><div id="settings-audit"></div></details>
 
-      <h2>Still to decide</h2>
-      <p class="sub">Open items the config carries. Each is a decision waiting on a person, not a bug.</p>
-      <div id="open-items"></div>
-          <h2>Daily alert</h2>
+      <h2>Daily alert</h2>
       <div class="bar">
         <button class="ghost" id="test-readout">Send a test readout</button>
         <span class="meta" id="test-readout-note">Posts the readout to Slack now, labelled as a test. It does not replace or block the 8&nbsp;AM send.</span>
