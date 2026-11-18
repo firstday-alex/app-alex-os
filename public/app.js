@@ -6039,45 +6039,108 @@ async function movesChange(change) {
   }
 }
 
-/** "Moves Bundles 2.0 (off course) · November: Upsell test live · Tactic: Builder, KPI +2% CVR" */
-function impactLine(i) {
+const SOURCE_WORD = { course: "Rock check", plan: "Quarter plan", ticket: "Your ticket", own: "Your move" };
+
+/**
+ * A move's text split for display, so the rock is named once (in the label above) and the
+ * how-to is secondary: "Bundles 2.0 — check in on each in the standup: mark it done, or set a
+ * new date and say why (with Blake)" → title "Check in on each in the standup", with "Blake",
+ * how "Mark it done, or set a new date and say why".
+ */
+function moveParts(m) {
+  let t = String(m.text ?? "");
+  const rock = m.impact?.rockTitle;
+  if (rock && t.startsWith(`${rock} — `)) t = t.slice(rock.length + 3);
+  let withWhom = null;
+  const w = t.match(/\s\(with ([^)]+)\)$/);
+  if (w) { withWhom = w[1]; t = t.slice(0, w.index); }
+  let how = null;
+  if (m.source === "course") {
+    const i = t.indexOf(": ");
+    if (i > 0) { how = t.slice(i + 2); t = t.slice(0, i); }
+  }
+  const cap = (x) => (x ? x[0].toUpperCase() + x.slice(1) : x);
+  return { title: cap(t), how: cap(how), withWhom };
+}
+
+/** The label above a move: the rock it moves, its course, and where the move came from. */
+function rockLabel(m) {
+  const i = m.impact ?? {};
+  const course = i.course ?? "on";
+  return `<div class="mv-rock">
+      <span class="mv-dot ${esc(course)}" aria-hidden="true"></span>
+      <span class="mv-rock-name">${esc(i.rockTitle ?? "No rock")}</span>
+      ${course !== "on" ? `<span class="mv-course ${esc(course)}">${esc(COURSE_WORD[course])}</span>` : ""}
+      ${m.source ? `<span class="mv-src">${esc(SOURCE_WORD[m.source] ?? "")}</span>` : ""}
+    </div>`;
+}
+
+function moveTitle(m, parts) {
+  const text = m.url ? `<a href="${esc(m.url)}" target="_blank" rel="noreferrer">${esc(parts.title)}</a>` : esc(parts.title);
+  return `<span class="mv-text">${text}${parts.withWhom ? ` <span class="mv-with">with ${esc(parts.withWhom)}</span>` : ""}</span>`;
+}
+
+/** What it moves, as short labelled rows. `full` adds the tactic and the definition of done. */
+function impactFacts(i, { full }) {
   if (!i) return "";
-  const bits = [
-    `Moves <strong>${esc(i.rockTitle)}</strong>${i.course && i.course !== "on" ? ` <span class="chip ${i.course === "off" ? "bad" : "warn"}">${esc(COURSE_WORD[i.course])}</span>` : ""}`,
-    i.milestone ? `${esc(i.milestone.label)} milestone: ${esc(i.milestone.deliverable)}` : "",
-    i.tactic ? `Tactic: ${esc(i.tactic.title)}${i.tactic.kpi ? `, KPI ${esc(i.tactic.kpi)}` : ""}` : "",
+  const rows = [
+    i.milestone ? ["Milestone", `${esc(i.milestone.label)}: ${esc(i.milestone.deliverable)}`] : null,
+    full && i.tactic ? ["Tactic", `${esc(i.tactic.title)}${i.tactic.kpi ? ` <span class="mv-kpi">KPI ${esc(i.tactic.kpi)}</span>` : ""}`] : null,
+    full && i.definitionOfDone ? ["Done means", esc(i.definitionOfDone)] : null,
   ].filter(Boolean);
-  return `<p class="mv-impact">${bits.join(" · ")}</p>${i.definitionOfDone ? `<p class="mv-dod meta">Done means: ${esc(i.definitionOfDone)}</p>` : ""}`;
+  if (!rows.length) return "";
+  return `<dl class="mv-facts">${rows.map(([k, v]) => `<dt>${k}</dt><dd title="${esc(v.replace(/<[^>]+>/g, ""))}">${v}</dd>`).join("")}</dl>`;
 }
 
 function moveCard(m) {
-  const done = Boolean(m.doneAt);
-  const at = done ? new Date(m.doneAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
-  return `<div class="mv-card${done ? " done" : ""}${moves.just === m.id ? " just" : ""}">
+  const parts = moveParts(m);
+  if (m.doneAt) {
+    const at = new Date(m.doneAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return `<div class="mv-card done${moves.just === m.id ? " just" : ""}">
+        <span class="mv-check" aria-hidden="true">✓</span>
+        <span class="mv-done-text"><span class="mv-text">${esc(parts.title)}</span>
+          <span class="mv-ack">${esc(m.impact?.rockTitle ?? "The rock")} moved · ${esc(at)}</span></span>
+        <button type="button" class="link-btn" data-mv="undo" data-mv-id="${esc(m.id)}">Undo</button>
+      </div>`;
+  }
+  return `<div class="mv-card">
+      ${rockLabel(m)}
       <div class="mv-head">
-        <span class="mv-text">${m.url ? `<a href="${esc(m.url)}" target="_blank" rel="noreferrer">${esc(m.text)}</a>` : esc(m.text)}</span>
+        ${moveTitle(m, parts)}
         <span class="mv-acts">
-          ${done
-            ? `<button type="button" class="link-btn" data-mv="undo" data-mv-id="${esc(m.id)}">Not done</button>`
-            : `<button type="button" class="sm" data-mv="done" data-mv-id="${esc(m.id)}">Done</button>
-               <button type="button" class="link-btn" data-mv="remove" data-mv-id="${esc(m.id)}" title="Take it off today's list">Drop</button>`}
+          <button type="button" class="sm" data-mv="done" data-mv-id="${esc(m.id)}">Done</button>
+          <button type="button" class="link-btn" data-mv="remove" data-mv-id="${esc(m.id)}" title="Take it off today's list">Drop</button>
         </span>
       </div>
-      ${m.why ? `<p class="mv-why">${done ? "" : "Why now: "}${esc(m.why)}</p>` : ""}
-      ${impactLine(m.impact)}
-      ${done ? `<p class="mv-ack">✓ Done ${esc(at)}. ${esc(m.impact?.rockTitle ?? "The rock")} moved today.</p>` : ""}
+      ${parts.how ? `<p class="mv-how">${esc(parts.how)}.</p>` : ""}
+      ${m.why && m.source !== "plan" ? `<p class="mv-why" title="${esc(m.why)}"><span class="mv-k">Why now</span> ${esc(m.why)}</p>` : ""}
+      ${impactFacts(m.impact, { full: true })}
     </div>`;
 }
 
 function suggestionRow(m) {
+  const parts = moveParts(m);
   return `<div class="mv-sug">
+      ${rockLabel(m)}
       <div class="mv-head">
-        <span class="mv-text">${m.url ? `<a href="${esc(m.url)}" target="_blank" rel="noreferrer">${esc(m.text)}</a>` : esc(m.text)}</span>
-        <span class="mv-acts"><button type="button" class="ghost sm" data-mv="pick" data-mv-id="${esc(m.id)}">Do this today</button></span>
+        ${moveTitle(m, parts)}
+        <span class="mv-acts"><button type="button" class="ghost sm" data-mv="pick" data-mv-id="${esc(m.id)}">Do today</button></span>
       </div>
-      <p class="mv-why">${esc(m.why)}</p>
-      ${impactLine(m.impact)}
+      ${m.why && m.source !== "plan" ? `<p class="mv-why" title="${esc(m.why)}">${esc(m.why)}</p>` : ""}
+      ${impactFacts(m.impact, { full: false })}
     </div>`;
+}
+
+/** Monday to Friday of this week; days after today are shown empty. */
+function weekDays(d) {
+  const seen = new Map(d.week.days.map((x) => [x.dateKey, x]));
+  const start = d.week.days[0]?.dateKey ?? d.today;
+  const out = [];
+  for (let n = 0; n < 5; n += 1) {
+    const key = new Date(Date.parse(`${start}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+    out.push({ dateKey: key, ...(seen.get(key) ?? { picked: 0, done: 0 }), future: key > d.today });
+  }
+  return out;
 }
 
 function renderMoves() {
@@ -6085,31 +6148,46 @@ function renderMoves() {
   if (!host) return;
   const d = moves.data;
   if (!d) {
-    host.innerHTML = moves.error ? `<p class="triage-error">${esc(moves.error)}</p>` : `<p class="meta">Loading today's rock moves…</p>`;
+    host.innerHTML = `<div class="mv-glass">${moves.error ? `<p class="triage-error">${esc(moves.error)}</p>` : `<p class="meta">Loading today's rock moves…</p>`}</div>`;
     return;
   }
   const open = d.picks.filter((p) => !p.doneAt);
   const done = d.picks.filter((p) => p.doneAt);
   const room = open.length < 3;
   const sugs = room ? d.suggestions.slice(0, moves.more ? 6 : d.picks.length ? 2 : 3) : [];
+  const hidden = d.suggestions.length - sugs.length;
 
-  const w = d.week;
-  const strip = w.days
-    .map((day) => `<span class="mv-day${day.done ? " hit" : day.dateKey === d.today ? " today" : ""}" title="${esc(day.dateKey)}: ${esc(day.done)} done of ${esc(day.picked)} picked">${esc(WEEKDAY(day.dateKey))}${day.done ? ` ✓${day.done > 1 ? day.done : ""}` : ""}</span>`)
+  const meter = Array.from({ length: Math.max(3, d.picks.length) }, (_, n) =>
+    `<span class="mv-seg${n < done.length ? " on" : n < d.picks.length ? " picked" : ""}"></span>`).join("");
+  const days = weekDays(d)
+    .map((day) => `<span class="mv-day${day.done ? " hit" : ""}${day.dateKey === d.today ? " today" : ""}${day.future ? " future" : ""}" title="${esc(day.dateKey)}: ${esc(day.done)} done of ${esc(day.picked)} picked">${esc(WEEKDAY(day.dateKey).slice(0, 2))}</span>`)
     .join("");
-  const rockCounts = w.rocks.map((r) => `${esc(r.title)} (${esc(r.n)})`).join(" · ");
+  const w = d.week;
   const shipped = d.shipped ?? [];
+  const tally = [w.done ? plural(w.done, "move", "moves") : "", shipped.length ? `${plural(shipped.length, "ticket", "tickets")} shipped` : ""].filter(Boolean).join(" · ");
+  const breakdown = w.rocks.length || shipped.length
+    ? `<details class="mv-breakdown"><summary>${esc(tally)}</summary>
+        ${w.rocks.length ? `<ul class="plain">${w.rocks.map((r) => `<li><span class="mv-n">${esc(r.n)}</span> ${esc(r.title)}</li>`).join("")}</ul>` : ""}
+        ${shipped.length ? `<p class="mv-k">Shipped on rocks</p><ul class="plain">${shipped
+          .map((t) => `<li>✓ ${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)} <span class="meta">${esc(t.rockTitle ?? "")}</span></li>`)
+          .join("")}</ul>` : ""}
+      </details>`
+    : `<span class="meta">Nothing done yet this week</span>`;
 
   host.innerHTML = `
-    <div class="mv-top">
-      <div class="start-here-head"><h2>Today's rock moves</h2><span class="q-summary">${
-        d.picks.length ? `<span class="meta">${esc(done.length)} of ${esc(d.picks.length)} done</span>` : `<span class="meta">Pick up to 3 before the queue</span>`
-      }</span></div>
+    <div class="mv-glass">
+      <header class="mv-header">
+        <div>
+          <h2>Today's rock moves</h2>
+          <p class="mv-sub">${d.picks.length ? `${esc(done.length)} of ${esc(d.picks.length)} done` : "Pick up to 3 before you open the queue"}</p>
+        </div>
+        <div class="mv-meter" aria-label="${esc(done.length)} of ${esc(d.picks.length)} done">${meter}</div>
+      </header>
       ${moves.error ? `<p class="triage-error">${esc(moves.error)}</p>` : ""}
-      ${d.picks.length ? `<div class="mv-list">${[...open, ...done].map(moveCard).join("")}</div>` : ""}
-      ${sugs.length ? `<p class="q-label">${d.picks.length ? "More that would move a rock" : "What would move a rock today"} <span class="meta">from the rock check, this week's plan and your tickets on rocks</span></p>
-        <div class="mv-list">${sugs.map(suggestionRow).join("")}</div>
-        ${d.suggestions.length > sugs.length || moves.more ? `<button type="button" class="link-btn" data-mv="more">${moves.more ? "Fewer" : `${d.suggestions.length - sugs.length} more`}</button>` : ""}` : ""}
+      ${open.length ? `<div class="mv-list">${open.map(moveCard).join("")}</div>` : ""}
+      ${done.length ? `<div class="mv-list mv-done-list">${done.map(moveCard).join("")}</div>` : ""}
+      ${sugs.length ? `<div class="mv-sec"><span>${d.picks.length ? "More that would move a rock" : "Suggested for today"}</span>${hidden > 0 || moves.more ? `<button type="button" class="link-btn" data-mv="more">${moves.more ? "Fewer" : `${hidden} more`}</button>` : ""}</div>
+        <div class="mv-list">${sugs.map(suggestionRow).join("")}</div>` : ""}
       ${!d.suggestions.length && !d.picks.length ? `<p class="sub">Nothing suggested: every rock is on course and nothing on a rock is planned or yours this week. Add your own below.</p>` : ""}
       ${room ? (moves.adding
         ? `<form class="mv-add" data-mv-form>
@@ -6117,14 +6195,12 @@ function renderMoves() {
             <select name="rockId" required aria-label="Rock it moves"><option value="">Rock it moves…</option>${d.rocks.map((r) => `<option value="${esc(r.id)}">${esc(r.title)}</option>`).join("")}</select>
             <button type="submit" class="sm">Add</button><button type="button" class="link-btn" data-mv="cancel">Cancel</button>
           </form>`
-        : `<button type="button" class="link-btn" data-mv="add">+ Add your own rock move</button>`) : ""}
-      <div class="mv-week">
-        <span class="meta">This week</span> ${strip}
-        <span class="meta">${esc(plural(w.done, "rock move", "rock moves"))} done${rockCounts ? `: ${rockCounts}` : ""}${shipped.length ? ` · ${esc(plural(shipped.length, "ticket", "tickets"))} on rocks shipped` : ""}</span>
-        ${shipped.length ? `<details class="mv-shipped"><summary class="meta">Shipped on rocks this week</summary><ul class="plain">${shipped
-          .map((t) => `<li>✓ ${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)} <span class="meta">${esc(t.rockTitle ?? "")} · ${esc(t.doneOn)}</span></li>`)
-          .join("")}</ul></details>` : ""}
-      </div>
+        : `<button type="button" class="link-btn mv-add-btn" data-mv="add">+ Add your own</button>`) : ""}
+      <footer class="mv-week">
+        <span class="mv-k">This week</span>
+        <span class="mv-days">${days}</span>
+        ${breakdown}
+      </footer>
     </div>`;
 }
 
