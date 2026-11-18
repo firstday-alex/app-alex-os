@@ -1605,7 +1605,7 @@ function schedToast(result) {
 document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-sched-send]");
   if (!button) return;
-  const panel = button.closest(".triage-panel, .group-panel");
+  const panel = button.closest(".triage-panel, .group-panel, .delegate-panel");
   const card = button.closest(".flag[data-key]");
   const group = button.closest("[data-group-person]");
   const msg = panel.querySelector(".sched-msg");
@@ -1758,7 +1758,9 @@ function ticketFacts(task) {
   const fresh = c?.date && Date.now() - c.date < 3 * 86_400_000;
   const comment = !c?.date ? "" : fresh
     ? `I see ${who} left a comment ${whenSaid(c.date)}, so want to keep that moving.`
-    : `The last comment was ${whenSaid(c.date)} (${who === "I" ? "mine" : who}), so want to get it moving again.`;
+    : who === "I"
+      ? `I last commented ${whenSaid(c.date)}, so want to get it moving again.`
+      : `The last comment was ${whenSaid(c.date)} (${who}), so want to get it moving again.`;
   return { where: `${where}${when}.`, ask, comment };
 }
 
@@ -5355,7 +5357,7 @@ function parseHash(hash) {
    Top of What needs you: the few things that move a rock today, each with what it moves
    and why now, picked by Alex and ticked off. See src/focus/moves.js. */
 
-const moves = { data: null, loading: false, busy: false, adding: false, more: false, error: null, just: null, copied: null, tab: null, open: new Set() };
+const moves = { data: null, loading: false, busy: false, adding: false, more: false, error: null, just: null, copied: null, tab: null, open: new Set(), delegate: null };
 
 /* Unblock others: the people waiting on Alex right now. Someone asked in ClickUp
    (reply owed), or a ticket sits in QA or ready for deploy waiting on Alex. Alex's own
@@ -5596,9 +5598,11 @@ function renderMoves() {
   const unblock = unblockFlags();
   // Unblocking others comes first; with nobody waiting, the rock work is shown.
   const tab = moves.tab ?? (unblock.length ? "unblock" : "rock");
-  const rockCount = open.length + (room ? d.suggestions.length : 0);
-  const sugs = room ? d.suggestions.slice(0, moves.more ? 6 : d.picks.length ? 2 : 3) : [];
-  const hidden = d.suggestions.length - sugs.length;
+  const mineOpen = myOpenTickets();
+  const rockCount = mineOpen.moving.length + mineOpen.todo.length + open.length;
+  const sugPool = d.suggestions.filter((m) => m.source !== "ticket");
+  const sugs = room ? sugPool.slice(0, moves.more ? 6 : d.picks.length ? 2 : 3) : [];
+  const hidden = sugPool.length - sugs.length;
 
   const meter = Array.from({ length: Math.max(3, d.picks.length) }, (_, n) =>
     `<span class="mv-seg${n < done.length ? " on" : n < d.picks.length ? " picked" : ""}"></span>`).join("");
@@ -5628,7 +5632,7 @@ function renderMoves() {
         <button type="button" role="tab" class="mv-tab${tab === "rock" ? " on" : ""}" aria-selected="${tab === "rock"}" data-mv-tab="rock">My rock work${rockCount ? `<span class="mv-badge">${esc(rockCount)}</span>` : ""}${d.picks.length ? `<span class="mv-tab-sub">${esc(done.length)}/${esc(d.picks.length)} done</span>` : ""}</button>
       </div>
       ${moves.error ? `<p class="triage-error">${esc(moves.error)}</p>` : ""}
-      ${tab === "unblock" ? unblockList(unblock) : `
+      ${tab === "unblock" ? unblockList(unblock) : `${myTicketsHtml()}${myTicketsHtml() ? `<div class="mv-sec"><span>Rock moves</span><span class="meta">Decisions and plan items that move a rock</span></div>` : ""}
       ${open.length ? `<div class="mv-list">${open.map(moveCard).join("")}</div>` : ""}
       ${done.length ? `<div class="mv-list mv-done-list">${done.map(moveCard).join("")}</div>` : ""}
       ${sugs.length ? `${d.picks.length || hidden > 0 || moves.more ? `<div class="mv-sec"><span>${d.picks.length ? "More that would move a rock" : ""}</span>${hidden > 0 || moves.more ? `<button type="button" class="link-btn" data-mv="more">${moves.more ? "Fewer" : `${hidden} more`}</button>` : ""}</div>` : ""}
@@ -5658,6 +5662,72 @@ function waitingWho(f) {
   return null;
 }
 
+/* ------------------------------ my open tickets ------------------------------
+   First under My rock work: Alex's own open tickets, the ones already moving (anything
+   past To Do) before the To Do ones, soonest due first. Each can be delegated: a drafted
+   ask, in Alex's voice, for someone to take it on or help, to copy or schedule in Slack. */
+
+function myOpenTickets() {
+  const me = state.me != null ? String(state.me) : null;
+  if (!me) return { moving: [], todo: [] };
+  const mine = [...(state.flagCtx?.tasks?.values() ?? [])].filter(
+    (t) => !t.archived && t.bucket !== "done" && (t.assignees ?? []).some((u) => String(u.id) === me),
+  );
+  const isTodo = (t) => stageOf(t).id === "start" || String(t.status ?? "").toLowerCase() === "to do";
+  const byDue = (a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity) || (b.statusAge?.days ?? 0) - (a.statusAge?.days ?? 0);
+  return { moving: mine.filter((t) => !isTodo(t)).sort(byDue), todo: mine.filter(isTodo).sort(byDue) };
+}
+
+function dueText(t) {
+  if (!t.dueDate) return "no due date";
+  const midnight = (ms) => new Date(new Date(ms).toDateString()).getTime();
+  const days = Math.round((midnight(t.dueDate) - midnight(Date.now())) / 86_400_000);
+  const on = new Date(t.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return days < 0 ? `overdue, due ${on}` : days === 0 ? "due today" : days === 1 ? "due tomorrow" : `due ${on}`;
+}
+
+function delegateText(task, to) {
+  const f = ticketFacts(task);
+  return [
+    nudgeEmojis([task]),
+    `${to ? `@${to} ` : ""}Could you take "${task.name}" on, or help me move it forward? ${f.where}${f.comment ? ` ${f.comment}` : ""}`,
+    `Happy to walk you through where it is and what's left. Just want to make sure it keeps moving and doesn't wait on me. Feel free to adjust the approach however you think works best. Thanks!${task.url ? `\n${task.url}` : ""}`,
+  ].filter(Boolean).join("\n\n");
+}
+
+function myTicketRow(t) {
+  const stage = stageOf(t);
+  const due = dueText(t);
+  const late = /^overdue/.test(due) || due === "due today";
+  const open = moves.delegate === String(t.id);
+  const people = (state.people ?? []).filter((p) => String(p.clickupUserId) !== String(state.me)).map((p) => p.name);
+  return `<div class="mt-row${open ? " open" : ""}">
+      <div class="mt-line">
+        <span class="mt-status st-${esc(stage.id)}">${esc(t.status ?? "open")}</span>
+        <span class="mt-name">${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)}</span>
+        <span class="mt-meta${late ? " late" : ""}">${esc(due)}${t.bigSwing?.label ? ` · ${esc(t.bigSwing.label)}` : ""}</span>
+        <span class="mt-acts">
+          ${t.url ? `<a class="ql" href="${esc(t.url)}" target="_blank" rel="noreferrer">ClickUp ↗</a>` : ""}
+          <button type="button" class="ghost sm" data-mv-delegate="${esc(t.id)}">${open ? "Close" : "Delegate"}</button>
+        </span>
+      </div>
+      ${open ? `<div class="delegate-panel">
+          <label>To <select id="tp-person" class="sm" data-delegate-to="${esc(t.id)}">${people.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select></label>
+          <label class="wide">Message <span class="meta">Copy it to send yourself, or schedule it below.</span>
+            <textarea id="tp-text" rows="7">${esc(delegateText(t, people[0]))}</textarea></label>
+          <div class="bar"><button type="button" class="sm" data-delegate-copy>Copy</button><span class="meta delegate-msg"></span></div>
+          ${scheduleRow()}
+        </div>` : ""}
+    </div>`;
+}
+
+function myTicketsHtml() {
+  const { moving, todo } = myOpenTickets();
+  if (!moving.length && !todo.length) return "";
+  const sec = (label, sub, list) => (list.length ? `<div class="mv-sec"><span>${esc(label)} <span class="mt-n">${list.length}</span></span><span class="meta">${esc(sub)}</span></div><div class="mt-list">${list.map(myTicketRow).join("")}</div>` : "");
+  return sec("In flight", "Your tickets already moving. Finish these first.", moving) + sec("To do", "Yours, not started yet.", todo);
+}
+
 /** The people waiting on Alex, one row each; a row opens to the full card (reply, Done, ×). */
 function unblockList(list) {
   if (!list.length) return `<p class="sub mv-clear">✓ Nobody is waiting on you right now.</p>`;
@@ -5672,6 +5742,21 @@ function unblockList(list) {
 $("focus")?.addEventListener("click", (event) => {
   const t = event.target.closest("[data-mv-tab]");
   if (t) { moves.tab = t.dataset.mvTab; return renderMoves(); }
+  const dg = event.target.closest("[data-mv-delegate]");
+  if (dg) {
+    moves.delegate = moves.delegate === dg.dataset.mvDelegate ? null : dg.dataset.mvDelegate;
+    return renderMoves();
+  }
+  const cp = event.target.closest("[data-delegate-copy]");
+  if (cp) {
+    const panel = cp.closest(".delegate-panel");
+    const msg = panel.querySelector(".delegate-msg");
+    navigator.clipboard?.writeText(panel.querySelector("#tp-text").value).then(
+      () => { msg.textContent = "Copied."; },
+      () => { msg.textContent = "The browser would not copy. Select the message and copy it by hand."; },
+    );
+    return;
+  }
   const o = event.target.closest("[data-mv-open]");
   if (o) {
     const id = o.dataset.mvOpen;
@@ -5706,6 +5791,14 @@ $("focus")?.addEventListener("click", (event) => {
   if (act === "done") { moves.just = id; setFocusTimer(id, null); return movesChange({ done: id }); }
   if (act === "undo") return movesChange({ undo: id });
   if (act === "remove") return movesChange({ remove: id });
+});
+
+$("focus")?.addEventListener("change", (event) => {
+  const id = event.target.dataset?.delegateTo;
+  if (!id) return;
+  const task = state.flagCtx?.tasks.get(String(id));
+  const box = event.target.closest(".delegate-panel")?.querySelector("#tp-text");
+  if (task && box) box.value = delegateText(task, event.target.value);
 });
 
 $("focus")?.addEventListener("submit", (event) => {
