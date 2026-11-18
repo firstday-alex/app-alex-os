@@ -912,6 +912,7 @@ function triageActions(flag, { compact = false, fix = false } = {}) {
           ${compact && fix ? item("fix-toggle", "Fix it here", ACTION_HELP.fix) : ""}
           ${item("nudge-open", "Draft a nudge", ACTION_HELP.nudge)}
           ${item("waiting-open", "Waiting on…", ACTION_HELP.waiting)}
+          ${flagTask(flag) ? item("due-open", "Set due date…", "Set this ticket's due date in ClickUp. Only the due date changes.") : ""}
           <span class="menu-sep">Snooze</span>
           ${item("snooze", "1 working day", ACTION_HELP.snooze1 + SNOOZE_NOTE, ' data-days="1"')}
           ${item("snooze", "3 working days", ACTION_HELP.snooze3 + SNOOZE_NOTE, ' data-days="3"')}
@@ -1220,8 +1221,79 @@ document.addEventListener("click", async (event) => {
   if (failed.length) alert(`ROCK set on ${done.length}. Not set on ${failed.length}: ${failed[0]}`);
 });
 
+/* -------------------------------- set due date --------------------------------
+   On a card about a ticket's due date (none, overdue, due and not started), or from Take
+   action on any ticket card: pick a date and set it in ClickUp (netlify/functions/ticket-due.mjs). */
+
+const DUE_RULES = new Set(["nextstep.no_due_date", "nextstep.overdue", "nextstep.due_not_started"]);
+
+/** The open ticket a flag is about, if it is about one. */
+function flagTask(flag) {
+  const sub = subjectOf(flag);
+  const t = sub.type === "task" ? state.flagCtx?.tasks.get(baseId(sub.id)) : null;
+  return t && t.bucket !== "done" ? t : null;
+}
+
+/** Friday this week, or next Friday from the weekend, as YYYY-MM-DD. */
+function nextFriday() {
+  const d = new Date();
+  const add = (5 - d.getDay() + 7) % 7 || (d.getDay() === 5 ? 0 : 7);
+  d.setDate(d.getDate() + add);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function dueFix(flag) {
+  const t = flagTask(flag);
+  if (!t) return "";
+  const today = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const min = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+  const now = t.dueDate ? `Now due ${new Date(t.dueDate).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}.` : "No due date yet.";
+  return `<div class="quick-fix due-fix" data-due-fix="${esc(keyOf(flag))}" data-task="${esc(t.id)}">
+      <label>Due date <input type="date" class="sm" data-due-date min="${min}" value="${esc(nextFriday())}"></label>
+      <button type="button" class="sm" data-due-set>Set in ClickUp</button>
+      <span class="meta">${esc(now)}</span>
+      <span class="due-msg meta"></span>
+    </div>`;
+}
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-due-set]");
+  if (!button) return;
+  const box = button.closest("[data-due-fix]");
+  const msg = box.querySelector(".due-msg");
+  const date = box.querySelector("[data-due-date]")?.value;
+  if (!date) {
+    msg.textContent = "Pick a date.";
+    return;
+  }
+  button.disabled = true;
+  msg.textContent = "Saving to ClickUp…";
+  try {
+    const res = await fetch(`${FN}/ticket-due`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskId: box.dataset.task, date }) });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    const t = state.flagCtx?.tasks.get(String(box.dataset.task));
+    if (t) t.dueDate = body.dueDate;
+    const when = new Date(body.dueDate).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+    // A card about the due date is handled by setting one; any other card just learns the date.
+    const flag = (state.report?.flags ?? []).find((f) => keyOf(f) === box.dataset.dueFix);
+    if (flag && DUE_RULES.has(flag.rule)) await saveTriageMany([flag], { status: "done", note: `Due date set to ${when} in ClickUp` });
+    else {
+      msg.textContent = `Due ${when} in ClickUp.`;
+      button.disabled = false;
+    }
+  } catch (err) {
+    button.disabled = false;
+    msg.textContent = `Not set: ${err.message}`;
+    msg.classList.add("triage-error");
+  }
+});
+
 function quickFix(flag) {
   if (flag.rule === "nextstep.no_assignee") return ownerPicker([flag]);
+  if (DUE_RULES.has(flag.rule)) return dueFix(flag);
   if (ROCK_FIX_RULES.has(flag.rule)) return rockPicker(flag);
   // A rock off course: every reason with its fix, and the plan to re-plan it in.
   if (flag.rule === "leadership.rock_off_course") {
@@ -1929,6 +2001,8 @@ function openPanel(card, kind) {
       <label class="wide">Why is it not a problem? <span class="meta">Optional. Kept with the flag, and useful feedback for the rules.</span>
         <textarea id="tp-note" rows="2"></textarea></label>
       <button type="button" class="sm" data-triage="dismiss-save">Set aside</button>`;
+  } else if (kind === "due") {
+    panel.innerHTML = dueFix(flag) || `<p class="meta">This card is not about one open ticket.</p>`;
   } else if (kind === "nudge") {
     panel.innerHTML = `
       <label>To ${personSelect("tp-person")}</label>
@@ -1966,6 +2040,7 @@ document.addEventListener("click", async (event) => {
   if (action === "waiting-open") return openPanel(card, "waiting");
   if (action === "dismiss-open") return openPanel(card, "dismiss");
   if (action === "nudge-open") return openPanel(card, "nudge");
+  if (action === "due-open") return openPanel(card, "due");
   if (action === "dismiss-save") return saveTriage(card, { status: "dismissed", note: card.querySelector("#tp-note")?.value ?? "" });
   if (action === "waiting-save") {
     const who = chosenPerson(card);

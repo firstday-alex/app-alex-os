@@ -1366,3 +1366,5 @@ body:has(#view-ecomrocks:not(.hidden)) main { max-width: 1480px; }
 .q-test-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin: 4px 0 8px; font-weight: 700; }
 .q-test-head .ghost { margin-left: auto; }
 .q-test-open { padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.5); }
+.due-fix { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.due-fix input[type="date"] { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
