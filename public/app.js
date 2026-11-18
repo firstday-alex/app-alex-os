@@ -189,7 +189,6 @@ function renderFlags(container, flags, emptyText) {
 
 const TRIAGE_LABEL = { done: "Done", snoozed: "Snoozed", waiting: "Waiting on", dismissed: "Not a problem" };
 const keyOf = (flag) => flag.key ?? String(flag.id ?? "").replace(/^(\d{4}-\d{2}-\d{2}|nodate):/, "");
-const isAttn = (f) => f.severity === "p1" || f.severity === "attention";
 // Store moves and control-group moves are context for reading results, not things to
 // act on: shown with the store numbers, never in a flag list. Mirrors CONTEXT_RULES.
 const CONTEXT_RULES = new Set(["shopify.metric_moved", "intelligems.control_moved"]);
@@ -222,20 +221,8 @@ function renderAllFlags({ rebuildTools = false } = {}) {
   renderTopThree(flags);
   // The 1:1 view shows the same flags, so a triage there redraws it too.
   if (!$("view-people")?.classList.contains("hidden")) renderPeople();
-  if (rebuildTools) renderAttentionTools(flags);
-  renderAttention();
   renderNextSteps();
-  const open = flags.filter((f) => viewOf(f) === "open");
-  const handled = (sev) => flags.filter((f) => f.severity === sev && !["open", "context"].includes(viewOf(f))).length;
-  const note = (n) => (n ? ` ${plural(n, "handled item is", "handled items are")} under Waiting and Parked above.` : "");
-  renderFlags($("hygiene"), open.filter((f) => f.severity === "info"), `Nothing outstanding.${note(handled("info"))}`);
   renderRuleCheck();
-
-  // The collapsed headers are the summary, so each says how much is inside.
-  const attn = open.filter(isAttn);
-  const p1 = attn.filter((f) => f.severity === "p1").length;
-  sectionCount("attention", attn.length ? `${attn.length} open${p1 ? ` · ${p1} P1` : ""}` : "nothing open", p1 > 0);
-  sectionCount("hygiene", plural(open.filter((f) => f.severity === "info").length, "item", "items"));
 }
 
 /* -------------------------------- rule check --------------------------------
@@ -293,7 +280,7 @@ function renderRuleCheck() {
   const missing = quieted.filter((rule) => !h.rules.some((r) => r.rule === rule)).map((rule) => ({ rule, raised: 0, acted: 0, verdict: "mixed", canQuiet: true }));
   host.innerHTML = `
     <p class="sub">${esc(plural(h.readouts, "readout", "readouts"))} since ${esc(fmtDay(h.since))}: how many flags each rule raised and what became of them.
-      A rule you never act on, whose flags mostly sit untouched, is suggested for Tidy-ups. There it is still listed, but it stays out of the queue and never escalates.
+      A rule you never act on, whose flags mostly sit untouched, is suggested for Tidy-ups. It is still in your queue, under the Tidy-ups filter, but sits below everything else and never escalates.
       Changes apply from the next refresh. Acted on means marked Done or Waiting on, here or in Slack.</p>
     ${suggested.length ? "" : `<p class="sub"><strong>No rule qualifies for Tidy-ups right now.</strong> ${esc(h.rules.filter((r) => r.verdict === "clears itself").length ? "Several clear within two days without you, shown below; that may be the readout working, so they are shown, not suggested." : "")}</p>`}
     <p class="triage-error hidden" id="rule-check-error"></p>
@@ -360,8 +347,8 @@ function topFlags(flags, n = 3) {
    what was hidden or handled, so × never makes a flag disappear without a way back. */
 
 const QUEUE_ROWS = 10;
-const SEV_SHORT = { p1: "P1", attention: "P2", prompt: "Decision" };
-const queue = { all: false, open: new Set(), trayOpen: false };
+const SEV_SHORT = { p1: "P1", attention: "P2", prompt: "Decision", info: "Tidy-up" };
+const queue = { all: false, open: new Set() };
 
 function rankedFlags(flags) {
   return flags
@@ -450,55 +437,154 @@ function inRockMoves(flags) {
   return new Set(flags.filter((f) => f.rule === "leadership.rock_off_course" && rocks.has(String(f.subject?.id ?? "").split(":")[0])).map((f) => f.id));
 }
 
+/* The queue's filters: which pile (open, waiting, handled), what kind (P1, P2, decision,
+   tidy-up), whose, which area, and a search. With no filter the queue is ranked with the
+   top three in full; with any filter it is a flat list to work down quickly. */
+const QUEUE_KINDS = [["", "All"], ["p1", "P1"], ["attention", "P2"], ["prompt", "Decisions"], ["info", "Tidy-ups"]];
+const QUEUE_VIEWS = [["open", "Open"], ["waiting", "Waiting"], ["parked", "Handled"]];
+queue.f = { view: "open", kind: "", person: "", area: "", q: "" };
+const queueFiltered = () => Boolean(queue.f.kind || queue.f.person || queue.f.area || queue.f.q.trim());
+
+/** Every flag in a pile, ranked: P1, P2 and decisions by priority, then tidy-ups by age. */
+function queuePool(flags, view, covered) {
+  if (view !== "open") return flags.filter((f) => !isContextFlag(f) && viewOf(f) === view);
+  const tidy = flags
+    .filter((f) => f.severity === "info" && viewOf(f) === "open")
+    .sort((a, b) => (b.openDays ?? 0) - (a.openDays ?? 0));
+  return [...rankedFlags(flags), ...tidy].filter((f) => !covered.has(f.id));
+}
+
+function queueMatches(f, { kind = true } = {}) {
+  const { person, area } = queue.f;
+  const q = queue.f.q.trim().toLowerCase();
+  if (kind && queue.f.kind && f.severity !== queue.f.kind) return false;
+  if (area && String(f.layer) !== area) return false;
+  const ctx = flagContext(f);
+  if (person && !(ctx.owners.length ? ctx.owners : [NO_OWNER]).includes(person)) return false;
+  if (q && !`${f.message} ${ctx.owners.join(" ")} ${ctx.itemLabel} ${triageOf(f)?.waitingOn ?? ""}`.toLowerCase().includes(q)) return false;
+  return true;
+}
+
 function renderTopThree(flags) {
   const host = $("start-here");
   if (!host) return;
+  // The frame (and the search box in it) is built once, so typing never loses focus.
+  if (!$("q-body")) {
+    host.innerHTML = `<div class="glass q-glass">
+      <header class="q-header">
+        <div><h2>Your queue</h2><p class="mv-sub" id="q-sub"></p></div>
+        <div class="q-score" id="q-score"></div>
+      </header>
+      <div id="q-moved"></div>
+      <div class="q-tools">
+        <div id="q-filters"></div>
+        <input type="search" id="q-search" class="q-search" placeholder="Search the queue" aria-label="Search the queue">
+      </div>
+      <div id="q-body"></div>
+    </div>`;
+  }
   const covered = inRockMoves(flags);
-  const ranked = rankedFlags(flags).filter((f) => !covered.has(f.id));
-  const { items, groups } = groupByPerson(ranked, groupOpts());
-  state.queueGroups = new Map(groups.map((g) => [g.person, g]));
-  const set = flags.filter((f) => !isContextFlag(f) && viewOf(f) !== "open");
-  const count = (sev) => ranked.filter((f) => f.severity === sev).length;
-  const pill = (n, label, cls = "") => (n ? `<span class="q-pill ${cls}">${n} ${esc(label)}</span>` : "");
-  const summary = ranked.length
-    ? `${pill(count("p1"), "P1", "p1")}${pill(count("attention"), "P2", "p2")}${pill(count("prompt"), count("prompt") === 1 ? "decision" : "decisions")}${pill(flagsForView("waiting").length, "waiting")}`
-    : `<span class="meta">Nothing open that needs you.</span>`;
-  const cleared = set.filter((f) => triageOf(f)?.status === "done").length;
-  queue.lines = items.length;
-  queue.p1 = count("p1");
+  const f = queue.f;
+  const pool = queuePool(flags, f.view, covered);
+  const base = pool.filter((x) => queueMatches(x, { kind: false }));
+  const shownFlags = base.filter((x) => !f.kind || x.severity === f.kind);
+  const openPool = f.view === "open" ? pool : queuePool(flags, "open", covered);
+  queue.lines = openPool.length;
+  queue.p1 = openPool.filter((x) => x.severity === "p1").length;
+  const cleared = flags.filter((x) => triageOf(x)?.status === "done").length;
 
+  $("q-sub").textContent = f.view === "open"
+    ? `${plural(openPool.length, "item", "items")} open${queue.p1 ? ` · ${queue.p1} P1` : ""}`
+    : `${plural(pool.length, "item", "items")} ${f.view === "waiting" ? "waiting on someone" : "done, snoozed or hidden"}`;
+  $("q-score").innerHTML = `<span class="q-big">${esc(openPool.length)}</span><span class="q-big-k">open</span>${cleared ? `<span class="q-cleared">✓ ${esc(cleared)} cleared</span>` : ""}`;
+  $("q-moved").innerHTML = covered.size && f.view === "open"
+    ? `<button type="button" class="q-moved" data-q-focus>↑ ${esc(plural(covered.size, "rock decision is", "rock decisions are"))} in Today's rock moves</button>` : "";
+
+  // Filters. People and areas come from the whole pile, so a choice never hides itself.
+  const owners = [...new Set(pool.flatMap((x) => { const o = flagContext(x).owners; return o.length ? o : [NO_OWNER]; }))]
+    .sort((x, y) => (x === NO_OWNER) - (y === NO_OWNER) || x.localeCompare(y));
+  const areas = AREA_ORDER.filter((k) => pool.some((x) => String(x.layer) === k));
+  if (f.person && !owners.includes(f.person)) f.person = "";
+  if (f.area && !areas.includes(f.area)) f.area = "";
+  const option = (value, label, selected) => `<option value="${esc(value)}"${value === selected ? " selected" : ""}>${esc(label)}</option>`;
+  const viewCount = (v) => (v === "open" ? openPool.length : flags.filter((x) => !isContextFlag(x) && viewOf(x) === v).length);
+  $("q-filters").innerHTML = `
+    <div class="q-seg" role="group" aria-label="Pile">${QUEUE_VIEWS
+      .map(([k, l]) => `<button type="button" class="${f.view === k ? "on" : ""}" aria-pressed="${f.view === k}" data-qf-view="${k}">${esc(l)} <span>${esc(viewCount(k))}</span></button>`)
+      .join("")}</div>
+    <div class="q-kinds" role="group" aria-label="Kind">${QUEUE_KINDS
+      .map(([k, l]) => {
+        const n = k ? base.filter((x) => x.severity === k).length : base.length;
+        if (k && !n && f.kind !== k) return "";
+        return `<button type="button" class="q-kind ${k || "all"}${f.kind === k ? " on" : ""}" aria-pressed="${f.kind === k}" data-qf-kind="${k}">${esc(l)} <span>${esc(n)}</span></button>`;
+      })
+      .join("")}</div>
+    <select id="q-person" class="sm" aria-label="Person">${option("", "Everyone", f.person)}${owners.map((o) => option(o, o, f.person)).join("")}</select>
+    <select id="q-area" class="sm" aria-label="Area">${option("", "All areas", f.area)}${areas.map((k) => option(k, AREA_LABEL[k] ?? k, f.area)).join("")}</select>
+    ${queueFiltered() ? `<button type="button" class="link-btn" data-qf-clear>Clear</button>` : ""}`;
+
+  const close = (id) => `<button type="button" class="link-btn" data-q-open="${esc(id)}">Close</button>`;
+  const row = (x) => (queue.open.has(x.id) ? `<div class="q-opened">${flagCard(x)}${close(x.id)}</div>` : queueRow(x));
+  const body = $("q-body");
+  if (!shownFlags.length) {
+    body.innerHTML = pool.length
+      ? `<p class="sub q-empty">Nothing matches these filters. <button type="button" class="link-btn" data-qf-clear>Clear filters</button></p>`
+      : `<p class="sub q-empty">${esc({ open: "Nothing open that needs you.", waiting: "Nothing is waiting on anyone.", parked: "Nothing done, snoozed or hidden." }[f.view])}</p>`;
+    return;
+  }
+  const more = (n) => (n > 0 ? `<button type="button" class="link-btn q-all" data-q-more>${queue.all ? "Show fewer" : `Show all ${n}`}</button>` : "");
+
+  // Filtered, or a pile other than open: a flat list, newest decisions first as ranked.
+  if (f.view !== "open" || queueFiltered()) {
+    const list = queue.all ? shownFlags : shownFlags.slice(0, 25);
+    body.innerHTML = `<div class="q-list">${list.map(row).join("")}</div>${more(shownFlags.length > 25 ? shownFlags.length : 0)}`;
+    return;
+  }
+
+  // Unfiltered open queue: routine sprint checks fold into one line per person, top three in full.
+  const { items, groups } = groupByPerson(shownFlags, groupOpts());
+  state.queueGroups = new Map(groups.map((g) => [g.person, g]));
   const top = items.slice(0, 3);
   const rest = items.slice(3);
   const shown = queue.all ? rest : rest.slice(0, QUEUE_ROWS);
   const card = (i) => (i.kind === "group" ? groupCard(i) : flagCard(i.flag));
-  const close = (id) => `<button type="button" class="link-btn" data-q-open="${esc(id)}">Close</button>`;
   const line = (i) => {
     if (i.kind === "group") return queue.open.has(groupId(i)) ? `<div class="q-opened">${groupCard(i)}${close(groupId(i))}</div>` : groupRow(i);
-    return queue.open.has(i.flag.id) ? `<div class="q-opened">${flagCard(i.flag)}${close(i.flag.id)}</div>` : queueRow(i.flag);
+    return row(i.flag);
   };
-
-  host.innerHTML = `<div class="glass q-glass">
-    <header class="q-header">
-      <div>
-        <h2>Your queue</h2>
-        <div class="q-summary">${summary}</div>
-      </div>
-      <div class="q-score">
-        <span class="q-big">${esc(items.length)}</span><span class="q-big-k">${items.length === 1 ? "line open" : "lines open"}</span>
-        ${cleared ? `<span class="q-cleared">✓ ${esc(cleared)} cleared</span>` : ""}
-      </div>
-    </header>
-    ${covered.size ? `<button type="button" class="q-moved" data-q-focus>↑ ${esc(plural(covered.size, "rock decision is", "rock decisions are"))} in Today's rock moves</button>` : ""}
+  body.innerHTML = `
     ${top.length ? `<p class="q-label">Do first</p><div class="q-tops">${top.map((i, n) => `<div class="q-top"><span class="q-rank">${n + 1}</span>${card(i)}</div>`).join("")}</div>` : ""}
     ${rest.length ? `<p class="q-label">Then <span class="meta">${rest.length} more, highest first</span></p>
       <div class="q-list">${shown.map(line).join("")}</div>
-      ${rest.length > shown.length ? `<button type="button" class="link-btn q-all" data-q-more>Show all ${rest.length}</button>` : queue.all && rest.length > QUEUE_ROWS ? `<button type="button" class="link-btn q-all" data-q-more>Show fewer</button>` : ""}` : ""}
-    ${set.length ? `<details class="q-tray"${queue.trayOpen ? " open" : ""}>
-        <summary>Hidden or handled <span class="meta">${set.length} · bring any back</span></summary>
-        <div class="q-list">${set.map(queueRow).join("")}</div>
-      </details>` : ""}
-  </div>`;
+      ${rest.length > QUEUE_ROWS ? more(rest.length) : ""}` : ""}`;
 }
+
+$("start-here")?.addEventListener("click", (event) => {
+  const v = event.target.closest("[data-qf-view]");
+  const k = event.target.closest("[data-qf-kind]");
+  const clear = event.target.closest("[data-qf-clear]");
+  if (!v && !k && !clear) return;
+  if (v) queue.f.view = v.dataset.qfView;
+  if (k) queue.f.kind = k.dataset.qfKind;
+  if (clear) {
+    Object.assign(queue.f, { kind: "", person: "", area: "", q: "" });
+    if ($("q-search")) $("q-search").value = "";
+  }
+  queue.all = false;
+  renderTopThree(state.report?.flags ?? []);
+});
+$("start-here")?.addEventListener("change", (event) => {
+  const key = { "q-person": "person", "q-area": "area" }[event.target.id];
+  if (!key) return;
+  queue.f[key] = event.target.value;
+  queue.all = false;
+  renderTopThree(state.report?.flags ?? []);
+});
+$("start-here")?.addEventListener("input", (event) => {
+  if (event.target.id !== "q-search") return;
+  queue.f.q = event.target.value;
+  renderTopThree(state.report?.flags ?? []);
+});
 
 /**
  * One message for everything a person has open: each ticket once, with where it is, when
@@ -645,7 +731,6 @@ $("start-here").addEventListener("click", (event) => {
   renderTopThree(state.report?.flags ?? []);
 });
 $("start-here").addEventListener("toggle", (event) => {
-  if (event.target.classList?.contains("q-tray")) queue.trayOpen = event.target.open;
 }, true);
 
 function sectionCount(name, text, urgent = false) {
@@ -758,8 +843,6 @@ function flagCard(flag, { compact = false, also = 0 } = {}) {
 const AREA_LABEL = { 1: "Leadership", cross: "Cross layer", 3: "Tests", 2: "Sprint", 0: "Store" };
 const AREA_ORDER = ["1", "cross", "3", "2", "0"]; // the same order sortFlags uses
 const NO_OWNER = "No owner";
-const ATTN_GROUPS = { age: "New vs still open", area: "Area", owner: "Owner", rule: "Issue", item: "Item", none: "No grouping" };
-const ATTN_VIEWS = { open: "Open", waiting: "Waiting", parked: "Parked" };
 
 const baseId = (id) => String(id ?? "").split(":")[0];
 const ruleLabel = (rule) => {
@@ -862,181 +945,6 @@ function flagContext(flag) {
   return { owners, links, url, itemKey: `${subject.type}:${id}`, itemLabel: itemLabel ?? ruleLabel(flag.rule) };
 }
 
-function loadAttnPrefs() {
-  const defaults = { view: "open", sev: "", area: "", owner: "", q: "", group: "age" };
-  try {
-    return { ...defaults, ...JSON.parse(localStorage.getItem("attn-prefs") ?? "{}"), view: "open", q: "" };
-  } catch {
-    return defaults;
-  }
-}
-function saveAttnPrefs() {
-  try {
-    const { sev, area, owner, group } = state.attn;
-    localStorage.setItem("attn-prefs", JSON.stringify({ sev, area, owner, group }));
-  } catch {
-    /* a per-viewer convenience; nothing is lost without it */
-  }
-}
-
-/**
- * The flags a view lists. Open is the attention list. Waiting and Parked hold every
- * handled flag whatever its severity, because they are where a handled hygiene item or
- * decision prompt is found again and undone.
- */
-function flagsForView(view) {
-  const flags = state.report?.flags ?? [];
-  return view === "open" ? flags.filter((f) => isAttn(f) && viewOf(f) === "open") : flags.filter((f) => viewOf(f) === view);
-}
-
-/** The toolbar is built once per report, so typing in the search box keeps its focus. */
-function renderAttentionTools(flags) {
-  state.attn ??= loadAttnPrefs();
-  const a = state.attn;
-  const pool = flags.filter((f) => !isContextFlag(f) && (isAttn(f) || viewOf(f) !== "open"));
-
-  const areas = AREA_ORDER.filter((k) => pool.some((f) => String(f.layer) === k));
-  const owners = [...new Set(pool.flatMap((f) => { const o = flagContext(f).owners; return o.length ? o : [NO_OWNER]; }))]
-    .sort((x, y) => (x === NO_OWNER) - (y === NO_OWNER) || x.localeCompare(y));
-  // A remembered filter for an area or owner with nothing today would hide everything.
-  if (a.area && !areas.includes(a.area)) a.area = "";
-  if (a.owner && !owners.includes(a.owner)) a.owner = "";
-  if (!ATTN_GROUPS[a.group]) a.group = "age";
-
-  const option = (value, label, selected) => `<option value="${esc(value)}"${value === selected ? " selected" : ""}>${esc(label)}</option>`;
-
-  $("attention-tools").innerHTML = pool.length
-    ? `<div class="dod-windows" role="group" aria-label="Show">${Object.entries(ATTN_VIEWS)
-        .map(([k, l]) => `<button type="button" class="ghost dod-window" data-view-attn="${k}">${esc(l)} <span data-count="${k}"></span></button>`)
-        .join("")}</div>
-       <div class="dod-windows" role="group" aria-label="Severity">${[["", "All"], ["p1", "P1"], ["attention", "P2"]]
-         .map(([k, l]) => `<button type="button" class="ghost dod-window" data-sev="${k}">${esc(l)}</button>`)
-         .join("")}</div>
-       <select id="attn-area" aria-label="Area">${option("", "All areas", a.area)}${areas.map((k) => option(k, AREA_LABEL[k] ?? k, a.area)).join("")}</select>
-       <select id="attn-owner" aria-label="Owner">${option("", "All owners", a.owner)}${owners.map((o) => option(o, o, a.owner)).join("")}</select>
-       <input id="attn-q" type="search" placeholder="Search" aria-label="Search flags" value="${esc(a.q)}">
-       <label class="attn-group">Group by <select id="attn-group">${Object.entries(ATTN_GROUPS).map(([k, l]) => option(k, l, a.group)).join("")}</select></label>
-       <span class="meta" id="attn-count"></span>`
-    : "";
-}
-
-function renderAttention() {
-  const a = state.attn ?? (state.attn = loadAttnPrefs());
-  const all = flagsForView(a.view);
-  const q = a.q.trim().toLowerCase();
-
-  const shown = all.filter((f) => {
-    if (a.sev && f.severity !== a.sev) return false;
-    if (a.area && String(f.layer) !== a.area) return false;
-    const ctx = flagContext(f);
-    if (a.owner && !(ctx.owners.length ? ctx.owners : [NO_OWNER]).includes(a.owner)) return false;
-    if (q && !`${f.message} ${f.rule} ${ctx.owners.join(" ")} ${ctx.itemLabel} ${triageOf(f)?.waitingOn ?? ""}`.toLowerCase().includes(q)) return false;
-    return true;
-  });
-
-  const toggle = (selector, attr, current) => {
-    for (const button of document.querySelectorAll(`#attention-tools [${selector}]`)) {
-      const on = button.getAttribute(selector) === current;
-      button.classList.toggle("on", on);
-      button.setAttribute("aria-pressed", String(on));
-    }
-  };
-  toggle("data-view-attn", "view", a.view);
-  toggle("data-sev", "sev", a.sev);
-  for (const k of Object.keys(ATTN_VIEWS)) {
-    const el = document.querySelector(`#attention-tools [data-count="${k}"]`);
-    if (el) el.textContent = flagsForView(k).length;
-  }
-  if ($("attn-count")) $("attn-count").textContent = shown.length === all.length ? plural(all.length, "item", "items") : `${shown.length} of ${all.length} shown`;
-
-  const host = $("attention");
-  if (all.length === 0) {
-    const empty = { open: "Nothing flagged.", waiting: "Nothing is waiting on anyone.", parked: "Nothing done, snoozed or set aside." }[a.view];
-    return renderFlags(host, [], empty);
-  }
-  if (shown.length === 0) {
-    host.innerHTML = `<p class="sub">Nothing matches these filters. <button type="button" class="ghost" id="attn-clear">Clear filters</button></p>`;
-    return;
-  }
-  if (a.group === "none") return renderFlags(host, shown, "");
-
-  // A flag with two owners shows under each, so filtering by either finds it.
-  const groups = new Map();
-  const put = (key, label, flag) => {
-    if (!groups.has(key)) groups.set(key, { label, flags: [] });
-    groups.get(key).flags.push(flag);
-  };
-  for (const f of shown) {
-    const ctx = flagContext(f);
-    if (a.group === "age") f.isNew ? put("new", "New today", f) : put("still", "Still open", f);
-    else if (a.group === "area") put(String(f.layer), AREA_LABEL[f.layer] ?? layerLabel(f.layer), f);
-    else if (a.group === "rule") put(f.rule, ruleLabel(f.rule), f);
-    else if (a.group === "item") put(ctx.itemKey, ctx.itemLabel, f);
-    else for (const o of ctx.owners.length ? ctx.owners : [NO_OWNER]) put(o, o, f);
-  }
-
-  let ordered = [...groups.entries()];
-  if (a.group === "age") ordered.sort(([x]) => (x === "new" ? -1 : 1));
-  else if (a.group === "area") ordered.sort(([x], [y]) => AREA_ORDER.indexOf(x) - AREA_ORDER.indexOf(y));
-  else if (a.group === "owner") ordered.sort(([x], [y]) => (x === NO_OWNER) - (y === NO_OWNER) || x.localeCompare(y));
-  // Issue and item groups keep flag order, so whatever holds the first P1 leads.
-
-  state.openGroups ??= new Set();
-  host.innerHTML = ordered
-    .map(([key, g]) => {
-      const p1 = g.flags.filter((f) => f.severity === "p1").length;
-      // Collapsed to start. A group opened stays open when a triage redraws the list.
-      const groupKey = `${a.view}:${a.group}:${key}`;
-      return `<details class="flag-group" data-group="${esc(groupKey)}"${state.openGroups.has(groupKey) ? " open" : ""}>
-        <summary><span class="flag-group-name">${esc(g.label)}</span> <span class="meta">${g.flags.length}${p1 ? ` · ${p1} P1` : ""}</span></summary>
-        ${g.flags.map(flagCard).join("")}
-      </details>`;
-    })
-    .join("");
-}
-
-$("attention-tools").addEventListener("click", (event) => {
-  const view = event.target.closest("[data-view-attn]");
-  const sev = event.target.closest("[data-sev]");
-  if (view) state.attn.view = view.dataset.viewAttn;
-  else if (sev) state.attn.sev = sev.dataset.sev;
-  else return;
-  saveAttnPrefs();
-  renderAttention();
-});
-$("attention-tools").addEventListener("change", (event) => {
-  const key = { "attn-area": "area", "attn-owner": "owner", "attn-group": "group" }[event.target.id];
-  if (!key) return;
-  state.attn[key] = event.target.value;
-  saveAttnPrefs();
-  renderAttention();
-});
-$("attention-tools").addEventListener("input", (event) => {
-  if (event.target.id !== "attn-q") return;
-  state.attn.q = event.target.value;
-  renderAttention();
-});
-// <details> does not bubble its toggle event, so it is caught on the way down.
-$("attention").addEventListener(
-  "toggle",
-  (event) => {
-    const key = event.target?.dataset?.group;
-    if (!key) return;
-    state.openGroups ??= new Set();
-    if (event.target.open) state.openGroups.add(key);
-    else state.openGroups.delete(key);
-  },
-  true,
-);
-
-$("attention").addEventListener("click", (event) => {
-  if (event.target.id !== "attn-clear") return;
-  Object.assign(state.attn, { sev: "", area: "", owner: "", q: "" });
-  saveAttnPrefs();
-  renderAttentionTools(state.report?.flags ?? []);
-  renderAttention();
-});
-
 /* -------------------------------- quick fixes --------------------------------
    A Layer 1 flag is about a rock, and rocks are this system's own data, so the fix can
    sit on the flag: the one field the rule is about, saved through the same rocks API
@@ -1096,8 +1004,101 @@ function ownerPicker(flags, { label = "Assign to" } = {}) {
     </div>`;
 }
 
+/* --------------------------------- set ROCK ---------------------------------
+   On a card about tickets with no ROCK (the ClickUp field once called Big Swing): pick a
+   live rock per ticket and set it in ClickUp (netlify/functions/ticket-rock.mjs). */
+
+const ROCK_FIX_RULES = new Set(["clickup.no_big_swing_set", "crosslayer.no_big_swing", "crosslayer.unrelated_pile"]);
+
+/** Active rocks with a ClickUp ROCK option: what a ticket can be put on. Mirrors src/send/clickup-rock.js. */
+function rockChoices() {
+  return (state.report?.detail?.leadership?.queue ?? [])
+    .filter((r) => r.state === "active")
+    .map((r) => ({ id: r.id, title: r.title, bau: Boolean(r.bau), optionIds: r.clickupBigSwingOptionIds ?? (r.clickupBigSwingOptionId ? [r.clickupBigSwingOptionId] : []) }))
+    .filter((r) => r.optionIds.length)
+    .sort((a, b) => a.bau - b.bau || a.title.localeCompare(b.title));
+}
+
+/** The open tickets a flag is about that have no ROCK on a live rock. */
+function ticketsWithoutRock(flag) {
+  const tasks = state.flagCtx?.tasks ?? new Map();
+  const live = new Set(rockChoices().flatMap((r) => r.optionIds.map(String)));
+  const unplaced = (t) => t && t.bucket !== "done" && !t.archived && !(t.bigSwing?.optionId && live.has(String(t.bigSwing.optionId)));
+  const subject = subjectOf(flag);
+  if (subject.type === "task") return [tasks.get(baseId(subject.id))].filter(unplaced);
+  if (subject.type === "person") {
+    const who = baseId(subject.id);
+    return [...tasks.values()].filter((t) => (t.assignees ?? []).some((u) => String(u.id) === who)).filter(unplaced);
+  }
+  return [];
+}
+
+function rockPicker(flag) {
+  const tickets = ticketsWithoutRock(flag).slice(0, 8);
+  const rocks = rockChoices();
+  if (!tickets.length || !rocks.length) return "";
+  const options = `<option value="">ROCK…</option>${rocks.map((r) => `<option value="${esc(r.id)}">${esc(r.title)}</option>`).join("")}`;
+  return `<div class="quick-fix rock-fix" data-rock-fix="${esc(keyOf(flag))}">
+      <p class="rock-fix-head">Set ROCK in ClickUp</p>
+      ${tickets
+        .map((t) => `<div class="rock-fix-row">
+          <span class="rock-fix-name">${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)}</span>
+          <select class="sm" data-rock-pick="${esc(t.id)}" aria-label="ROCK for ${esc(t.name)}">${options}</select>
+        </div>`)
+        .join("")}
+      <div class="rock-fix-acts"><button type="button" class="sm" data-rock-set>Set ROCK</button><span class="rock-fix-msg meta"></span></div>
+    </div>`;
+}
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-rock-set]");
+  if (!button) return;
+  const box = button.closest("[data-rock-fix]");
+  const say = (text, bad = false) => {
+    const el = box.querySelector(".rock-fix-msg");
+    el.textContent = text;
+    el.classList.toggle("triage-error", bad);
+  };
+  const picks = [...box.querySelectorAll("[data-rock-pick]")].filter((sel) => sel.value).map((sel) => ({ taskId: sel.dataset.rockPick, rockId: sel.value }));
+  if (!picks.length) return say("Choose a ROCK for at least one ticket.", true);
+  const byRock = new Map();
+  for (const p of picks) byRock.set(p.rockId, [...(byRock.get(p.rockId) ?? []), p.taskId]);
+  button.disabled = true;
+  say("Saving to ClickUp…");
+  const done = [];
+  const failed = [];
+  for (const [rockId, taskIds] of byRock) {
+    try {
+      const res = await fetch(`${FN}/ticket-rock`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskIds, rockId }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok && !body.set?.length) throw new Error(body.error ?? body.failed?.[0]?.error ?? `HTTP ${res.status}`);
+      for (const id of body.set ?? []) {
+        const t = state.flagCtx?.tasks.get(String(id));
+        if (t) t.bigSwing = { optionId: body.rock.optionId, label: body.rock.title };
+        done.push(id);
+      }
+      for (const f of body.failed ?? []) failed.push(f.error);
+    } catch (err) {
+      failed.push(err.message);
+    }
+  }
+  if (!done.length) {
+    button.disabled = false;
+    return say(`Not set: ${failed[0]}`, true);
+  }
+  // The card is handled once none of its tickets is left without a ROCK.
+  const flag = (state.report?.flags ?? []).find((f) => keyOf(f) === box.dataset.rockFix);
+  if (flag && !ticketsWithoutRock(flag).length) {
+    await saveTriageMany([flag], { status: "done", note: `ROCK set in ClickUp on ${plural(done.length, "ticket", "tickets")}` });
+  } else {
+    renderAllFlags();
+  }
+  if (failed.length) alert(`ROCK set on ${done.length}. Not set on ${failed.length}: ${failed[0]}`);
+});
+
 function quickFix(flag) {
   if (flag.rule === "nextstep.no_assignee") return ownerPicker([flag]);
+  if (ROCK_FIX_RULES.has(flag.rule)) return rockPicker(flag);
   // A rock off course: every reason with its fix, and the plan to re-plan it in.
   if (flag.rule === "leadership.rock_off_course") {
     const signals = flag.values?.signals ?? [];
@@ -5929,9 +5930,7 @@ let tocTargets = [];
    short names and a count where a count says something. Other pages list their headings. */
 const TOC_GROUPS = {
   readout: [
-    { label: "Start here", items: [["focus", "Rock moves", "1 to 3 things that move a rock today"], ["start-here", "Your queue", "Then clear these, top first"]] },
-    { label: "Go deeper", items: [["sec-attention", "Every open flag", "The full list, to filter or triage in bulk"]] },
-    { label: "Housekeeping", items: [["sec-hygiene", "Tidy-ups", "Minor ClickUp fixes, kept out of the queue"], ["sec-rules", "Noisy rules", "Flags you ignore, and turning them down"]] },
+    { label: "Start here", items: [["focus", "Rock moves", "1 to 3 things that move a rock today"], ["start-here", "Your queue", "Everything else, with filters"]] },
   ],
 };
 /** The badge beside a contents entry: a number and whether it is urgent, or null. */
@@ -5941,12 +5940,7 @@ function tocBadge(id) {
     return p.length ? { text: `${p.filter((x) => x.doneAt).length}/${p.length}`, cls: p.every((x) => x.doneAt) ? "good" : "" } : null;
   }
   if (id === "start-here") return queue.lines ? { text: String(queue.lines), cls: queue.p1 ? "urgent" : "" } : null;
-  const el = $(`${id}-count`);
-  const n = Number((el?.textContent ?? "").match(/^\d+/)?.[0] ?? 0);
-  if (!n) return null;
-  const urgent = el.classList.contains("urgent");
-  if (id === "sec-rules" && !urgent) return null;
-  return ["sec-attention", "sec-hygiene", "sec-rules"].includes(id) ? { text: String(n), cls: urgent ? "urgent" : "" } : null;
+  return null;
 }
 
 function buildToc() {

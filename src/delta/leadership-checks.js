@@ -142,7 +142,7 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
         severity: "attention",
         advisable: false,
         subject: { type: "priority", id: `${item.id}:link`, label: item.title },
-        message: `"${item.title}" is not linked to a ClickUp Big Swing option, so no ticket can be tied to it and the cross layer check will never see it.`,
+        message: `"${item.title}" is not linked to a ClickUp ROCK option, so no ticket can be tied to it and the cross layer check will never see it.`,
         values: { owner: item.owner?.name ?? null },
       });
     }
@@ -222,7 +222,7 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
         rule: "leadership.dropdown_missing_option",
         severity: "attention",
         subject: { type: "field", id: "big-swing-field", label: "Big Swing dropdown" },
-        message: `${named} ${missing.length === 1 ? "is" : "are"} linked to a Big Swing option that is no longer in the ClickUp dropdown, so no ticket can ladder up to ${missing.length === 1 ? "it" : "them"}. Relink ${missing.length === 1 ? "it" : "each"} to a current Big Swing.`,
+        message: `${named} ${missing.length === 1 ? "is" : "are"} linked to a ROCK option that is no longer in the ClickUp dropdown, so no ticket can ladder up to ${missing.length === 1 ? "it" : "them"}. Relink ${missing.length === 1 ? "it" : "each"} to a current Big Swing.`,
         values: { missing: missing.map((i) => ({ id: i.id, title: i.title, optionId: goneIds(i)[0] })) },
       });
     }
@@ -255,8 +255,8 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
         advisable: false,
         subject: { type: "swingOption", id: String(option.id), label: option.label },
         message: rock
-          ? `The Big Swing "${option.label}" belongs to "${rock.title}", which is in the backlog, so tickets filed against it ladder up to nothing. Make the rock active, or leave it if that work should wait.`
-          : `The Big Swing "${option.label}" in ClickUp matches no active or shipped rock, so tickets filed against it ladder up to nothing. Add it as a rock, link a rock to it, or mark it as not a rock.`,
+          ? `The ROCK value "${option.label}" belongs to "${rock.title}", which is in the backlog, so tickets filed against it ladder up to nothing. Make the rock active, or leave it if that work should wait.`
+          : `The ROCK value "${option.label}" in ClickUp matches no active or shipped rock, so tickets filed against it ladder up to nothing. Add it as a rock, link a rock to it, or mark it as not a rock.`,
         values: { optionId: String(option.id), label: option.label, parkedRockId: rock?.id ?? null },
       });
     }

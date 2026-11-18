@@ -93,26 +93,6 @@
 
       <!-- Every section starts collapsed: the headers, with their counts, are the
            summary, and a section is opened when it is needed. -->
-      <details class="section" id="sec-attention">
-        <summary><h2>Every open flag</h2><span class="sec-count" id="sec-attention-count"></span><span class="sec-hint">The full list behind your queue. Use it to filter, group or triage many at once.</span></summary>
-        <div class="bar attn-bar" id="attention-tools"></div>
-        <div id="attention"></div>
-      </details>
-
-      <details class="section" id="sec-hygiene">
-        <summary><h2>Tidy-ups</h2><span class="sec-count" id="sec-hygiene-count"></span><span class="sec-hint">Minor ClickUp housekeeping, kept out of your queue so it never escalates. Clear it when you have a spare few minutes.</span></summary>
-        <div id="hygiene"></div>
-      </details>
-
-      <details class="section" id="sec-rules">
-        <summary><h2>Noisy rules</h2><span class="sec-count" id="sec-rules-count"></span><span class="sec-hint">Which flag rules you keep ignoring, and one click to move them to Tidy-ups. Check it every couple of weeks.</span></summary>
-        <div id="rule-check"></div>
-      </details>
-
-      <details id="text-wrap">
-        <summary>Plain text readout, byte for byte what goes to Slack</summary>
-        <pre id="report-text"></pre>
-      </details>
     </section>
 
     <!-- -------------------------------- ecom rocks -------------------------------- -->
@@ -264,6 +244,14 @@
         <button class="ghost" id="test-readout">Send a test readout</button>
         <span class="meta" id="test-readout-note">Posts the readout to Slack now, labelled as a test. It does not replace or block the 8&nbsp;AM send.</span>
       </div>
+          <details class="section" id="sec-rules">
+        <summary><h2>Noisy rules</h2><span class="sec-count" id="sec-rules-count"></span><span class="sec-hint">Which flag rules you keep ignoring, and one click to turn one down to a tidy-up (still in the queue under Tidy-ups, never escalating). Check it every couple of weeks.</span></summary>
+        <div id="rule-check"></div>
+      </details>
+      <details id="text-wrap">
+        <summary>Plain text readout, byte for byte what goes to Slack</summary>
+        <pre id="report-text"></pre>
+      </details>
     </section>
   </main>
 </div>

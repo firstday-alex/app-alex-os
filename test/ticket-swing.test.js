@@ -27,7 +27,7 @@ const swingNotes = (flags) => flags.filter((f) => f.rule === "clickup.no_big_swi
 test("a ticket with a Leadership Priority but no Big Swing is noted as laddering up to no rock", () => {
   const flags = flagsFor([task({ id: "a", name: "V4 Family Bundle Builder (1 step version)", leadershipPriority: { optionId: "o", label: "CVR" }, bigSwing: null })]);
   assert.deepEqual(swingNotes(flags), ["V4 Family Bundle Builder (1 step version)"]);
-  assert.match(flags.find((f) => f.rule === "clickup.no_big_swing_set").message, /has no Big Swing set, so it ladders up to no rock/);
+  assert.match(flags.find((f) => f.rule === "clickup.no_big_swing_set").message, /has no ROCK set in ClickUp, so it ladders up to no rock/);
   assert.ok(!flags.some((f) => f.rule === "clickup.no_leadership_priority"), "the old Leadership Priority note is gone");
 });
 

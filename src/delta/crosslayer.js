@@ -181,7 +181,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
           rule: "crosslayer.no_big_swing",
           severity: "p1",
           subject: { type: "person", id: row.id, label: row.name },
-          message: `${row.name} has ${row.totalTickets} open sprint ticket(s) but none tied to a live leadership priority. There is no big swing in their sprint.`,
+          message: `${row.name} has ${row.totalTickets} open sprint ticket(s) and none has a ROCK set to a live rock. Set a ROCK on their main ticket from this card.`,
           values: { totalTickets: row.totalTickets, bau: row.bauTickets.length, unrelated: row.unrelatedTickets.length },
         });
       }
@@ -197,7 +197,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
         rule: "crosslayer.unrelated_pile",
         severity: "attention",
         subject: { type: "person", id: row.id, label: row.name },
-        message: `${row.name} holds a big swing plus ${row.unrelatedTickets.length} tickets tied to no leadership priority and not marked business as usual. That is enough to crowd out the big swing.`,
+        message: `${row.name} has rock work plus ${row.unrelatedTickets.length} tickets with no ROCK that are not marked business as usual. That is enough to crowd out the rock work. Set a ROCK (or BAU) on each from this card.`,
         values: {
           bigSwings: [...distinctSwings],
           unrelatedCount: row.unrelatedTickets.length,
@@ -221,7 +221,7 @@ export function crossLayerCheck({ clickupDelta, leadership, config, dateKey }) {
         rule: "crosslayer.big_swing_without_rock",
         severity: "attention",
         subject: { type: "person", id: `${row.id}:untethered`, label: row.name },
-        message: `${row.name} is working on ${why.join(", ")}, which no active or shipped rock claims. Link the rock's Big Swing to it, or bring the rock out of the backlog, so the work is tracked.`,
+        message: `${row.name} is working on ${why.join(", ")}, which no active or shipped rock claims. Link the rock's ROCK value to it, or bring the rock out of the backlog, so the work is tracked.`,
         values: {
           swings,
           tickets: row.untetheredSwings.length,

@@ -39,7 +39,7 @@ function clickupFlags(delta, { config, dateKey, fieldMap }) {
       severity: "p1",
       advisable: false,
       subject: { type: "field", id: "big-swing-field-missing", label: "Big Swing field" },
-      message: `There is no Big Swing field on the sprint list, so no ticket can ladder up to a rock and the cross layer check has nothing to read.`,
+      message: `There is no ROCK field on the sprint list, so no ticket can ladder up to a rock and the cross layer check has nothing to read.`,
       values: { openTasks: openTasks.length, lookedFor: config.clickup.customFields?.bigSwing?.matchName ?? [] },
     });
   }
@@ -72,7 +72,7 @@ function clickupFlags(delta, { config, dateKey, fieldMap }) {
         severity: "info",
         advisable: false,
         subject: { type: "task", id: `${task.id}:swing`, label: task.name, url: task.url },
-        message: `"${task.name}" has no Big Swing set, so it ladders up to no rock.`,
+        message: `"${task.name}" has no ROCK set in ClickUp, so it ladders up to no rock. Set one from this card.`,
         values: { status: task.status },
       });
     }

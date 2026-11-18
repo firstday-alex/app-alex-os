@@ -257,7 +257,7 @@ test("a rock whose Big Swing option was deleted is named, with its id, for relin
     }),
   );
   const flag = result.flags.find((f) => f.rule === "leadership.dropdown_missing_option");
-  assert.match(flag.message, /"Quiz" is linked to a Big Swing option that is no longer in the ClickUp dropdown/);
+  assert.match(flag.message, /"Quiz" is linked to a ROCK option that is no longer in the ClickUp dropdown/);
   assert.deepEqual(flag.values.missing, [{ id: "r9", title: "Quiz", optionId: "opt_gone" }]);
 });
 
@@ -291,7 +291,7 @@ test("each Big Swing option no live rock claims gets its own named flag", () => 
   );
   const orphans = result.flags.filter((f) => f.rule === "leadership.dropdown_orphan_option");
   assert.deepEqual(orphans.map((f) => f.subject.label).sort(), ["AB Testing", "New Products: Ready to Pour"], "a shipped rock claims by name; BAU is never a rock");
-  assert.match(orphans.find((f) => f.subject.label === "AB Testing").message, /The Big Swing "AB Testing" in ClickUp matches no active or shipped rock/);
+  assert.match(orphans.find((f) => f.subject.label === "AB Testing").message, /The ROCK value "AB Testing" in ClickUp matches no active or shipped rock/);
   const parked = orphans.find((f) => f.subject.label === "New Products: Ready to Pour");
   assert.match(parked.message, /belongs to "New Products: Ready to Pour", which is in the backlog/);
   assert.equal(parked.values.parkedRockId, "r3");

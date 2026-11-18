@@ -1217,3 +1217,39 @@ body {
 #start-here .flag { -webkit-backdrop-filter: none; backdrop-filter: none; }
 .res-group { margin: 6px 10px 2px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .res-group:first-child { margin-top: 2px; }
+
+/* Queue filters: the pile, then kind pills with counts, person, area and search. */
+.q-tools { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; margin: 10px 0 6px; padding: 10px 0; border-top: 1px solid rgba(28, 43, 42, 0.08); border-bottom: 1px solid rgba(28, 43, 42, 0.08); }
+#q-filters { display: contents; }
+.q-seg { display: inline-flex; background: rgba(28, 43, 42, 0.06); border-radius: 999px; padding: 3px; }
+.q-seg button { background: none; border: 0; color: var(--muted); font-size: 13px; font-weight: 600; padding: 4px 12px; border-radius: 999px; }
+.q-seg button span { font-weight: 500; opacity: .75; }
+.q-seg button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(28, 43, 42, 0.12); }
+.q-kinds { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.q-kind { font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid transparent; background: rgba(28, 43, 42, 0.06); color: var(--muted); }
+.q-kind span { font-weight: 500; opacity: .8; }
+.q-kind.p1 { background: var(--red-bg); color: var(--red); }
+.q-kind.attention { background: var(--amber-bg); color: var(--amber-ink); }
+.q-kind.prompt { background: var(--link-bg); color: var(--link); }
+.q-kind.info { background: rgba(28, 43, 42, 0.06); color: var(--muted); }
+.q-kind.on { border-color: currentColor; box-shadow: 0 0 0 1px currentColor inset; }
+.q-kind.all.on { background: var(--ink); color: #fff; border-color: var(--ink); box-shadow: none; }
+.q-tools select.sm { border-radius: 999px; border: 1px solid rgba(28, 43, 42, 0.15); background: #fff; }
+.q-search { margin-left: auto; flex: 0 1 220px; min-width: 140px; font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 999px; border: 1px solid rgba(28, 43, 42, 0.15); background: #fff; }
+.q-empty { margin: 12px 0; }
+#start-here .sev-info .q-sev { background: rgba(28, 43, 42, 0.06); }
+@media (max-width: 640px) { .q-search { margin-left: 0; flex-basis: 100%; } }
+
+/* A card with an open menu sits above its neighbours, so the menu is never painted over
+   by the next card (each glass card is its own layer). */
+.flag:has(.act-menu[open]), .flag:focus-within, .q-top:has(.act-menu[open]), .q-opened:has(.act-menu[open]) { position: relative; z-index: 25; }
+.act-pop { z-index: 40; }
+
+/* Set ROCK on a card: one row per ticket with no ROCK, then one button. */
+.rock-fix { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.75); border: 1px solid rgba(28, 43, 42, 0.08); display: grid; gap: 6px; }
+.rock-fix-head { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--green); }
+.rock-fix-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.rock-fix-name { flex: 1 1 240px; min-width: 0; font-size: 13.5px; }
+.rock-fix-name a { color: var(--ink); }
+.rock-fix-row select { max-width: 260px; border-radius: 999px; }
+.rock-fix-acts { display: flex; gap: 10px; align-items: center; }
