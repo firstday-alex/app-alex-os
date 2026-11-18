@@ -1156,3 +1156,16 @@ body {
 .res-list a:hover { background: var(--link-bg); }
 .res-list a span { font-size: 12.5px; color: var(--muted); }
 @media (max-width: 640px) { .res-list { left: auto; right: -80px; min-width: 240px; } }
+
+/* Notes at the top of the band: light text on the dark band, boxes kept readable. */
+.hero #banners:empty { display: none; }
+.hero #banners { margin: -8px 0 14px; }
+.hero .preview-line { margin: 0; color: rgba(255, 255, 255, 0.78); }
+.hero #banners .missing { margin: 0 0 8px; }
+/* Phones: the four top tabs and Refresh fit on one row. */
+@media (max-width: 480px) {
+  #topbar { gap: 6px; padding: 8px 10px; }
+  #tabs .tab, .res-menu > summary.tab { padding: 6px 6px; font-size: 14px; }
+  #refresh { font-size: 0; padding: 4px 10px; line-height: 1; }
+  #refresh::before { content: "↻"; font-size: 18px; }
+}
