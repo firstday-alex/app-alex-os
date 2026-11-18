@@ -1287,3 +1287,4 @@ body {
 .sched-item .q-sev { white-space: nowrap; background: var(--link-bg) !important; color: var(--link); }
 .sched-item .q-msg { cursor: default; }
 .flag.q-row.sched-item { grid-template-columns: auto minmax(0, 1fr) auto; }
+.group-nudge-text, #tp-text { font: inherit; font-size: 14px; line-height: 1.5; }

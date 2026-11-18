@@ -602,13 +602,18 @@ function groupNudgeText(g) {
   const tasks = state.flagCtx?.tasks ?? new Map();
   const seen = new Set();
   const lines = [];
+  const found = [];
   const addTicket = (id, fallbackName, fallbackUrl) => {
     const key = String(id);
     if (seen.has(key)) return;
     seen.add(key);
     const task = tasks.get(key);
-    if (task) lines.push(ticketNudge(task, task.url ?? fallbackUrl).replace(/^Quick check on /, "").replace(/\n/, " "));
-    else if (fallbackName) lines.push(`"${fallbackName}"${fallbackUrl ? ` ${fallbackUrl}` : ""}`);
+    if (task) {
+      found.push(task);
+      const f = ticketFacts(task);
+      const url = task.url ?? fallbackUrl;
+      lines.push(`"${task.name}": ${f.where} ${f.ask}${url ? ` ${url}` : ""}`);
+    } else if (fallbackName) lines.push(`"${fallbackName}"${fallbackUrl ? ` ${fallbackUrl}` : ""}`);
   };
   for (const f of g.flags) {
     const subject = subjectOf(f);
@@ -621,12 +626,13 @@ function groupNudgeText(g) {
   }
   const shown = lines.slice(0, 10);
   const more = lines.length - shown.length;
+  const name = matchPerson(g.person)?.name ?? g.person;
   return [
-    `Hi ${g.person}, a quick check on your sprint items:`,
-    ...shown.map((l) => `• ${l}`),
-    ...(more > 0 ? [`• and ${more} more on the sprint board`] : []),
-    "A line on each when you get a chance would be great. Thanks!",
-  ].join("\n");
+    nudgeEmojis(found),
+    `@${name} Can you give me a quick update on a few of your sprint items?`,
+    [...shown.map((l) => `• ${l}`), ...(more > 0 ? [`• and ${more} more on the sprint board`] : [])].join("\n"),
+    NUDGE_CLOSE.replace("keep it moving", "keep them moving"),
+  ].filter(Boolean).join("\n\n");
 }
 
 /** Triage on several flags at once: saved one after another, drawn once at the end. */
@@ -1681,54 +1687,101 @@ function matchPerson(name) {
  * A nudge for Alex to send himself. The system never contacts the team, so this is only
  * ever copied: fixed wording, no model, edited before it is copied.
  */
+/* ------------------------------- nudge drafts -------------------------------
+   Written the way Alex writes them (his example, 2026-11-17):
+
+     :package: :test_tube:
+
+     @Blake Tucker Can we send a message ... getting alignment on test options for
+     shipping test. I see that Oleks left comment last morning so want to keep that moving.
+     ... Just want to make sure we are all on the same page ... and can keep it moving.
+     Thanks! Feel free to adjust whatever you think will have better performance ...
+
+   So: topic emojis, @ the person, the ask, what Alex saw (status, due date, the last
+   comment and who left it), the why (keep it moving, same page), room for them to adjust,
+   and thanks. Every fact comes from ClickUp; nothing is guessed. */
+
+const NUDGE_EMOJI = [
+  [/\b(a\/?b|ab)\b.*test|\btest\b/i, ":test_tube:"],
+  [/bundle|box|shipping|ship\b|kit|gift/i, ":package:"],
+  [/checkout|cart/i, ":shopping_trolley:"],
+  [/subscri/i, ":repeat:"],
+  [/\b(lp|pdp|plp|landing|page|hero|homepage)\b/i, ":page_facing_up:"],
+  [/launch|new product/i, ":rocket:"],
+  [/\b(bug|fix|broken)\b/i, ":hammer_and_wrench:"],
+];
+/** Up to two topic emojis for the tickets, from their names and rocks. */
+function nudgeEmojis(tasks) {
+  const text = tasks.map((t) => `${t.name ?? ""} ${t.bigSwing?.label ?? ""}`).join(" ");
+  return NUDGE_EMOJI.filter(([re]) => re.test(text)).slice(0, 2).map(([, e]) => e).join(" ");
+}
+
+/** "today", "yesterday morning", "Monday afternoon", "4 days ago". */
+function whenSaid(ms) {
+  const d = new Date(ms);
+  const part = d.getHours() < 12 ? "morning" : d.getHours() < 17 ? "afternoon" : "evening";
+  const midnight = (x) => new Date(new Date(x).toDateString()).getTime();
+  const days = Math.round((midnight(Date.now()) - midnight(ms)) / 86_400_000);
+  if (days <= 0) return `this ${part}`;
+  if (days === 1) return `yesterday ${part}`;
+  if (days < 7) return `${d.toLocaleDateString(undefined, { weekday: "long" })} ${part}`;
+  return `${days} days ago`;
+}
+
+/** What Alex can see on a ticket, in his words: where it is, the due date, the last comment, and the ask. */
+function ticketFacts(task) {
+  const stage = stageOf(task);
+  const status = String(task.status ?? "").toLowerCase();
+  const midnight = (ms) => new Date(new Date(ms).toDateString()).getTime();
+  const daysToDue = task.dueDate ? Math.round((midnight(task.dueDate) - midnight(Date.now())) / 86_400_000) : null;
+  const dueOn = task.dueDate ? new Date(task.dueDate).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : null;
+  const days = task.statusAge?.days;
+  const forDays = days != null ? ` for ${task.statusAge.exact ? "" : "at least "}${plural(days, "day", "days")}` : "";
+  const label = { work: status || "in progress", review: status || "review", deploy: "ready for deploy", blocked: "blocked" }[stage.id];
+  const where = stage.id === "start"
+    ? "It hasn't been started yet"
+    : days === 0
+      ? `It just moved to ${label}`
+      : stage.id === "review" ? `It's been in ${label}${forDays}` : `It's been ${label}${forDays}`;
+  const when =
+    daysToDue == null ? " and there's no due date on it" : daysToDue < 0 ? ` and was due ${dueOn}` : daysToDue === 0 ? " and it's due today" : ` and it's due ${dueOn}`;
+  const late = daysToDue != null && daysToDue < 0;
+  const ask = {
+    start: late ? "When can we get it started, and what's a realistic new date?" : daysToDue == null ? "When are you planning to start it? Can you add a due date too?" : `When are you starting it, so it still lands by ${dueOn}?`,
+    work: late ? "What's left, and what's the new date?" : daysToDue == null ? "What's left, and when do you think it's done? Can you add a due date too?" : `What's left, and are we still on track for ${daysToDue === 0 ? "today" : dueOn}?`,
+    review: late ? "What's left in review, and what's the new date?" : "What's left in review, and who's it waiting on?",
+    deploy: "What's holding the deploy, and when can it go out?",
+    blocked: "What's it blocked on? Happy to help unblock it.",
+  }[stage.id];
+  const c = task.lastComment;
+  const who = c ? (state.me != null && String(c.userId) === String(state.me) ? "I" : String(c.user ?? "someone").split(/\s+/)[0]) : null;
+  const fresh = c?.date && Date.now() - c.date < 3 * 86_400_000;
+  const comment = !c?.date ? "" : fresh
+    ? `I see ${who} left a comment ${whenSaid(c.date)}, so want to keep that moving.`
+    : `The last comment was ${whenSaid(c.date)} (${who === "I" ? "mine" : who}), so want to get it moving again.`;
+  return { where: `${where}${when}.`, ask, comment };
+}
+
+const NUDGE_CLOSE = "Just want to make sure we're all on the same page and can keep it moving. Feel free to adjust whatever you think works best. Thanks!";
+
+/** A ticket's nudge, in Alex's voice. `to` is who it goes to (a full name). */
+function ticketNudge(task, url, to) {
+  const f = ticketFacts(task);
+  const head = nudgeEmojis([task]);
+  return [
+    head,
+    `${to ? `@${to} ` : ""}Can you give me a quick update on "${task.name}"? ${f.where}${f.comment ? ` ${f.comment}` : ""}`,
+    `${f.ask} ${NUDGE_CLOSE}${url ? `\n${url}` : ""}`,
+  ].filter(Boolean).join("\n\n");
+}
+
 function nudgeText(flag) {
   const { url } = flagContext(flag);
   const subject = subjectOf(flag);
   const task = subject.type === "task" ? state.flagCtx?.tasks.get(baseId(subject.id)) : null;
-  if (task) return ticketNudge(task, url);
-  return `Quick check on this: ${flag.message}${url ? ` ${url}` : ""}\nWhat's the next step, and when do you expect it to move?`;
-}
-
-/**
- * A ticket's nudge, reasoned from where it is and when it is due rather than from the
- * flag's wording: the due date is the commitment, and the status says what is left.
- */
-function ticketNudge(task, url) {
-  const stage = stageOf(task);
-  const status = String(task.status ?? "").toLowerCase();
-  const DAY = 86_400_000;
-  const midnight = (ms) => new Date(new Date(ms).toDateString()).getTime();
-  const daysToDue = task.dueDate ? Math.round((midnight(task.dueDate) - midnight(Date.now())) / DAY) : null;
-  const dueOn = task.dueDate ? new Date(task.dueDate).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : null;
-  const inStatus = task.statusAge?.days != null ? ` (${task.statusAge.exact ? "" : "at least "}${plural(task.statusAge.days, "day", "days")} so far)` : "";
-
-  const where = {
-    start: `it hasn't been started yet`,
-    work: `it's ${status || "in progress"}${inStatus}`,
-    review: `it's in ${status || "review"}${inStatus}`,
-    deploy: `it's ready for deploy${inStatus}`,
-    blocked: `it's blocked${inStatus}`,
-  }[stage.id];
-
-  const when =
-    daysToDue == null
-      ? "and there's no due date on it"
-      : daysToDue < 0
-        ? `and it was due ${dueOn} (${plural(-daysToDue, "day", "days")} ago)`
-        : daysToDue === 0
-          ? "and it's due today"
-          : `and it's due ${dueOn} (${daysToDue === 1 ? "tomorrow" : `in ${daysToDue} days`})`;
-
-  const late = daysToDue != null && daysToDue < 0;
-  const ask = {
-    start: late ? "When can you start it, and what's a realistic new date?" : daysToDue == null ? "When are you planning to start it, and can you add a due date?" : `When are you starting it, so it still lands by ${dueOn}?`,
-    work: late ? "What's left, and what's the new date?" : daysToDue == null ? "What's left, and when do you expect it done? Can you add a due date?" : `What's left, and are you still on track for ${daysToDue === 0 ? "today" : dueOn}?`,
-    review: late ? "What's left in review, and what's the new date?" : "What's left in review, and who's it waiting on?",
-    deploy: "What's holding the deploy, and when can it go out?",
-    blocked: "What's it blocked on, and can I help unblock it?",
-  }[stage.id];
-
-  return `Quick check on "${task.name}"${url ? ` ${url}` : ""}: ${where}, ${when}.\n${ask}`;
+  const to = peopleFor(flag)[0] ?? null;
+  if (task) return ticketNudge(task, url, to);
+  return `${to ? `@${to} ` : ""}Can you give me a quick update on this? ${flag.message}\n\nWhat's the next step, and when do you think it moves? ${NUDGE_CLOSE}${url ? `\n${url}` : ""}`;
 }
 
 function openPanel(card, kind) {

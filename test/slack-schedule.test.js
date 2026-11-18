@@ -31,13 +31,13 @@ test("schedules as Alex, to a roster person found by name, with the Claude line,
   const calls = [];
   const saved = [];
   const store = { backend: { set: async (k, v) => saved.push([k, v]) } };
-  const out = await scheduleNudge({ config, store, token: "xoxp-1", to: "Akansha Gupta", text: "Quick check on the bundle page?", postAt: "2026-11-18T15:00:00Z", fetchImpl: slack(calls), now });
+  const out = await scheduleNudge({ config, store, token: "xoxp-1", to: "Akansha Gupta", text: "@Akansha Gupta Quick check on the bundle page?", postAt: "2026-11-18T15:00:00Z", fetchImpl: slack(calls), now });
   assert.deepEqual(calls.map((c) => c.method), ["auth.test", "users.list", "conversations.open", "chat.scheduleMessage"]);
   assert.ok(calls.every((c) => c.auth === "Bearer xoxp-1"), "sent with Alex's user token");
   const sched = calls[3].body;
   assert.equal(sched.channel, "DAKA");
   assert.equal(sched.post_at, Date.parse("2026-11-18T15:00:00Z") / 1000);
-  assert.equal(sched.text, `Quick check on the bundle page?\n\n${DRAFTED_LINE}`);
+  assert.equal(sched.text, `<@UAKA> Quick check on the bundle page?\n\n${DRAFTED_LINE}`, "the @name becomes a real mention; the Claude line is added");
   assert.deepEqual(out, { to: "Akansha Gupta", from: "alex.turney", postAt: "2026-11-18T15:00:00.000Z", scheduledId: "Q123", channel: "DAKA" });
   assert.equal(saved.length, 1);
   assert.ok(!JSON.stringify(saved).match(/UAKA|DAKA|Q123/), "the record keeps no Slack id");

@@ -97,7 +97,9 @@ export async function scheduleNudge({ config, store, logger, token, to, text, po
   const me = await call("auth.test", {}, ctx);
   const member = await findMember(person.name, ctx);
   const dm = await call("conversations.open", { users: member.id }, ctx);
-  const sent = await call("chat.scheduleMessage", { channel: dm.channel.id, text: `${body}\n\n${DRAFTED_LINE}`, post_at: Math.floor(at.getTime() / 1000) }, ctx);
+  // "@Blake Tucker" in the draft becomes a real mention, so it reads as Alex typed it.
+  const mentioned = body.split(`@${person.name}`).join(`<@${member.id}>`);
+  const sent = await call("chat.scheduleMessage", { channel: dm.channel.id, text: `${mentioned}\n\n${DRAFTED_LINE}`, post_at: Math.floor(at.getTime() / 1000) }, ctx);
 
   const record = { at: now.toISOString(), to: person.name, postAt: at.toISOString(), text: body };
   try {
