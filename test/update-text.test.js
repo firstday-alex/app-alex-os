@@ -34,10 +34,10 @@ test("the update: touched in the window, done (this sprint) but never complete, 
   const groups = buildUpdate(tasks, { since, handleFor });
   assert.deepEqual(groups.map((g) => g.label), ["Upsells", "No Big Swing"]);
   assert.deepEqual(groups[0].tasks.map((x) => x.task.id), ["b", "a"]);
-  const today = shortDate(now);
   assert.equal(groups[0].tasks[0].text, `✅ @Robson + @Akansha – Bundle page build – done ${shortDate(now - 7200_000)}`);
-  assert.equal(groups[0].tasks[1].text, `@Robson – QA – Support Secondary CTA – last update: ${today}`);
-  assert.equal(groups[1].tasks[0].text, `@Akansha – To do – Commented on – last update: ${today}`);
+  // The update's date, not today's: an hour ago is yesterday just after midnight.
+  assert.equal(groups[0].tasks[1].text, `@Robson – QA – Support Secondary CTA – last update: ${shortDate(now - 3600_000)}`);
+  assert.equal(groups[1].tasks[0].text, `@Akansha – To do – Commented on – last update: ${shortDate(now - 600_000)}`);
 
   assert.equal(
     groupsText(groups),
