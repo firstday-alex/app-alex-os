@@ -123,13 +123,6 @@ function render() {
   }
   $("banners").innerHTML = banners.join("");
 
-  $("tiles").innerHTML = [
-    `<div id="flag-tiles" class="tiles-inline">${flagTiles(report.flags ?? [])}</div>`,
-    tile(report.sections.clickup?.counts?.inProgress ?? "—", "In progress"),
-    tile(report.sections.clickup?.counts?.stalled ?? "—", "Stalled"),
-    tile(report.sections.intelligems?.counts?.running ?? "—", "Tests running"),
-  ].join("");
-
   const flags = report.flags ?? [];
   state.flagCtx = flagContextIndex(report);
 
@@ -176,10 +169,6 @@ function formatMetric(value, format, { precise = false } = {}) {
   return COUNT.format(Math.round(value));
 }
 
-function tile(n, k) {
-  return `<div class="tile"><div class="n">${esc(n)}</div><div class="k">${esc(k)}</div></div>`;
-}
-
 function renderFlags(container, flags, emptyText) {
   if (flags.length === 0) {
     container.innerHTML = `<p class="sub">${esc(emptyText)}</p>`;
@@ -222,19 +211,9 @@ function fmtDay(key) {
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-function flagTiles(flags) {
-  const open = flags.filter((f) => viewOf(f) === "open");
-  return [
-    tile(open.filter((f) => f.severity === "p1").length, "P1"),
-    tile(open.filter((f) => f.severity === "attention").length, "P2"),
-    tile(open.filter((f) => f.severity === "prompt").length, "Decisions due"),
-  ].join("");
-}
-
 /** Everything that shows flags, redrawn together so a triage moves a flag everywhere at once. */
 function renderAllFlags({ rebuildTools = false } = {}) {
   const flags = state.report?.flags ?? [];
-  if ($("flag-tiles")) $("flag-tiles").innerHTML = flagTiles(flags);
   renderTopThree(flags);
   // The 1:1 view shows the same flags, so a triage there redraws it too.
   if (!$("view-people")?.classList.contains("hidden")) renderPeople();
