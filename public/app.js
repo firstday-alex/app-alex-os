@@ -223,7 +223,6 @@ function renderAllFlags({ rebuildTools = false } = {}) {
   const open = flags.filter((f) => viewOf(f) === "open");
   const handled = (sev) => flags.filter((f) => f.severity === sev && !["open", "context"].includes(viewOf(f))).length;
   const note = (n) => (n ? ` ${plural(n, "handled item is", "handled items are")} under Waiting and Parked above.` : "");
-  renderFlags($("prompts"), open.filter((f) => f.severity === "prompt"), `No test is waiting on a decision.${note(handled("prompt"))}`);
   renderFlags($("hygiene"), open.filter((f) => f.severity === "info"), `Nothing outstanding.${note(handled("info"))}`);
   renderRuleCheck();
 
@@ -231,7 +230,6 @@ function renderAllFlags({ rebuildTools = false } = {}) {
   const attn = open.filter(isAttn);
   const p1 = attn.filter((f) => f.severity === "p1").length;
   sectionCount("attention", attn.length ? `${attn.length} open${p1 ? ` · ${p1} P1` : ""}` : "nothing open", p1 > 0);
-  sectionCount("prompts", plural(open.filter((f) => f.severity === "prompt").length, "item", "items"));
   sectionCount("hygiene", plural(open.filter((f) => f.severity === "info").length, "item", "items"));
 }
 
@@ -5954,7 +5952,7 @@ let tocTargets = [];
 const TOC_GROUPS = {
   readout: [
     { label: "Start here", items: [["focus", "Rock moves", "1 to 3 things that move a rock today"], ["start-here", "Your queue", "Then clear these, top first"]] },
-    { label: "Go deeper", items: [["sec-prompts", "Tests ready for a call", "Ship, iterate or kill, not yet decided"], ["sec-attention", "Every open flag", "The full list, to filter or triage in bulk"]] },
+    { label: "Go deeper", items: [["sec-attention", "Every open flag", "The full list, to filter or triage in bulk"]] },
     { label: "Team and rocks", items: [["sec-layer1", "Rocks at a glance", "Each rock's owner, state and last readout"], ["sec-cross", "Who has rock work", "Each person's tickets: rock vs business as usual"]] },
     { label: "Housekeeping", items: [["sec-hygiene", "Tidy-ups", "Minor ClickUp fixes, kept out of the queue"], ["sec-rules", "Noisy rules", "Flags you ignore, and turning them down"]] },
   ],
@@ -5971,7 +5969,7 @@ function tocBadge(id) {
   if (!n) return null;
   const urgent = el.classList.contains("urgent");
   if (["sec-cross", "sec-rules"].includes(id) && !urgent) return null;
-  return ["sec-attention", "sec-prompts", "sec-hygiene", "sec-cross", "sec-rules"].includes(id) ? { text: String(n), cls: urgent ? "urgent" : "" } : null;
+  return ["sec-attention", "sec-hygiene", "sec-cross", "sec-rules"].includes(id) ? { text: String(n), cls: urgent ? "urgent" : "" } : null;
 }
 
 function buildToc() {
