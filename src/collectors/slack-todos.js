@@ -7,6 +7,9 @@
 //              Needs reminders:read; Done completes one in Slack and needs reminders:write.
 //   saved      messages Alex saved for later. Needs stars:read. Slack has moved saving to
 //              "Later", and the API may return nothing for it; then the page says so.
+//   lists      rows of the Slack Lists named in system.slack.todoLists (slackLists.items.list,
+//              lists:read). A row's title is its first text cell, its due date its first date
+//              cell, its owner its first person cell; a ticked checkbox means done.
 //
 // Each source fails on its own: a missing scope empties that list with a note, never the rest.
 // No Slack id is kept; names come from users.info at read time.
@@ -27,6 +30,7 @@ const SCOPE_HINT = {
   asks: "search:read",
   reminders: "reminders:read",
   saved: "stars:read",
+  lists: "lists:read",
 };
 
 async function call(method, params, { token, config, logger, fetchImpl, post = false }) {
@@ -159,8 +163,41 @@ export async function slackTodos({ config, env = process.env, logger, fetchImpl,
     }));
   })().catch((err) => missing("saved", err));
 
+  // Slack Lists Alex named in config: the open rows.
+  const lists = [];
+  for (const listId of (config.system?.slack?.todoLists ?? []).filter((x) => /^[A-Z0-9]+$/.test(String(x)))) {
+    try {
+      const body = await call("slackLists.items.list", { list_id: listId, include_list: "true", limit: "200" }, ctx);
+      const title = body.list?.title ?? body.list?.name ?? "Slack list";
+      const rows = (body.items ?? []).filter((it) => !(it.fields ?? []).some((f) => Array.isArray(f.checkbox) && f.checkbox[0] === true));
+      await learn([...new Set(rows.flatMap((it) => (it.fields ?? []).flatMap((f) => f.user ?? [])))]);
+      for (const it of rows) {
+        const fields = it.fields ?? [];
+        const textField = fields.find((f) => typeof f.text === "string" && f.text.trim() && !f.checkbox && !f.date && !f.user);
+        if (!textField) continue;
+        const due = fields.find((f) => Array.isArray(f.date) && f.date[0])?.date[0] ?? null;
+        const who = fields.find((f) => Array.isArray(f.user) && f.user[0])?.user[0] ?? null;
+        lists.push({
+          key: todoKey("list", `${listId}:${it.id}`),
+          kind: "list",
+          list: String(title).slice(0, 60),
+          text: plainText(textField.text, nameOf),
+          due,
+          owner: who ? nameOf(who) : null,
+          at: it.date_created ? new Date(it.date_created * 1000).toISOString() : null,
+          url: null,
+        });
+      }
+    } catch (err) {
+      if (err.slackError === "missing_scope") notes.push("Add the lists:read user scope to read your Slack Lists.");
+      else if (err.slackError === "list_not_found") notes.push(`A Slack List in system.slack.todoLists was not found (${listId}). Check its ID.`);
+      else notes.push(`Could not read a Slack List: ${err.message}`);
+    }
+  }
+  lists.sort((a, b) => String(a.due ?? "9999").localeCompare(String(b.due ?? "9999")));
+
   const keep = (list) => list.filter((i) => !done.has(i.key));
-  return { asks: keep(asks), reminders: keep(reminders), saved: keep(saved), notes, readAt: now.toISOString() };
+  return { asks: keep(asks), reminders: keep(reminders), saved: keep(saved), lists: keep(lists), notes, readAt: now.toISOString() };
 }
 
 /** Completes one of Alex's Slack reminders. */

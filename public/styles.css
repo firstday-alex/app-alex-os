@@ -1385,3 +1385,4 @@ body:has(#view-ecomrocks:not(.hidden)) main { max-width: 1480px; }
 .sl-meta { grid-area: meta; font-size: 12px; color: var(--muted); }
 .sl-row .q-acts { grid-area: acts; }
 .sl-note { margin: 4px 0 8px; }
+.sl-list .sl-kind { background: #e6f1ee; color: #0b6b62; }

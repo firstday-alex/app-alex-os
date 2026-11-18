@@ -5744,12 +5744,14 @@ function slackWhen(iso) {
   return today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 function slackRow(i) {
-  const label = { ask: "Ask", reminder: "Reminder", saved: "Saved" }[i.kind];
+  const label = { ask: "Ask", reminder: "Reminder", saved: "Saved", list: "List" }[i.kind];
   const meta = i.kind === "ask"
     ? `${i.from} in ${i.where} · ${slackWhen(i.at)}`
     : i.kind === "reminder"
       ? `${i.at ? (Date.parse(i.at) < Date.now() ? `was due ${slackWhen(i.at)}` : `due ${slackWhen(i.at)}`) : "no time set"}${i.recurring ? " · repeats" : ""}`
-      : `${i.from} · saved ${slackWhen(i.at)}`;
+      : i.kind === "list"
+        ? [i.list, i.due ? `due ${new Date(`${i.due}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}` : "", i.owner ?? ""].filter(Boolean).join(" · ")
+        : `${i.from} · saved ${slackWhen(i.at)}`;
   return `<div class="sl-row sl-${i.kind}">
       <span class="sl-kind">${esc(label)}</span>
       <span class="sl-text" title="${esc(i.text)}">${esc(i.text)}</span>
@@ -5781,7 +5783,7 @@ document.addEventListener("click", async (event) => {
     b.disabled = false;
     return alert(`Not done: ${body.error ?? `HTTP ${res.status}`}`);
   }
-  for (const k of ["asks", "reminders", "saved"]) if (slackTodo.data?.[k]) slackTodo.data[k] = slackTodo.data[k].filter((i) => i.key !== b.dataset.slDone);
+  for (const k of ["asks", "reminders", "saved", "lists"]) if (slackTodo.data?.[k]) slackTodo.data[k] = slackTodo.data[k].filter((i) => i.key !== b.dataset.slDone);
   renderMoves();
 });
 
@@ -6012,7 +6014,7 @@ function renderMoves() {
   const reviews = myReviewTickets();
   // Unblocking others comes first; with nobody waiting, the rock work is shown.
   const asks = slackTodo.data?.asks ?? [];
-  const mySlack = (slackTodo.data?.reminders ?? []).length + (slackTodo.data?.saved ?? []).length;
+  const mySlack = (slackTodo.data?.reminders ?? []).length + (slackTodo.data?.saved ?? []).length + (slackTodo.data?.lists ?? []).length;
   const tab = moves.tab ?? (unblock.length + reviews.length + asks.length ? "unblock" : "rock");
   const waitingN = unblock.length + reviews.length + asks.length;
   const mineOpen = myOpenTickets();
@@ -6049,7 +6051,7 @@ function renderMoves() {
         <button type="button" role="tab" class="mv-tab${tab === "rock" ? " on" : ""}" aria-selected="${tab === "rock"}" data-mv-tab="rock">My work${rockCount ? `<span class="mv-badge">${esc(rockCount)}</span>` : ""}${d.picks.length ? `<span class="mv-tab-sub">${esc(done.length)}/${esc(d.picks.length)} done</span>` : ""}</button>
       </div>
       ${moves.error ? `<p class="triage-error">${esc(moves.error)}</p>` : ""}
-      ${tab === "unblock" ? unblockList(unblock, reviews) + slackSection(["asks"], "Asked in Slack", "Messages that @mention you, last two working days") : `${slackSection(["reminders", "saved"], "From Slack", "Your reminders and saved messages")}${myTicketsHtml()}${myTicketsHtml() ? `<div class="mv-sec"><span>Rock moves</span><span class="meta">Decisions and plan items that move a rock</span></div>` : ""}
+      ${tab === "unblock" ? unblockList(unblock, reviews) + slackSection(["asks"], "Asked in Slack", "Messages that @mention you, last two working days") : `${slackSection(["reminders", "lists", "saved"], "From Slack", "Your reminders, lists and saved messages")}${myTicketsHtml()}${myTicketsHtml() ? `<div class="mv-sec"><span>Rock moves</span><span class="meta">Decisions and plan items that move a rock</span></div>` : ""}
       ${open.length ? `<div class="mv-list">${open.map(moveCard).join("")}</div>` : ""}
       ${done.length ? `<div class="mv-list mv-done-list">${done.map(moveCard).join("")}</div>` : ""}
       ${sugs.length ? `${d.picks.length || hidden > 0 || moves.more ? `<div class="mv-sec"><span>${d.picks.length ? "More that would move a rock" : ""}</span>${hidden > 0 || moves.more ? `<button type="button" class="link-btn" data-mv="more">${moves.more ? "Fewer" : `${hidden} more`}</button>` : ""}</div>` : ""}

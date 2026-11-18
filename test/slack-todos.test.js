@@ -29,6 +29,10 @@ function slack({ starsScope = true } = {}) {
       ] },
       "stars.list": starsScope ? { ok: true, items: [{ type: "message", channel: "C2", date_create: Number(ts("2026-11-16T12:00:00Z")), message: { user: "UBLAKE", text: "PDP copy draft", ts: "1", permalink: "https://x/p2" } }] } : { ok: false, error: "missing_scope" },
       "reminders.complete": { ok: true },
+      "slackLists.items.list": { ok: true, list: { title: "Alex to-dos" }, items: [
+        { id: "Rec1", date_created: 1, fields: [{ column_id: "Col1", text: "Draft Q1 rock list" }, { column_id: "Col2", checkbox: [false] }, { column_id: "Col3", date: ["2026-11-20"] }, { column_id: "Col4", user: ["UBLAKE"] }] },
+        { id: "Rec2", date_created: 1, fields: [{ column_id: "Col1", text: "Already ticked" }, { column_id: "Col2", checkbox: [true] }] },
+      ] },
     }[method];
     return new Response(JSON.stringify(reply), { status: 200, headers: { "content-type": "application/json" } });
   };
@@ -58,4 +62,11 @@ test("a missing scope empties one list with a note; done items stay hidden; Done
   const s = slack();
   assert.deepEqual(await completeReminder({ config, env: { SLACK_USER_TOKEN: "xoxp-1" }, fetchImpl: s.fetchImpl, reminderId: "Rm1" }), { completed: true });
   assert.deepEqual(s.calls[0], { method: "reminders.complete", params: {}, body: { reminder: "Rm1" } });
+});
+
+test("a Slack List named in config: open rows with title, due date and owner; ticked rows left out", async () => {
+  const { fetchImpl, calls } = slack();
+  const out = await slackTodos({ config: { ...config, system: { ...config.system, slack: { todoLists: ["F0LIST1"] } } }, env: { SLACK_USER_TOKEN: "xoxp-1" }, fetchImpl, now });
+  assert.deepEqual(out.lists.map((l) => [l.list, l.text, l.due, l.owner]), [["Alex to-dos", "Draft Q1 rock list", "2026-11-20", "Blake Tucker"]]);
+  assert.equal(calls.find((c) => c.method === "slackLists.items.list").params.list_id, "F0LIST1");
 });
