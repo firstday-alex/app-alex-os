@@ -531,9 +531,9 @@ function renderTopThree(flags) {
   const row = (x) => (queue.open.has(x.id) ? `<div class="q-opened">${flagCard(x)}${close(x.id)}</div>` : queueRow(x));
   const body = $("q-body");
   if (!shownFlags.length) {
-    body.innerHTML = pool.length
+    body.innerHTML = (f.view === "waiting" ? scheduledList() : "") + (pool.length
       ? `<p class="sub q-empty">Nothing matches these filters. <button type="button" class="link-btn" data-qf-clear>Clear filters</button></p>`
-      : `<p class="sub q-empty">${esc({ open: "Nothing open that needs you.", waiting: "Nothing is waiting on anyone.", parked: "Nothing done, snoozed or hidden." }[f.view])}</p>`;
+      : `<p class="sub q-empty">${esc({ open: "Nothing open that needs you.", waiting: "Nothing is waiting on anyone.", parked: "Nothing done, snoozed or hidden." }[f.view])}</p>`);
     return;
   }
   const more = (n) => (n > 0 ? `<button type="button" class="link-btn q-all" data-q-more>${queue.all ? "Show fewer" : `Show all ${n}`}</button>` : "");
@@ -541,7 +541,7 @@ function renderTopThree(flags) {
   // Filtered, or a pile other than open: a flat list, newest decisions first as ranked.
   if (f.view !== "open" || queueFiltered()) {
     const list = queue.all ? shownFlags : shownFlags.slice(0, 25);
-    body.innerHTML = `<div class="q-list">${list.map(row).join("")}</div>${more(shownFlags.length > 25 ? shownFlags.length : 0)}`;
+    body.innerHTML = `${f.view === "waiting" ? scheduledList() : ""}<div class="q-list">${list.map(row).join("")}</div>${more(shownFlags.length > 25 ? shownFlags.length : 0)}`;
     return;
   }
 
@@ -568,7 +568,10 @@ $("start-here")?.addEventListener("click", (event) => {
   const k = event.target.closest("[data-qf-kind]");
   const clear = event.target.closest("[data-qf-clear]");
   if (!v && !k && !clear) return;
-  if (v) queue.f.view = v.dataset.qfView;
+  if (v) {
+    queue.f.view = v.dataset.qfView;
+    if (queue.f.view === "waiting") { sched.data = null; loadScheduled(); }
+  }
   if (k) queue.f.kind = k.dataset.qfKind;
   if (clear) {
     Object.assign(queue.f, { kind: "", person: "", area: "", q: "" });
@@ -1529,16 +1532,64 @@ function scheduleRow() {
     </div>`;
 }
 
+/* What is scheduled in Slack right now, read from Slack each time the Waiting pile opens. */
+const sched = { data: null, loading: false, error: null };
+async function loadScheduled() {
+  if (sched.loading) return;
+  sched.loading = true;
+  try {
+    const res = await fetch(`${FN}/slack-schedule`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    sched.data = body;
+    sched.error = null;
+  } catch (err) {
+    sched.error = err.message;
+  } finally {
+    sched.loading = false;
+    if (queue.f.view === "waiting") renderTopThree(state.report?.flags ?? []);
+  }
+}
+function scheduledList() {
+  if (sched.error) return `<p class="meta sched-list">Scheduled in Slack: could not read. ${esc(sched.error)}</p>`;
+  if (!sched.data) return `<p class="meta sched-list">Reading what is scheduled in Slack…</p>`;
+  const items = sched.data.items ?? [];
+  const when = (iso) => new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return `<div class="sched-list">
+      <p class="q-label">Scheduled in Slack <span class="meta">${items.length ? `from ${esc(sched.data.from ?? "your account")}` : "nothing scheduled"}</span></p>
+      ${items.map((m) => `<div class="flag q-row sched-item">
+          <span class="q-sev">${esc(when(m.postAt))}</span>
+          <span class="q-msg" title="${esc(m.text)}">To ${esc(m.to)}: ${esc(m.text)}</span>
+          <span class="q-meta">Waiting to send</span>
+          <span class="q-acts"><button type="button" class="ghost sm" data-sched-cancel="${esc(m.scheduledId)}" data-sched-channel="${esc(m.channel)}">Cancel</button></span>
+        </div>`).join("")}
+    </div>`;
+}
+document.addEventListener("click", async (event) => {
+  const b = event.target.closest("[data-sched-cancel]");
+  if (!b) return;
+  b.disabled = true;
+  const res = await fetch(`${FN}/slack-schedule`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cancel: { channel: b.dataset.schedChannel, scheduledId: b.dataset.schedCancel } }) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    b.disabled = false;
+    return alert(`Not cancelled: ${body.error ?? `HTTP ${res.status}`}`);
+  }
+  sched.data = null;
+  loadScheduled();
+});
+
 function schedToast(result) {
   document.getElementById("undo-toast")?.remove();
   const bar = document.createElement("div");
   bar.id = "undo-toast";
   const when = new Date(result.postAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-  bar.innerHTML = `Nudge to ${esc(result.to)} scheduled for ${esc(when)}. <button type="button" class="link-btn">Cancel it</button>`;
+  bar.innerHTML = `Nudge to ${esc(result.to)} scheduled for ${esc(when)}${result.from ? `, from your Slack account (${esc(result.from)})` : ""}. In Slack it is under Drafts &amp; sent › Scheduled. <button type="button" class="link-btn">Cancel it</button>`;
   bar.querySelector("button").addEventListener("click", async () => {
     const res = await fetch(`${FN}/slack-schedule`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cancel: { channel: result.channel, scheduledId: result.scheduledId } }) });
     const body = await res.json().catch(() => ({}));
     bar.innerHTML = res.ok ? `Cancelled. Nothing will be sent to ${esc(result.to)}.` : `Not cancelled: ${esc(body.error ?? `HTTP ${res.status}`)}`;
+    sched.data = null;
     setTimeout(() => bar.remove(), 5000);
   });
   document.body.append(bar);

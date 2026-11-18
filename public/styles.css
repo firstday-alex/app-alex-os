@@ -1283,3 +1283,7 @@ body {
 .sched-row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; width: 100%; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(28, 43, 42, 0.15); }
 .sched-row input[type="datetime-local"] { font: inherit; font-size: 13px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .sched-row .meta { flex-basis: 100%; font-size: 12px; }
+.sched-list { margin: 4px 0 12px; }
+.sched-item .q-sev { white-space: nowrap; background: var(--link-bg) !important; color: var(--link); }
+.sched-item .q-msg { cursor: default; }
+.flag.q-row.sched-item { grid-template-columns: auto minmax(0, 1fr) auto; }
