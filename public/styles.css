@@ -1275,3 +1275,6 @@ body {
 .mv-unblock-sub { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
 .mv-clear { margin: 6px 0 4px; color: var(--green); font-weight: 600; }
 #focus .q-list { margin-bottom: 4px; }
+/* A panel whose card has a menu open sits above the next panel too, so the menu is never
+   painted over by the panel below (each glass panel is its own layer). */
+.start-here:has(.act-menu[open]), .glass:has(.act-menu[open]), .hero:has(.act-menu[open]) { position: relative; z-index: 30; }
