@@ -147,8 +147,6 @@ function render() {
   };
   part("the flags", () => renderAllFlags({ rebuildTools: true }));
   part("the week", () => renderWeek(report));
-  part("the store metrics", () => renderStoreMetrics(report));
-  part("the funnel", () => renderFunnel(report));
   part("Layer 1", () => renderLayer1(report));
   part("the cross layer", () => renderCross(report));
   part("the sprint", () => renderLayer2(report));
@@ -179,273 +177,6 @@ function formatMetric(value, format, { precise = false } = {}) {
   return COUNT.format(Math.round(value));
 }
 
-/**
- * "Check in Shopify" links: one per window, opening the exact query behind the number
- * in a Shopify report. A tile built from two queries (Sub. Opt-In divides subscription
- * orders by all orders) gets a row for each, so both halves can be checked.
- */
-function shopifyLinksRow(links, windows) {
-  if (!links) return "";
-  const byQuery = new Map();
-  for (const w of windows ?? []) {
-    for (const link of links[w.key] ?? []) {
-      if (!byQuery.has(link.query)) byQuery.set(link.query, { label: link.label, links: [] });
-      byQuery.get(link.query).links.push({ window: w.label, url: link.url });
-    }
-  }
-  if (!byQuery.size) return "";
-  const multi = byQuery.size > 1;
-  return [...byQuery.values()]
-    .map(
-      (q) => `<div class="metric-src"><span>${esc(multi ? q.label : "Check in Shopify")}</span>${q.links
-        .map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer" title="Open this ${esc(l.window)} query in Shopify">${esc(l.window)} ↗</a>`)
-        .join("")}</div>`,
-    )
-    .join("");
-}
-
-/* ------------------------------ store period ------------------------------
-   Which period the store tiles lead with: month to date, yesterday, the last 7 or the
-   last 30 days. Every period is pulled on every run, so switching is instant; the
-   others become the comparisons. Remembered per browser. */
-
-const STORE_WINDOW_NAMES = { mtd: "Month to date", yesterday: "Yesterday", d7: "Last 7 days", d30: "Last 30 days" };
-
-function storeWindowKey(data) {
-  let chosen = null;
-  try {
-    chosen = localStorage.getItem("store-window");
-  } catch {
-    /* a per-viewer convenience */
-  }
-  const keys = (data?.windows ?? []).map((w) => w.key);
-  return keys.includes(chosen) ? chosen : data?.primaryWindow?.key ?? keys[0];
-}
-
-/** Mirrors the collector's compareWindows: a rate directly, a total per day. */
-function compareStore(primary, other, { kind, primaryDays, otherDays }) {
-  if (primary == null || other == null) return { changePct: null, basis: kind === "total" ? "per day" : "direct" };
-  if (kind === "total") {
-    if (!primaryDays || !otherDays) return { changePct: null, basis: "per day" };
-    const a = primary / primaryDays;
-    const b = other / otherDays;
-    if (b === 0) return { changePct: null, basis: "per day", otherPerDay: b };
-    return { changePct: Number((((a - b) / Math.abs(b)) * 100).toFixed(1)), basis: "per day", otherPerDay: b };
-  }
-  if (other === 0) return { changePct: null, basis: "direct" };
-  return { changePct: Number((((primary - other) / Math.abs(other)) * 100).toFixed(1)), basis: "direct" };
-}
-
-/**
- * A tile as seen from the chosen period. The stored tile leads with the collector's
- * primary window; for any other, the value and comparisons are rebuilt from the values
- * every window carries. A report from before those were stored can still be rebuilt
- * from the comparisons, which hold each window's value.
- */
-function storeTileView(t, data, key) {
-  const primaryKey = data?.primaryWindow?.key;
-  if (key === primaryKey) return { value: t.value, comparisons: t.comparisons ?? [], companions: t.companions ?? [] };
-
-  const values = t.byWindow
-    ? Object.fromEntries(Object.entries(t.byWindow).map(([w, v]) => [w, v.value]))
-    : { [primaryKey]: t.value, ...Object.fromEntries((t.comparisons ?? []).map((c) => [c.window, c.value])) };
-  const days = Object.fromEntries((data?.windows ?? []).map((w) => [w.key, w.days]));
-  const kind = t.kind ?? "total";
-  const value = values[key] ?? null;
-
-  const comparisons = (data?.windows ?? [])
-    .filter((w) => w.key !== key)
-    .map((w) => {
-      const cmp = compareStore(value, values[w.key] ?? null, { kind, primaryDays: days[key], otherDays: days[w.key] });
-      return { window: w.key, label: w.label, value: values[w.key] ?? null, perDay: cmp.otherPerDay ?? null, changePct: cmp.changePct, basis: cmp.basis };
-    });
-  const companions = (t.companions ?? []).map((c) => ({ ...c, value: t.byWindow?.[key]?.companions?.[c.name] ?? null }));
-  return { value, comparisons, companions };
-}
-
-function renderStoreWindowToggle(data) {
-  const host = $("store-windows");
-  if (!host) return;
-  const key = storeWindowKey(data);
-  host.innerHTML = (data?.windows ?? [])
-    .map((w) => `<button type="button" class="ghost dod-window${w.key === key ? " on" : ""}" data-store-window="${esc(w.key)}" aria-pressed="${w.key === key}">${esc(STORE_WINDOW_NAMES[w.key] ?? w.label)}</button>`)
-    .join("");
-}
-
-$("store-windows")?.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-store-window]");
-  if (!button || !state.report) return;
-  try {
-    localStorage.setItem("store-window", button.dataset.storeWindow);
-  } catch {
-    /* a per-viewer convenience */
-  }
-  renderStoreMetrics(state.report);
-  renderFunnel(state.report);
-});
-
-function renderStoreMetrics(report) {
-  const section = report.sections?.shopify;
-  const data = report.detail?.shopify;
-  const host = $("store-metrics");
-
-  if (!section?.present) {
-    host.innerHTML = `<div class="note"><strong>Store metrics unavailable.</strong> ${esc(section?.reason ?? "not collected")}</div>`;
-    if ($("store-windows")) $("store-windows").innerHTML = "";
-    return;
-  }
-
-  renderStoreWindowToggle(data);
-  const windowKey = storeWindowKey(data);
-  const shownWindow = (data?.windows ?? []).find((w) => w.key === windowKey) ?? data?.primaryWindow;
-  renderStoreHeaderCount();
-
-  host.innerHTML = (data?.tiles ?? [])
-    .map((stored) => {
-      const view = storeTileView(stored, data, windowKey);
-      const t = { ...stored, value: view.value, comparisons: view.comparisons, companions: view.companions };
-      if (!stored.available || t.value == null) {
-        return `<div class="metric"><div class="metric-label">${esc(t.label)}</div><div class="metric-value muted">—</div><div class="metric-delta">${esc(t.reason ?? "unavailable")}</div></div>`;
-      }
-
-      // A rate is shown to the cent; a large total does not need the cents.
-      const precise = t.kind === "rate" && t.format === "money";
-
-      // Each chip states the other window's own number, then how the big number compares
-      // with it. A bare "Yest -0.7%" read as "yesterday fell", when it meant the month is
-      // 0.7% below yesterday: the opposite. A total is compared per day, so the chip shows
-      // the other window per day.
-      const primaryLabel = shownWindow?.label ?? "This period";
-      const cmps = (t.comparisons ?? [])
-        .map((c) => {
-          const perDay = c.basis === "per day";
-          // Reports from before the per-day value was stored have none; the next refresh fills it.
-          const shown = perDay ? c.perDay ?? null : c.value;
-          const theirs = `${formatMetric(shown, t.format, { precise: precise || perDay })}${perDay ? "/d" : ""}`;
-          if (c.changePct == null) return `<span class="cmp">vs ${esc(c.label)} ${esc(shown == null ? "—" : theirs)}</span>`;
-          const up = c.changePct > 0;
-          // Direction is not the same as good. Discounts are stored negative, so a rise
-          // means less discounting, which is why goodDirection lives on the tile.
-          const good = t.goodDirection === "down" ? !up : up;
-          const said = `${primaryLabel} ${formatMetric(t.value, t.format, { precise })}${perDay ? " (per day)" : ""} is ${Math.abs(c.changePct)}% ${up ? "higher" : "lower"} than ${c.label} ${theirs}`;
-          return `<span class="cmp ${good ? "good" : "bad"}" title="${esc(said)}">vs ${esc(c.label)} ${esc(theirs)} · ${up ? "+" : "−"}${esc(Math.abs(c.changePct))}%</span>`;
-        })
-        .join("");
-
-      // An info affordance only where there is something to explain.
-      const detail = [
-        t.description,
-        ...(t.companions ?? []).map(
-          (c) => `${c.label}: ${c.value == null ? "unavailable" : formatMetric(c.value, c.format, { precise: true })}${c.description ? ` — ${c.description}` : ""}`,
-        ),
-        t.formula ? `Formula: ${t.formula}` : null,
-        t.filter ? `Filter: ${t.filter}` : null,
-        t.kind === "total" ? "Compared per day, because the windows are different lengths." : null,
-      ]
-        .filter(Boolean)
-        .join("\n\n");
-
-      const info = detail
-        ? `<button class="info-btn" data-detail="${esc(detail)}" data-title="${esc(t.label)}" aria-label="What is ${esc(t.label)}?">i</button>`
-        : "";
-
-      return `<div class="metric">
-        <div class="metric-label">${esc(t.label)}${info}</div>
-        <div class="metric-value">${esc(formatMetric(t.value, t.format, { precise }))}</div>
-        <div class="metric-cmps">${cmps}</div>
-        ${shopifyLinksRow(t.shopifyLinks, data?.windows)}
-      </div>`;
-    })
-    .join("");
-
-  const win = shownWindow;
-  const others = (data?.windows ?? []).filter((w) => w.key !== win?.key).map((w) => w.label).join(", ");
-  $("store-sub").innerHTML =
-    `${esc(data?.shopDomain ?? "")} · showing <strong>${esc(STORE_WINDOW_NAMES[win?.key] ?? win?.label ?? "")}</strong>${win?.days > 1 ? ` (${esc(win.days)} complete days)` : ""} against ${esc(others)}. Every period ends yesterday, so today's partial day never skews a comparison. ` +
-    `Totals are compared per day, marked <span class="basis">/d</span>, because a month-to-date total against a 7 day total measures the window, not the business. ` +
-    `Context for everything below: a sitewide move is not a test result.`;
-}
-
-/**
- * The conversion funnel.
- *
- * Bar width is the share of all sessions, so the collapse from sessions to purchases is
- * visible at a glance. The number that actually matters per row is the step rate — the
- * share of the row above — because that is where a drop-off lives and it is the only
- * figure comparable across windows of different lengths.
- */
-function renderFunnel(report) {
-  const host = $("funnel");
-  const f = report.detail?.shopify?.funnel;
-  if (!f || !report.sections?.shopify?.present) {
-    host.innerHTML = "";
-    return;
-  }
-
-  const pct = (v, digits = 1) => (v == null ? "—" : `${(v * 100).toFixed(digits)}%`);
-
-  // The funnel follows the store tiles' period. Its steps for any window are stored
-  // alongside the primary's; a report from before that shows the primary with a note.
-  const data = report.detail?.shopify;
-  const key = storeWindowKey(data);
-  const windows = data?.windows ?? [];
-  const label = (k) => windows.find((w) => w.key === k)?.label ?? k;
-  const primaryKey = data?.primaryWindow?.key ?? f.window?.key;
-  const stepsFor = (k) => f.byWindow?.[k] ?? (k === primaryKey ? f.steps : null);
-  const shownKey = stepsFor(key) ? key : primaryKey;
-  const steps = (stepsFor(shownKey) ?? []).map((step, index) => ({
-    ...step,
-    comparisons: windows
-      .filter((w) => w.key !== shownKey && stepsFor(w.key))
-      .map((w) => {
-        const other = stepsFor(w.key)[index];
-        const cmp = compareStore(step.ofPrevious, other?.ofPrevious ?? null, { kind: "rate" });
-        return { window: w.key, label: w.label, ofPrevious: other?.ofPrevious ?? null, count: other?.count ?? null, changePct: cmp.changePct };
-      }),
-  }));
-  const fw = { key: shownKey, label: label(shownKey) };
-  const stale = shownKey !== key ? `<p class="meta">The funnel for ${esc(label(key))} appears after the next refresh. Showing ${esc(fw.label)}.</p>` : "";
-
-  const rows = steps
-    .map((step, index) => {
-      const width = step.ofTop == null ? 0 : Math.max(step.ofTop * 100, 0.4);
-      // The top step has no step rate, so nothing to compare.
-      const cmps = (index === 0 ? [] : step.comparisons ?? [])
-        .map((c) => {
-          if (c.changePct == null) return `<span class="cmp">${esc(c.label)} —</span>`;
-          const good = c.changePct > 0; // a higher step rate is always better
-          return `<span class="cmp ${good ? "good" : "bad"}" title="${esc(`${fw.label} step rate ${pct(step.ofPrevious)} is ${Math.abs(c.changePct)}% ${good ? "higher" : "lower"} than ${c.label} ${pct(c.ofPrevious)}`)}">vs ${esc(c.label)} ${esc(pct(c.ofPrevious))} · ${good ? "+" : "−"}${esc(Math.abs(c.changePct))}%</span>`;
-        })
-        .join("");
-
-      // The drop-off between this row and the one above, which is the actionable number.
-      const lost = index === 0 || step.ofPrevious == null ? null : 1 - step.ofPrevious;
-
-      return `<div class="funnel-row">
-        <div class="funnel-head">
-          <span class="funnel-label">${esc(step.label)}</span>
-          <span class="funnel-count">${esc(COUNT.format(step.count ?? 0))}</span>
-        </div>
-        <div class="funnel-track"><div class="funnel-bar" style="width:${width}%"></div></div>
-        <div class="funnel-meta">
-          ${index === 0
-            ? `<span class="funnel-step">top of funnel</span>`
-            : `<span class="funnel-step">${esc(pct(step.ofPrevious))} of ${esc(steps[index - 1].label.toLowerCase())}</span>
-               <span class="funnel-lost">${esc(pct(lost))} lost</span>`}
-          <span class="funnel-oftop">${esc(pct(step.ofTop, 2))} of sessions</span>
-          ${cmps}
-        </div>
-      </div>`;
-    })
-    .join("");
-
-  host.innerHTML = `
-    <h3 class="funnel-title">${esc(f.label)} <span class="meta">${esc(STORE_WINDOW_NAMES[fw.key] ?? fw.label)} · comparisons are on the step rate, not the count</span></h3>
-    ${stale}
-    ${shopifyLinksRow(f.shopifyLinks, report.detail?.shopify?.windows)}
-    <div class="funnel">${rows}</div>`;
-}
-
 function tile(n, k) {
   return `<div class="tile"><div class="n">${esc(n)}</div><div class="k">${esc(k)}</div></div>`;
 }
@@ -470,6 +201,9 @@ const isAttn = (f) => f.severity === "p1" || f.severity === "attention";
 // act on: shown with the store numbers, never in a flag list. Mirrors CONTEXT_RULES.
 const CONTEXT_RULES = new Set(["shopify.metric_moved", "intelligems.control_moved"]);
 const isContextFlag = (f) => CONTEXT_RULES.has(f?.rule);
+// Store numbers (month to date, the funnel) live in the separate reporting dashboard,
+// linked from Resources in the top bar.
+const ECOM_HUB = "https://ecomreporting.netlify.app/";
 
 function triageOf(flag) {
   const t = state.flagEntries ? state.flagEntries[keyOf(flag)]?.triage : flag.triage;
@@ -502,7 +236,6 @@ function flagTiles(flags) {
 function renderAllFlags({ rebuildTools = false } = {}) {
   const flags = state.report?.flags ?? [];
   if ($("flag-tiles")) $("flag-tiles").innerHTML = flagTiles(flags);
-  renderStoreContext(flags);
   renderTopThree(flags);
   // The 1:1 view shows the same flags, so a triage there redraws it too.
   if (!$("view-people")?.classList.contains("hidden")) renderPeople();
@@ -965,28 +698,6 @@ document.addEventListener("click", async (event) => {
   }
 });
 
-function renderStoreContext(flags) {
-  const host = $("store-context");
-  if (!host) return;
-  const context = flags.filter(isContextFlag);
-  state.storeContextCount = context.length;
-  host.innerHTML = context.length
-    ? `<div class="store-context"><p class="store-context-head">Site-wide moves <span class="meta">read every test result against these</span></p>
-        ${context
-          .map((f) => `<p class="store-context-line ${f.severity === "attention" || f.severity === "p1" ? "bad" : "neutral"}">${esc(f.message)}</p>`)
-          .join("")}</div>`
-    : "";
-  if (state.report) renderStoreHeaderCount();
-}
-
-function renderStoreHeaderCount() {
-  const data = state.report?.detail?.shopify;
-  const key = storeWindowKey(data);
-  const win = (data?.windows ?? []).find((w) => w.key === key) ?? data?.primaryWindow;
-  const n = state.storeContextCount ?? 0;
-  sectionCount("store", `${STORE_WINDOW_NAMES[win?.key] ?? win?.label ?? ""}${n ? ` · ${plural(n, "site-wide move", "site-wide moves")}` : ""}`);
-}
-
 function sectionCount(name, text, urgent = false) {
   const el = $(`sec-${name}-count`);
   if (!el) return;
@@ -1184,7 +895,7 @@ function flagContext(flag) {
       links.push({ label: "Rocks", href: "#rocks" });
       break;
     case "metric":
-      links.push({ label: "Store metrics", href: "#readout/store-head" });
+      links.push({ label: "Ecom Reporting Hub", href: ECOM_HUB, external: true });
       break;
   }
   // A flag about a person or a rock names several tickets: each gets its ClickUp link,
@@ -6399,7 +6110,7 @@ let tocTargets = [];
 const TOC_GROUPS = {
   readout: [
     { label: "Act now", items: [["focus", "Rock moves"], ["start-here", "Your queue"], ["sec-prompts", "Decisions due"], ["sec-attention", "Needs your attention"]] },
-    { label: "How it's going", items: [["sec-week", "This week"], ["sec-store", "Store"]] },
+    { label: "How it's going", items: [["sec-week", "This week"]] },
     { label: "By layer", items: [["sec-layer1", "Leadership"], ["sec-cross", "Cross layer"], ["sec-hygiene", "Hygiene"]] },
     { label: "Tune the readout", items: [["sec-rules", "Rule check"]] },
   ],
@@ -6530,6 +6241,13 @@ function closeDrawer() {
   $("scrim").hidden = true;
 }
 
+document.addEventListener("click", (event) => {
+  const menu = $("resources");
+  if (menu?.open && !event.target.closest("#resources")) menu.open = false;
+});
+$("resources")?.addEventListener("click", (event) => {
+  if (event.target.closest("a")) $("resources").open = false;
+});
 $("menu-toggle").addEventListener("click", () =>
   $("drawer").classList.contains("open") ? closeDrawer() : openDrawer(),
 );
