@@ -11,7 +11,7 @@
 // from the readout; nothing is made up.
 
 const THIS_SPRINT_DONE = new Set(["done (this sprint)", "done"]);
-const LAST_SPRINT_DONE = new Set(["complete", "dont use"]);
+const LAST_SPRINT_DONE = new Set(["complete", "dont use", "closed (last sprint)"]);
 const TROUBLE = { off_track: 3, overdue: 3, blocked: 3, at_risk: 2 };
 const COURSE = { off: 3, drift: 2 };
 

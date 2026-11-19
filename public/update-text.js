@@ -10,12 +10,12 @@
 //
 // "done (this sprint)" and "complete" are different statuses. The daily update carries
 // the first, never the second; accomplishments carry both. On 2026-11-17 "complete" was
-// renamed "dont use" in ClickUp; it is still the closed status holding last sprint's work,
+// renamed "dont use" in ClickUp, and on 2026-11-19 "closed (last sprint)" was added for the same work; it is still the closed status holding last sprint's work,
 // so both names mean the same here.
 
 // Statuses the daily update covers, furthest along first. "complete" is deliberately absent.
 export const UPDATE_STATUSES = ["done (this sprint)", "done", "ready for deploy", "vqa", "qa", "in review", "in-progress", "in progress", "to do"];
-export const LAST_SPRINT_STATUSES = new Set(["complete", "dont use"]);
+export const LAST_SPRINT_STATUSES = new Set(["complete", "dont use", "closed (last sprint)"]);
 // This sprint's finished work: "done (this sprint)" until the sprint rolls over.
 export const THIS_SPRINT_DONE_STATUSES = new Set(["done (this sprint)", "done"]);
 const DONE_STATUSES = new Set(["done (this sprint)", "done", ...LAST_SPRINT_STATUSES]);

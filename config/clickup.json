@@ -65,10 +65,11 @@
       "complete",
       "dont use",
       "done (this sprint)",
+      "closed (last sprint)",
       "done",
       "closed"
     ],
-    "_VERIFIED": "The Current Sprint list uses exactly: 'to do' (open), 'in-progress', 'vqa', 'qa', 'ready for deploy', 'complete' (closed). Added 2026-10-15: 'done (this sprint)', seen on the board; before it was mapped, tickets shipped this sprint were counted as not started. Note 'in-progress' is hyphenated, and vqa, qa and ready for deploy are all work in flight, not done. Matching is case-insensitive. An unmapped status falls through to notStarted and logs clickup.status_unmapped. Read live 2026-11-17: 'complete' was renamed 'dont use' (still the closed status, holding last sprint's work), and 'done (this sprint)' is now ClickUp's done type. Both old and new names are kept so stored reports still read right.",
+    "_VERIFIED": "The Current Sprint list uses exactly: 'to do' (open), 'in-progress', 'vqa', 'qa', 'ready for deploy', 'complete' (closed). Added 2026-10-15: 'done (this sprint)', seen on the board; before it was mapped, tickets shipped this sprint were counted as not started. Note 'in-progress' is hyphenated, and vqa, qa and ready for deploy are all work in flight, not done. Matching is case-insensitive. An unmapped status falls through to notStarted and logs clickup.status_unmapped. Read live 2026-11-17: 'complete' was renamed 'dont use' (still the closed status, holding last sprint's work), and 'done (this sprint)' is now ClickUp's done type. Both old and new names are kept so stored reports still read right. Read live 2026-11-19: 'closed (last sprint)' added (done type) to hold last sprint's work; 'dont use' is still the closed status. Both count as last sprint's.",
     "_decided": "Alex, 2026-10-22: 'ready for deploy' counts as in progress, not done, so a ticket parked there stays visible as in-flight work."
   },
   "staleness": {

@@ -18,7 +18,7 @@ export const VERDICTS = ["successful", "unsuccessful", "too_early"];
 
 // "complete" (renamed "dont use" in ClickUp, 2026-11-17) is last sprint's work, moved there
 // when the sprint rolled over. "backlog" was never in the sprint.
-const NOT_THIS_SPRINT = new Set(["complete", "dont use", "backlog"]);
+const NOT_THIS_SPRINT = new Set(["complete", "dont use", "closed (last sprint)", "backlog"]);
 const DESCRIPTION_CHARS = 3000;
 const COMMENT_CHARS = 600;
 const COMMENTS_PER_TICKET = 15;
