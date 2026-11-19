@@ -1,4 +1,8 @@
-// Slack's interactivity endpoint. Three kinds of click land here.
+// Slack's interactivity endpoint. Four kinds of click land here.
+//
+// "Create ClickUp ticket", the message shortcut (callback id clickup_ticket): turns the
+// whole thread, files included, into a Site Backlog ticket (src/send/clickup-ticket.js).
+// Alex only. Handed to a background function; Alex gets an ephemeral reply with the link.
 //
 // "Save to daily notes", the message shortcut: saves the message to the Daily Speech's
 // notes (src/send/slack-notes.js). Alex only.
@@ -20,7 +24,8 @@ import { dateKey } from "../../src/lib/time.js";
 import { FlagLedger, keyForRef } from "../../src/store/flag-ledger.js";
 import { SLACK_TRIAGE } from "../../src/render/report.js";
 import { verifySlackSignature, IDENTITY_LINE } from "../../src/send/slack.js";
-import { handleSaveShortcut, SAVE_NOTE_CALLBACK, whoFields } from "../../src/send/slack-notes.js";
+import { handleSaveShortcut, SAVE_NOTE_CALLBACK, whoFields, messageLink } from "../../src/send/slack-notes.js";
+import { TICKET_CALLBACK, threadOf } from "../../src/send/clickup-ticket.js";
 
 /** Replies through the response_url, the only way a block action can change its message. */
 async function respond(payload, body, logger) {
@@ -78,14 +83,19 @@ export async function handleTriage({ payload, action, config, store, logger, res
 }
 
 async function handOff(payload, logger) {
+  return handOffTo("advisor-background", payload, logger);
+}
+
+async function handOffTo(fn, payload, logger) {
   const base = process.env.URL ?? process.env.DEPLOY_PRIME_URL ?? "http://localhost:8888";
-  const response = await fetch(`${base}/.netlify/functions/advisor-background`, {
+  const response = await fetch(`${base}/.netlify/functions/${fn}`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-mos-internal": process.env.DASHBOARD_COOKIE_SECRET ?? "" },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(5000),
   });
-  logger.info("advisor.handed_off", { status: response.status, flagId: payload.flagId });
+  logger.info("slack.handed_off", { fn, status: response.status });
+  if (!response.ok && response.status !== 202) throw new Error(`${fn} answered HTTP ${response.status}`);
 }
 
 export default async (req) => {
@@ -113,8 +123,31 @@ export default async (req) => {
   const action = (payload.actions ?? [])[0];
   const config = loadConfig();
 
-  // Every message shortcut on this app saves a note, whatever its callback id, so one
-  // renamed in the Slack app still works rather than going silent.
+  // "Create ClickUp ticket": Alex only; anyone else gets no reply at all.
+  if (payload.type === "message_action" && payload.callback_id === TICKET_CALLBACK) {
+    const alexId = config.people?.alex?.slackUserId ?? null;
+    if (!alexId || payload.user?.id !== alexId) {
+      logger.info("ticket.shortcut_ignored", whoFields(payload.user?.id, config, payload.enterprise?.id));
+      return new Response("", { status: 200 });
+    }
+    const thread = threadOf(payload);
+    if (!thread) {
+      await respond(payload, ephemeral("I could not tell which thread that was."), logger);
+      return new Response("", { status: 200 });
+    }
+    const root = { ...payload, message: { ts: thread.ts } };
+    try {
+      await handOffTo("slack-ticket-background", { ...thread, link: messageLink(root), responseUrl: payload.response_url ?? null }, logger);
+      await respond(payload, ephemeral("Reading the thread and its files to make a Site Backlog ticket. I'll reply here with the link in a minute."), logger);
+    } catch (err) {
+      logger.error("ticket.handoff_failed", { err });
+      await respond(payload, ephemeral(`I could not start that ticket: ${err.message}`), logger);
+    }
+    return new Response("", { status: 200 });
+  }
+
+  // Every other message shortcut on this app saves a note, whatever its callback id, so
+  // one renamed in the Slack app still works rather than going silent.
   if (payload.type === "message_action") {
     logger.info("slack.shortcut_received", { callbackId: payload.callback_id, expected: SAVE_NOTE_CALLBACK, ...whoFields(payload.user?.id, config, payload.enterprise?.id) });
     try {
