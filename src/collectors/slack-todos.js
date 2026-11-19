@@ -50,6 +50,7 @@ async function call(method, params, { token, config, logger, fetchImpl, post = f
   if (body?.ok === false) {
     const err = new SlackTodoError(`Slack said ${body.error}.`, 502);
     err.slackError = body.error;
+    err.provided = body.provided ?? null; // on missing_scope Slack lists the scopes the token has
     throw err;
   }
   return body;
@@ -106,9 +107,16 @@ export async function slackTodos({ config, env = process.env, logger, fetchImpl,
   };
   const mentionIds = (text) => [...String(text ?? "").matchAll(/<@([UW][A-Z0-9]+)/g)].map((m) => m[1]);
   const notes = [];
+  let scopesShown = false;
   const missing = (kind, err) => {
-    if (err.slackError === "missing_scope") notes.push(`Add the ${SCOPE_HINT[kind]} user scope to read ${kind === "asks" ? "Slack mentions" : kind === "saved" ? "saved messages" : "Slack reminders"}.`);
-    else notes.push(`Could not read ${kind}: ${err.message}`);
+    if (err.slackError === "missing_scope") {
+      notes.push(`Add the ${SCOPE_HINT[kind]} user scope to read ${kind === "asks" ? "Slack mentions" : kind === "saved" ? "saved messages" : "Slack reminders"}.`);
+      // What the token in Netlify can actually do, once: tells a stale token from a missing scope.
+      if (err.provided && !scopesShown) {
+        scopesShown = true;
+        notes.push(`The token Ecom OS is using (signed in as ${me.user ?? "unknown"}) has: ${err.provided}. If you added scopes, reinstall the app, copy the User OAuth Token again into SLACK_USER_TOKEN, and redeploy.`);
+      }
+    } else notes.push(`Could not read ${kind}: ${err.message}`);
     return [];
   };
 
