@@ -11,7 +11,9 @@
 //             yesterday. Alex's recent posts also go in as the style to match.
 //   clickup   from the latest readout: Alex's tickets that moved, closed, were created
 //             or got Alex's comment since the previous readout; and Alex's open tickets,
-//             in progress first, with due dates
+//             in progress first, with due dates. The sprint list is read again live when
+//             the draft is written, so a ticket Alex closed after the 8 AM readout counts
+//             (Alex, 2026-11-19: a test closed at 8:19 was missing from an 8:26 draft).
 //   slack     Alex's own messages since the start of the previous working day, from
 //             Slack search. Needs a user token (SLACK_USER_TOKEN, scope search:read):
 //             the bot cannot be in every channel, and cannot see DMs at all. Only
@@ -37,6 +39,7 @@ import { FlagLedger, activeTriage } from "../store/flag-ledger.js";
 import { QuarterPlanStore } from "../store/quarter-plan.js";
 import { dateKey as zonedDateKey, previousWorkingDayKey } from "../lib/time.js";
 import { quarterOfKey, weekStartOf } from "../../public/quarter.js";
+import { fetchTaskPages, normalizeTask } from "../collectors/clickup.js";
 
 export const MY_STANDUP_KEY = "mystandup/latest.json";
 export const MY_STANDUP_STATUS_KEY = "mystandup/status.json";
@@ -66,6 +69,31 @@ const SCHEMA = {
 
 const mineBy = (alexId) => (t) =>
   alexId != null && (t.assignees ?? []).some((u) => String(u.id) === String(alexId));
+
+/**
+ * The readout with Alex's sprint tickets brought up to date from a live read: each ticket's
+ * current status replaces the 8 AM one, and any change since then is added to the readout's
+ * changes (Closed, or Moved from → to). Rock fields and comments stay as the readout had them.
+ */
+export function withLiveTickets(report, live) {
+  if (!report || !live?.length) return report;
+  const clickup = report.detail?.clickup ?? {};
+  const before = new Map((clickup.tasks ?? []).map((t) => [String(t.id), t]));
+  const changes = { ...(clickup.changes ?? {}) };
+  const closed = [...(changes.closed ?? [])];
+  const statusChanges = [...(changes.statusChanges ?? [])];
+  const tasks = live.map((t) => {
+    const old = before.get(String(t.id));
+    const merged = old ? { ...old, status: t.status, bucket: t.bucket, assignees: t.assignees, dueDate: t.dueDate, dateClosed: t.dateClosed, dateDone: t.dateDone, dateUpdated: t.dateUpdated } : t;
+    if (old && String(old.status ?? "").toLowerCase() !== String(t.status ?? "").toLowerCase()) {
+      const entry = { id: t.id, name: t.name, url: t.url ?? old.url ?? null, assignees: t.assignees, from: old.status, to: t.status, live: true };
+      if (t.bucket === "done" && old.bucket !== "done") closed.push(entry);
+      else statusChanges.push(entry);
+    }
+    return merged;
+  });
+  return { ...report, detail: { ...report.detail, clickup: { ...clickup, tasks, changes: { ...changes, closed, statusChanges } } } };
+}
 
 /**
  * Everything the draft may draw on, as numbered facts. Pure apart from the reads passed in.
@@ -105,7 +133,7 @@ export function standupFacts({ config, now, report, standups, slack, notes, wait
     seen.add(`${t.id}:${what}`);
     add("clickup", `${what}: "${clip(t.name, 120)}"`, { url: t.url ?? null });
   };
-  for (const t of changes.closed ?? []) if (isMine(t)) moved(t, "Closed");
+  for (const t of changes.closed ?? []) if (isMine(t)) moved(t, t.live ? `Closed after the 8 AM readout (${t.from} → ${t.to})` : "Closed");
   for (const t of changes.statusChanges ?? []) if (isMine(t)) moved(t, `Moved ${t.from} → ${t.to}`);
   for (const t of changes.newTasks ?? []) if (isMine(t)) moved(t, "New ticket");
   const since = xfSince(now, config).getTime();
@@ -205,7 +233,16 @@ export const standupText = (d) => `Yesterday: ${d.yesterday.text}\nToday: ${d.to
 
 export async function writeMyStandup({ store, config, env = process.env, logger, now = new Date(), fetchImpl, trigger = "button" }) {
   const tz = config.system.timezone;
-  const report = await store.getLatestReport();
+  let report = await store.getLatestReport();
+  // Read the sprint again so anything Alex did after the readout counts.
+  if (report && env.CLICKUP_TOKEN && config.clickup?.sprintListId) {
+    try {
+      const { items } = await fetchTaskPages({ config, token: env.CLICKUP_TOKEN, logger, fetchImpl });
+      report = withLiveTickets(report, items.map((t) => normalizeTask(t, { fieldMap: {}, statusMap: config.clickup.statusMap, logger })));
+    } catch (err) {
+      logger?.warn?.("mystandup.live_clickup_failed", { err });
+    }
+  }
   const since = xfSince(now, config);
   const notes = [];
 

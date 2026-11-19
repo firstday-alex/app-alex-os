@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { standupFacts, checkDraft, alexSlack, standupText, morningStandup } from "../src/agents/my-standup.js";
+import { standupFacts, checkDraft, alexSlack, standupText, morningStandup, withLiveTickets } from "../src/agents/my-standup.js";
 
 const config = {
   system: { timezone: "America/Chicago", schedule: { workingWeekdays: [1, 2, 3, 4, 5] }, http: { maxAttempts: 1 } },
@@ -108,4 +108,22 @@ test("the morning draft is written once a day and never over today's", async () 
   assert.deepEqual(out, { written: false, reason: "already written today" });
   const fresh = { backend: { get: async () => ({ dateKey: "2026-11-16" }) } };
   assert.deepEqual(await morningStandup({ store: fresh, config, env: { ANTHROPIC_API_KEY: "k" }, now, write: async () => ({ text: "x" }) }), { written: true });
+});
+
+test("a ticket Alex closed after the 8 AM readout counts: the live read updates it and adds the change", () => {
+  const alex = [{ id: "87365453", username: "Alex Turney" }];
+  const report = { dateKey: "2026-11-19", detail: { clickup: { changes: { closed: [], statusChanges: [] }, tasks: [
+    { id: "t1", name: "AB Test Launch - Upsell Dialogue", status: "to do", bucket: "todo", assignees: alex, bigSwing: { label: "Upsells" }, url: "https://app.clickup.com/t/t1" },
+    { id: "t2", name: "Unchanged", status: "qa", bucket: "inProgress", assignees: alex },
+  ] } } };
+  const live = [
+    { id: "t1", name: "AB Test Launch - Upsell Dialogue", status: "done (this sprint)", bucket: "done", assignees: alex, url: "https://app.clickup.com/t/t1" },
+    { id: "t2", name: "Unchanged", status: "qa", bucket: "inProgress", assignees: alex },
+  ];
+  const out = withLiveTickets(report, live);
+  assert.deepEqual(out.detail.clickup.changes.closed.map((c) => [c.name, c.from, c.to]), [["AB Test Launch - Upsell Dialogue", "to do", "done (this sprint)"]]);
+  assert.equal(out.detail.clickup.changes.statusChanges.length, 0);
+  assert.equal(out.detail.clickup.tasks[0].bigSwing.label, "Upsells", "rock fields kept from the readout");
+  assert.equal(report.detail.clickup.tasks[0].status, "to do", "the stored readout is not changed");
+  assert.equal(withLiveTickets(report, []), report);
 });
