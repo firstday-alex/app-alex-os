@@ -25,7 +25,7 @@ import { FlagLedger, keyForRef } from "../../src/store/flag-ledger.js";
 import { SLACK_TRIAGE } from "../../src/render/report.js";
 import { verifySlackSignature, IDENTITY_LINE } from "../../src/send/slack.js";
 import { handleSaveShortcut, SAVE_NOTE_CALLBACK, whoFields, messageLink } from "../../src/send/slack-notes.js";
-import { TICKET_CALLBACK, threadOf } from "../../src/send/clickup-ticket.js";
+import { TICKET_CALLBACK, threadOf, handOffTicket } from "../../src/send/clickup-ticket.js";
 
 /** Replies through the response_url, the only way a block action can change its message. */
 async function respond(payload, body, logger) {
@@ -137,7 +137,7 @@ export default async (req) => {
     }
     const root = { ...payload, message: { ts: thread.ts } };
     try {
-      await handOffTo("slack-ticket-background", { ...thread, link: messageLink(root), responseUrl: payload.response_url ?? null }, logger);
+      await handOffTicket({ ...thread, link: messageLink(root), responseUrl: payload.response_url ?? null }, { logger });
       await respond(payload, ephemeral("Reading the thread and its files to make a Site Backlog ticket. I'll reply here with the link in a minute."), logger);
     } catch (err) {
       logger.error("ticket.handoff_failed", { err });

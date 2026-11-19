@@ -80,6 +80,34 @@ export function threadOf(payload) {
   return channel && ts ? { channel, ts } : null;
 }
 
+/**
+ * The thread a pasted Slack message link points at: /archives/<channel>/p<ts>, with
+ * ?thread_ts= when the link is to a reply. The link Slack hands a slash command may be
+ * wrapped as <url> or <url|label>. Returns { channel, ts, link } or null.
+ */
+export function threadFromLink(text) {
+  const raw = String(text ?? "").trim().replace(/^<|>$/g, "").split("|")[0];
+  const m = raw.match(/^https:\/\/([a-z0-9-]+(?:\.enterprise)?)\.slack\.com\/archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})(?:\?(.*))?$/i);
+  if (!m) return null;
+  const [, domain, channel, sec, micro, query] = m;
+  const threadTs = new URLSearchParams(query ?? "").get("thread_ts");
+  const ts = threadTs && /^\d{10}\.\d{6}$/.test(threadTs) ? threadTs : `${sec}.${micro}`;
+  return { channel, ts, link: `https://${domain}.slack.com/archives/${channel}/p${ts.replace(".", "")}` };
+}
+
+/** Hands the work to the background function; Slack wants an answer within three seconds. */
+export async function handOffTicket(body, { logger, env = process.env, fetchImpl = globalThis.fetch } = {}) {
+  const base = env.URL ?? env.DEPLOY_PRIME_URL ?? "http://localhost:8888";
+  const res = await fetchImpl(`${base}/.netlify/functions/slack-ticket-background`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-mos-internal": env.DASHBOARD_COOKIE_SECRET ?? "" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(5000),
+  });
+  logger?.info?.("ticket.handed_off", { status: res.status });
+  if (!res.ok) throw new Error(`the background job answered HTTP ${res.status}`);
+}
+
 /** A stable, id-free key for a thread, so the same one twice finds the ticket already made. */
 export const threadKey = (channel, ts) => crypto.createHash("sha256").update(`${channel}:${ts}`).digest("hex").slice(0, 16);
 

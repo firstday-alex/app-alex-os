@@ -109,3 +109,24 @@ test("end to end: reads the thread, copies its files, creates the task, sets eac
   const again = await ticketFromThread({ channel: "C1", ts: "1700000000.0001", config, env, store, fetchImpl, askImpl });
   assert.match(again.text, /already a ticket/);
 });
+
+test("/ticket takes a pasted message link: the thread's root, from a reply's thread_ts too", async () => {
+  const { threadFromLink } = await import("../src/send/clickup-ticket.js");
+  assert.deepEqual(threadFromLink("<https://firstday.slack.com/archives/C0123ABC/p1763500000123456>"), { channel: "C0123ABC", ts: "1763500000.123456", link: "https://firstday.slack.com/archives/C0123ABC/p1763500000123456" });
+  assert.equal(threadFromLink("https://firstday.slack.com/archives/C0123ABC/p1763500999000001?thread_ts=1763500000.123456&cid=C0123ABC").ts, "1763500000.123456");
+  assert.equal(threadFromLink("make a ticket"), null);
+  assert.equal(threadFromLink("https://evil.example.com/archives/C1/p1763500000123456"), null);
+});
+
+test("/ticket is Alex's alone, explains itself without a link, and hands off with one", async () => {
+  const { handleTicketCommand } = await import("../netlify/functions/slack-command.mjs");
+  const config = { people: { alex: { slackUserId: "UALEX" } } };
+  const handed = [];
+  const handOff = async (b) => handed.push(b);
+  const p = (o) => new URLSearchParams({ command: "/ticket", ...o });
+  assert.equal(await handleTicketCommand({ params: p({ user_id: "UOTHER", text: "https://x.slack.com/archives/C1/p1763500000123456" }), config, handOff }), null);
+  assert.match((await handleTicketCommand({ params: p({ user_id: "UALEX", text: "" }), config, handOff })).text, /Copy link/);
+  const ok = await handleTicketCommand({ params: p({ user_id: "UALEX", text: "https://x.slack.com/archives/C1/p1763500000123456", response_url: "https://hooks.slack.com/r" }), config, handOff });
+  assert.match(ok.text, /Reading the thread/);
+  assert.deepEqual(handed, [{ channel: "C1", ts: "1763500000.123456", link: "https://x.slack.com/archives/C1/p1763500000123456", responseUrl: "https://hooks.slack.com/r" }]);
+});
