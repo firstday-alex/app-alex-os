@@ -1,8 +1,8 @@
 // Alex's to-dos from Slack, for Today's moves. Read with Alex's user token, live, each time
 // the page asks; nothing from Slack is stored except a hash of the items Alex marked done.
 //
-//   asks       messages that @mention Alex in the last two working days, not from Alex:
-//              someone is waiting on him (Unblock others). Needs search:read.
+// Only what Alex chose to come back to: no @mentions or missed conversations (Alex,
+// 2026-11-19: "it should only be things I reminded myself or made into a to do").
 //   reminders  Alex's own open Slack reminders (/remind, "Remind me about this").
 //              Needs reminders:read; Done completes one in Slack and needs reminders:write.
 //   saved      messages Alex saved for later. Needs stars:read. Slack has moved saving to
@@ -27,7 +27,6 @@ export class SlackTodoError extends Error {
 }
 
 const SCOPE_HINT = {
-  asks: "search:read",
   reminders: "reminders:read",
   saved: "stars:read",
   lists: "lists:read",
@@ -72,18 +71,6 @@ function plainText(text, nameOf) {
     .slice(0, 400);
 }
 
-/** The start of the working day two working days back, in the dashboard's zone (as a Date). */
-function twoWorkingDaysAgo(now) {
-  const d = new Date(now);
-  let n = 0;
-  while (n < 2) {
-    d.setUTCDate(d.getUTCDate() - 1);
-    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) n++;
-  }
-  d.setUTCHours(6, 0, 0, 0);
-  return d;
-}
-
 export async function slackTodos({ config, env = process.env, logger, fetchImpl, now = new Date(), done = new Set() }) {
   const token = env.SLACK_USER_TOKEN;
   if (!token) throw new SlackTodoError("SLACK_USER_TOKEN is not set.", 500);
@@ -110,7 +97,7 @@ export async function slackTodos({ config, env = process.env, logger, fetchImpl,
   let scopesShown = false;
   const missing = (kind, err) => {
     if (err.slackError === "missing_scope") {
-      notes.push(`Add the ${SCOPE_HINT[kind]} user scope to read ${kind === "asks" ? "Slack mentions" : kind === "saved" ? "saved messages" : "Slack reminders"}.`);
+      notes.push(`Add the ${SCOPE_HINT[kind]} user scope to read ${kind === "saved" ? "saved messages" : "Slack reminders"}.`);
       // What the token in Netlify can actually do, once: tells a stale token from a missing scope.
       if (err.provided && !scopesShown) {
         scopesShown = true;
@@ -119,24 +106,6 @@ export async function slackTodos({ config, env = process.env, logger, fetchImpl,
     } else notes.push(`Could not read ${kind}: ${err.message}`);
     return [];
   };
-
-  // Asks: messages mentioning Alex, not from Alex, since two working days ago.
-  const asks = await (async () => {
-    const since = twoWorkingDaysAgo(now);
-    const after = new Date(since.getTime() - 86_400_000).toISOString().slice(0, 10);
-    const body = await call("search.messages", { query: `<@${myId}> -from:<@${myId}> after:${after}`, sort: "timestamp", sort_dir: "desc", count: "50" }, ctx);
-    const matches = (body.messages?.matches ?? []).filter((m) => Number(m.ts) * 1000 >= since.getTime());
-    await learn([...new Set(matches.flatMap((m) => [m.user, ...mentionIds(m.text)]))]);
-    return matches.map((m) => ({
-      key: todoKey("ask", m.permalink ?? `${m.channel?.id}:${m.ts}`),
-      kind: "ask",
-      from: nameOf(m.user) ?? m.username ?? "Someone",
-      where: m.channel?.is_im || m.channel?.is_mpim ? "a DM" : m.channel?.name ? `#${m.channel.name}` : "Slack",
-      text: plainText(m.text, nameOf),
-      at: new Date(Number(m.ts) * 1000).toISOString(),
-      url: m.permalink ?? null,
-    }));
-  })().catch((err) => missing("asks", err));
 
   // Reminders: Alex's own, not completed.
   const reminders = await (async () => {
@@ -205,7 +174,7 @@ export async function slackTodos({ config, env = process.env, logger, fetchImpl,
   lists.sort((a, b) => String(a.due ?? "9999").localeCompare(String(b.due ?? "9999")));
 
   const keep = (list) => list.filter((i) => !done.has(i.key));
-  return { asks: keep(asks), reminders: keep(reminders), saved: keep(saved), lists: keep(lists), notes, readAt: now.toISOString() };
+  return { reminders: keep(reminders), saved: keep(saved), lists: keep(lists), notes, readAt: now.toISOString() };
 }
 
 /** Completes one of Alex's Slack reminders. */

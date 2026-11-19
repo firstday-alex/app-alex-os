@@ -1,6 +1,6 @@
 // Alex's to-dos from Slack for Today's moves. See src/collectors/slack-todos.js.
 //
-//   GET  /slack-todos                       asks, reminders and saved messages, read live
+//   GET  /slack-todos                       reminders, Slack Lists and saved messages, read live
 //   POST /slack-todos  { done: key }        hide one here (only its hash is kept)
 //   POST /slack-todos  { done: key, reminderId }   also complete the reminder in Slack
 //   POST /slack-todos  { undo: key }        bring one back
