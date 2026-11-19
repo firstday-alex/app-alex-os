@@ -31,7 +31,7 @@ export default async (req) => {
     const body = await req.json().catch(() => ({}));
     const doc = await read();
     const key = String(body.done ?? body.undo ?? "");
-    if (!/^(ask|reminder|saved|list):[0-9a-f]{16}$/.test(key)) return json({ error: "Which item?" }, 400);
+    if (!/^(todo|reminder|saved|list):[0-9a-f]{16}$/.test(key)) return json({ error: "Which item?" }, 400);
     if (body.done) {
       if (body.reminderId) await completeReminder({ config, logger, reminderId: body.reminderId });
       doc.done[key] = new Date().toISOString();

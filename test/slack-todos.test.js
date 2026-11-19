@@ -9,7 +9,7 @@ const config = { system: { http: { maxAttempts: 1 } } };
 const now = new Date("2026-11-18T15:00:00Z"); // a Wednesday
 const ts = (iso) => String(Date.parse(iso) / 1000);
 
-function slack({ starsScope = true } = {}) {
+function slack({ starsScope = true, todos = true } = {}) {
   const calls = [];
   const fetchImpl = async (url, init) => {
     const u = new URL(url);
@@ -24,6 +24,12 @@ function slack({ starsScope = true } = {}) {
       ] },
       "stars.list": starsScope ? { ok: true, items: [{ type: "message", channel: "C2", date_create: Number(ts("2026-11-16T12:00:00Z")), message: { user: "UBLAKE", text: "PDP copy draft", ts: "1", permalink: "https://x/p2" } }] } : { ok: false, error: "missing_scope", provided: "reminders:read,users:read" },
       "reminders.complete": { ok: true },
+      "chat.getPermalink": { ok: true, permalink: "https://x/todo1" },
+      "saved.list": todos ? { ok: true, saved_items: [
+        { item_type: "message", channel_id: "C3", ts: "11.1", todo_state: "to_do", date_due: Number(ts("2026-11-19T17:00:00Z")), date_created: 5 },
+        { item_type: "message", channel_id: "C3", ts: "11.2", todo_state: "completed", message: { text: "finished", user: "UBLAKE", ts: "11.2" } },
+        { item_type: "message", channel_id: "C3", ts: "11.3", todo_state: "to_do", message: { text: "Review <@UBLAKE> PDP copy", user: "UBLAKE", ts: "11.3", permalink: "https://x/todo3" } },
+      ] } : { ok: false, error: "not_allowed_token_type" },
       "slackLists.items.list": { ok: true, list: { title: "Alex to-dos" }, items: [
         { id: "Rec1", date_created: 1, fields: [{ column_id: "Col1", text: "Draft Q1 rock list" }, { column_id: "Col2", checkbox: [false] }, { column_id: "Col3", date: ["2026-11-20"] }, { column_id: "Col4", user: ["UBLAKE"] }] },
         { id: "Rec2", date_created: 1, fields: [{ column_id: "Col1", text: "Already ticked" }, { column_id: "Col2", checkbox: [true] }] },
@@ -64,4 +70,16 @@ test("a Slack List named in config: open rows with title, due date and owner; ti
   const out = await slackTodos({ config: { ...config, system: { ...config.system, slack: { todoLists: ["F0LIST1"] } } }, env: { SLACK_USER_TOKEN: "xoxp-1" }, fetchImpl, now });
   assert.deepEqual(out.lists.map((l) => [l.list, l.text, l.due, l.owner]), [["Alex to-dos", "Draft Q1 rock list", "2026-11-20", "Blake Tucker"]]);
   assert.equal(calls.find((c) => c.method === "slackLists.items.list").params.list_id, "F0LIST1");
+});
+
+test("Slack To-dos through saved.list: open ones only, due first; a refusal leaves a note and the rest loads", async () => {
+  const { fetchImpl, calls } = slack();
+  const out = await slackTodos({ config, env: { SLACK_USER_TOKEN: "xoxp-1" }, fetchImpl, now });
+  assert.deepEqual(out.todos.map((t) => [t.text, t.url, Boolean(t.due)]), [["A Slack message", "https://x/todo1", true], ["Review @Blake Tucker PDP copy", "https://x/todo3", false]]);
+  assert.deepEqual(calls.find((c) => c.method === "saved.list").params, { filter: "todo_with_completed", limit: "50" });
+  assert.ok(!/C3|UBLAKE/.test(JSON.stringify(out.todos)), "no Slack id in to-dos");
+  const refused = await slackTodos({ config, env: { SLACK_USER_TOKEN: "xoxp-1" }, fetchImpl: slack({ todos: false }).fetchImpl, now });
+  assert.deepEqual(refused.todos, []);
+  assert.match(refused.notes.join(" "), /not_allowed_token_type/);
+  assert.equal(refused.reminders.length, 1);
 });

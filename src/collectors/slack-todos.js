@@ -125,6 +125,41 @@ export async function slackTodos({ config, env = process.env, logger, fetchImpl,
       .sort((a, b) => String(a.at ?? "9").localeCompare(String(b.at ?? "9")));
   })().catch((err) => missing("reminders", err));
 
+  // Slack To-dos (the sidebar tab that replaced Later). Slack has no public API for them;
+  // this tries saved.list, the undocumented method Slack's own web app uses (Alex asked to
+  // try it, 2026-11-19). Read-only. Slack may refuse a user token (not_allowed_token_type)
+  // or change it without notice; then the list is empty with a note and the rest still loads.
+  // Field names follow slackcli's reading of it (todo_state: saved | to_do | completed).
+  const todos = await (async () => {
+    const body = await call("saved.list", { filter: "todo_with_completed", limit: "50" }, ctx);
+    const items = (body.saved_items ?? body.items ?? []).filter((i) => i && i.todo_state !== "completed" && (i.todo_state ?? "to_do") !== "saved");
+    await learn([...new Set(items.flatMap((i) => (i.message ? [i.message.user, ...mentionIds(i.message.text)] : [])))]);
+    const out = [];
+    for (const i of items) {
+      const channel = i.channel_id ?? i.item_id ?? i.channel ?? null;
+      const ts = i.message?.ts ?? i.ts ?? null;
+      let url = i.message?.permalink ?? null;
+      if (!url && channel && ts) url = await call("chat.getPermalink", { channel, message_ts: ts }, ctx).then((b) => b.permalink ?? null).catch(() => null);
+      const text = i.message?.text ? plainText(i.message.text, nameOf) : i.file?.title ?? i.file?.name ?? "A Slack message";
+      const due = Number(i.date_due) > 0 ? new Date(Number(i.date_due) * 1000).toISOString() : null;
+      out.push({
+        key: todoKey("todo", `${channel}:${ts}:${i.date_created ?? i.date_saved ?? ""}`),
+        kind: "todo",
+        from: i.message?.user ? nameOf(i.message.user) : null,
+        text,
+        due,
+        at: i.date_saved ?? i.date_created ? new Date(Number(i.date_saved ?? i.date_created) * 1000).toISOString() : null,
+        url,
+      });
+    }
+    return out.sort((a, b) => String(a.due ?? "9999").localeCompare(String(b.due ?? "9999")));
+  })().catch((err) => {
+    if (err.slackError === "not_allowed_token_type" || err.slackError === "unsupported_auth_type") notes.push("Slack does not let an app token read your To-dos (it said " + err.slackError + "); only Slack's own app can. Use a Slack reminder, or a Slack List, for to-dos you want here.");
+    else if (err.slackError === "unknown_method") notes.push("Slack has no saved.list for app tokens, so your To-dos can't be read here.");
+    else notes.push(`Could not read your Slack To-dos: ${err.message}`);
+    return [];
+  });
+
   // Saved for later.
   const saved = await (async () => {
     const body = await call("stars.list", { limit: "50" }, ctx);
@@ -174,7 +209,7 @@ export async function slackTodos({ config, env = process.env, logger, fetchImpl,
   lists.sort((a, b) => String(a.due ?? "9999").localeCompare(String(b.due ?? "9999")));
 
   const keep = (list) => list.filter((i) => !done.has(i.key));
-  return { reminders: keep(reminders), saved: keep(saved), lists: keep(lists), notes, readAt: now.toISOString() };
+  return { todos: keep(todos), reminders: keep(reminders), saved: keep(saved), lists: keep(lists), notes, readAt: now.toISOString() };
 }
 
 /** Completes one of Alex's Slack reminders. */
