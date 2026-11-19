@@ -4,6 +4,8 @@
   "sprintListId": "901112668495",
   "_VERIFIED": "List id, statuses and all three custom field ids read live from the First Day workspace on 2026-09-10: Project Owner (673c4185), Big Swing (f9135883), Rock Reference (de6b3171).",
   "backlogListId": "901111926996",
+  "lastSprintListId": "1700220000001224",
+  "_comment_lastSprint": "Alex, 2026-11-19: at rollover, last sprint's finished tickets move from Current Sprint to the 'Last Sprint' list (statuses: to do, complete), so Current Sprint holds only this sprint's work. The collector reads it and merges it in; status 'complete' counts as last sprint's done. Read live 2026-11-19.",
   "_comment_backlog": "'Site Backlog' sits in the same folder as Current Sprint, which answers the spec's open question: sprint tickets DO originate in a separate backlog list, so include_timl must stay true or tickets whose home list is the backlog will be invisible.",
   "taskQuery": {
     "include_closed": true,

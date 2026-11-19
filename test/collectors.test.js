@@ -143,3 +143,25 @@ test("the real Current Sprint statuses all bucket correctly", () => {
 
   assert.deepEqual(warnings, [], "no live status should be falling through to the default");
 });
+
+test("Last Sprint list: its finished tickets are merged into the sprint read, open ones and duplicates left out", async () => {
+  const { collectClickUp } = await import("../src/collectors/clickup.js");
+  const { loadConfig } = await import("../src/config.js");
+  const config = loadConfig();
+  const task = (id, status, type) => ({ id, name: `T${id}`, status: { status, type }, assignees: [], custom_fields: [], date_updated: "1", url: `u${id}` });
+  const fetchImpl = async (url) => {
+    const u = String(url);
+    const body = u.includes(`/list/${config.clickup.lastSprintListId}/task`)
+      ? { tasks: [task("b", "complete", "closed"), task("c", "to do", "open"), task("a", "complete", "closed")], last_page: true }
+      : u.includes(`/list/${config.clickup.sprintListId}/task`)
+        ? { tasks: [task("a", "in-progress", "custom")], last_page: true }
+        : u.includes("/field") ? { fields: [] } : { tasks: [], comments: [], last_page: true };
+    return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const store = { backend: { get: async () => null, set: async () => {} }, getCached: async () => null, setCached: async () => {}, getFieldMap: async () => null, setFieldMap: async () => {} };
+  const snap = await collectClickUp({ config: { ...config, clickup: { ...config.clickup, backlogListId: null } }, token: "pk", store, fetchImpl, sleep: async () => {} });
+  const by = Object.fromEntries(snap.items.map((t) => [t.id, t]));
+  assert.deepEqual(Object.keys(by).sort(), ["a", "b"]);
+  assert.equal(by.a.status, "in-progress", "a ticket on both lists keeps its Current Sprint copy");
+  assert.equal(by.b.bucket, "done");
+});

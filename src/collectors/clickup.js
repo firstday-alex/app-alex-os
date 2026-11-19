@@ -197,13 +197,13 @@ export function normalizeTask(task, { fieldMap, statusMap, logger }) {
 
 /* -------------------------------- collection -------------------------------- */
 
-export async function fetchTaskPages({ config, token, logger, fetchImpl, sleep }) {
+export async function fetchTaskPages({ config, token, logger, fetchImpl, sleep, listId = null, label = "clickup.list.task" }) {
   const cu = config.clickup;
   const q = cu.taskQuery ?? {};
   const http = config.system.http;
 
   const result = await paginate({
-    label: "clickup.list.task",
+    label,
     maxPages: http.maxPages,
     logger,
     fetchPage: async (page) => {
@@ -214,11 +214,11 @@ export async function fetchTaskPages({ config, token, logger, fetchImpl, sleep }
         include_timl: String(q.include_timl ?? true),
         order_by: "updated",
       });
-      const url = `${cu.apiBase}/list/${cu.sprintListId}/task?${params}`;
+      const url = `${cu.apiBase}/list/${listId ?? cu.sprintListId}/task?${params}`;
       const { body } = await httpJson(url, {
         headers: authHeaders(token),
         logger,
-        label: "clickup.list.task",
+        label,
         fetchImpl,
         timeoutMs: http.timeoutMs,
         maxAttempts: http.maxAttempts,
@@ -232,6 +232,22 @@ export async function fetchTaskPages({ config, token, logger, fetchImpl, sleep }
   });
 
   return result;
+}
+
+/** The finished tickets on the Last Sprint list (clickup.lastSprintListId), or [] when unset or unreadable. */
+export async function fetchLastSprint({ config, token, logger, fetchImpl, sleep }) {
+  const listId = config.clickup?.lastSprintListId;
+  if (!listId) return [];
+  try {
+    const { items } = await fetchTaskPages({ config, token, logger, fetchImpl, sleep, listId, label: "clickup.last_sprint.task" });
+    // Finished ones only: an open ticket left there is not this sprint's work, and must not
+    // raise sprint flags.
+    const done = new Set((config.clickup.statusMap?.done ?? []).map((x) => String(x).toLowerCase()));
+    return items.filter((t) => ["closed", "done"].includes(t.status?.type) || done.has(String(t.status?.status ?? "").toLowerCase()));
+  } catch (err) {
+    logger?.warn?.("clickup.last_sprint_failed", { err });
+    return [];
+  }
 }
 
 /** Whether a backlog ticket has Ready to Start = Ready. A dropdown value comes back as the option id or as its orderindex, so either counts. */
@@ -419,7 +435,15 @@ export async function collectClickUp({ config, token, store, logger, fetchImpl, 
     sleep,
     forceRefresh: mode === "official",
   });
-  const { items: rawTasks, pages, truncated } = await fetchTaskPages({ config, token, logger, fetchImpl, sleep });
+  const { items: sprintTasks, pages, truncated } = await fetchTaskPages({ config, token, logger, fetchImpl, sleep });
+  // Last sprint's finished tickets. Alex, 2026-11-19: at rollover they move from Current
+  // Sprint to the "Last Sprint" list (status complete), so Current Sprint holds only this
+  // sprint. Read here and merged in, so last week's wins, the Workshop's "done last sprint"
+  // and the Impact record still see them, and a ticket that moved lists is not read as
+  // gone. A ticket on both lists keeps its Current Sprint copy. A failure costs only these.
+  const lastSprint = await fetchLastSprint({ config, token, logger, fetchImpl, sleep });
+  const inSprint = new Set(sprintTasks.map((t) => String(t.id)));
+  const rawTasks = [...sprintTasks, ...lastSprint.filter((t) => !inSprint.has(String(t.id)))];
 
   const tasks = rawTasks.map((task) =>
     normalizeTask(task, { fieldMap, statusMap: config.clickup.statusMap, logger }),

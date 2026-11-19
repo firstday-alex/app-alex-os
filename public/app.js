@@ -2970,7 +2970,7 @@ function renderUpdate(report) {
 
 const winsViews = {
   thisweek: { title: "This week's wins", build: buildThisWeekWins, excluded: new Set(), wins: null, empty: 'No tickets are in "done (this sprint)" right now.' },
-  lastweek: { title: "Last week's wins", build: buildLastWeekWins, excluded: new Set(), wins: null, empty: 'No tickets are in last sprint\'s statuses ("closed (last sprint)" or "dont use", formerly "complete") right now.' },
+  lastweek: { title: "Last week's wins", build: buildLastWeekWins, excluded: new Set(), wins: null, empty: 'No finished tickets on the Last Sprint list right now.' },
 };
 
 function renderWins(kind, report) {
