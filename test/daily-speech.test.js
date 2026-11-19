@@ -1,25 +1,52 @@
-// Daily Speech: the right context goes in, only a well-formed speech comes out, and any
+// Daily wins: code picks the wins, only real wins and names come out, and any
 // figure the model could not have got from the data is caught. The storytelling itself is
 // not tested here; whether its numbers are real is.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanSpeech, numbersIn, recentlyShipped, speechText, storeForSpeech, ticketForSpeech, unverifiedNumbers } from "../src/agents/daily-speech.js";
+import { cleanWins, winCandidates, numbersIn, recentlyShipped, speechText, storeForSpeech, ticketForSpeech, unverifiedNumbers } from "../src/agents/daily-speech.js";
 
-const beats = [
-  { label: "The win", text: "Robson got the bundle page live." },
-  { label: "The stakes", text: "Net sales are up 12% on last week." },
-  { label: "Today", text: "Blake takes checkout QA." },
+const now = new Date("2026-11-19T14:00:00Z");
+const tasks = [
+  { id: "a1", name: "Gridwall V2 live", status: "done (this sprint)", assignees: [{ username: "Cristobal Ruiz" }], bigSwing: { label: "Bundles" }, url: "https://app.clickup.com/t/a1", dateDone: Date.UTC(2026, 10, 18) },
+  { id: "b2", name: "BYOB gridwall QA", status: "ready for deploy", assignees: [{ username: "Akansha Rao" }, { username: "Cristobal Ruiz" }] },
+  { id: "c3", name: "Still building", status: "in progress", assignees: [{ username: "Blake Tucker" }] },
+  { id: "d4", name: "Called out yesterday", status: "done", assignees: [{ username: "Blake Tucker" }] },
 ];
 
-test("a speech needs a headline and all three beats, put back in order", () => {
-  assert.equal(cleanSpeech({ headline: "", beats, close: "", facts: [] }), null);
-  assert.equal(cleanSpeech({ headline: "H", beats: beats.slice(0, 2), close: "", facts: [] }), null);
-  const s = cleanSpeech({ headline: " Bundles are live ", beats: [beats[2], beats[0], beats[1]], close: "Go.", facts: [{ claim: "12%", source: "store" }, { claim: "x" }] });
-  assert.deepEqual(s.beats.map((b) => b.label), ["The win", "The stakes", "Today"]);
-  assert.equal(s.headline, "Bundles are live");
-  assert.equal(s.facts.length, 1, "a fact with no source is dropped");
-  assert.equal(speechText(s), "Bundles are live\n\nRobson got the bundle page live.\nNet sales are up 12% on last week.\nBlake takes checkout QA.\n\nGo.");
+test("code picks the wins: done or ready-to-ship tickets and live changes; called-out ones left off; unticked old ones carried", () => {
+  const previous = [{ key: "task:z9", title: "Moved on since", stage: "done", who: ["Robson Lopes"], firstSeen: "2026-11-17T13:00:00Z", why: "old" }, { key: "task:old", title: "Too old", who: [], firstSeen: "2026-10-01T13:00:00Z" }];
+  const c = winCandidates({ tasks, production: [{ date: "2026-11-18", change: "Gridwall V2 promoted", result: "Won + Promoted" }], celebrated: { "task:d4": { at: "x" } }, previous, now });
+  assert.deepEqual(c.map((w) => [w.key.split(":")[0], w.title, w.stage]), [
+    ["task", "Gridwall V2 live", "done"],
+    ["task", "BYOB gridwall QA", "ready to ship"],
+    ["change", "Gridwall V2 promoted", "live: Won + Promoted"],
+    ["task", "Moved on since", "done"],
+  ]);
+  assert.equal(c[3].carried, true);
+  assert.equal(c[3].why, undefined, "a carried win is ranked afresh");
+});
+
+test("the ranked list keeps only wins code gave, code's titles, kudos only for that win's people, and adds back skipped ones", () => {
+  const c = winCandidates({ tasks, now });
+  const parsed = {
+    headline: " Gridwall is live ",
+    close: "Keep going.",
+    facts: [{ claim: "x", source: "y" }, { claim: "no source" }],
+    wins: [
+      { key: "task:b2", why: "Unblocks the bundle test.", kudos: [{ name: "Akansha", for: "QA on the BYOB gridwall" }, { name: "Drew", for: "made up" }, { name: "Akansha Rao", for: "twice" }] },
+      { key: "task:nope", why: "invented", kudos: [] },
+      { key: "task:b2", why: "dupe", kudos: [] },
+    ],
+  };
+  const out = cleanWins(parsed, c, [{ key: "task:a1", firstSeen: "2026-11-18T13:00:00Z" }], now);
+  assert.equal(out.headline, "Gridwall is live");
+  assert.deepEqual(out.wins.map((w) => [w.rank, w.key, w.title]), [[1, "task:b2", "BYOB gridwall QA"], [2, "task:a1", "Gridwall V2 live"], [3, "task:d4", "Called out yesterday"]]);
+  assert.deepEqual(out.wins[0].kudos, [{ name: "Akansha Rao", for: "QA on the BYOB gridwall" }]);
+  assert.equal(out.wins[1].firstSeen, "2026-11-18T13:00:00Z", "first listed day is kept");
+  assert.equal(out.wins[0].firstSeen, now.toISOString());
+  assert.equal(out.facts.length, 1);
+  assert.equal(cleanWins({ headline: "", wins: [] }, c, [], now), null);
 });
 
 test("numbers are found as written", () => {
@@ -72,14 +99,6 @@ test("store tiles keep only what is available, with their comparisons", () => {
 test("a sprint ticket is reduced to what, who and where it stands", () => {
   const t = ticketForSpeech({ name: "Fix cart", status: "qa", assignees: [{ username: "Blake Tucker" }], taskOwners: [{ username: "Robson Lopes" }], bigSwing: { label: "Checkout" }, dueDate: Date.UTC(2026, 10, 7) });
   assert.deepEqual(t, { name: "Fix cart", status: "qa", who: ["Blake"], bigSwing: "Checkout", signal: null, due: "2026-11-07", closed: null });
-});
-
-test("the XF beat is optional, and slots in after the win when present", () => {
-  const xf = { label: "Across the business", text: "In #marketing, Sam asked about the holiday offer." };
-  const s = cleanSpeech({ headline: "H", beats: [...beats, xf], close: "", facts: [] });
-  assert.deepEqual(s.beats.map((b) => b.label), ["The win", "Across the business", "The stakes", "Today"]);
-  assert.ok(cleanSpeech({ headline: "H", beats, close: "", facts: [] }), "a speech with nothing XF is still a speech");
-  assert.equal(cleanSpeech({ headline: "H", beats: [beats[0], xf, beats[2]], close: "", facts: [] }), null, "XF does not stand in for the stakes");
 });
 
 /* ------------------------------ morning speech ------------------------------ */

@@ -730,12 +730,28 @@ ul.plain { margin: 0; padding-left: 18px; }
 .ds-facts { margin-top: 10px; max-width: 760px; }
 .ds-facts > summary { cursor: pointer; color: var(--muted); font-size: 14px; }
 .ds-facts ul { margin: 6px 0 0; padding-left: 18px; font-size: 14px; }
-.ds-notes { max-width: 760px; margin-bottom: 18px; }
+.ds-notes { max-width: 760px; margin: 22px 0 18px; }
 .ds-notes textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; resize: vertical; }
 .ds-note-list { list-style: none; margin: 8px 0 0; padding: 0; }
 .ds-note-list li { border-left: 3px solid var(--green); padding: 4px 0 4px 12px; margin-top: 6px; }
 .ds-note-del { font-size: 12px; padding: 0 6px; }
 .ds-notes .bad { color: var(--red); }
+.dw-list { list-style: none; margin: 10px 0 0; padding: 0; }
+.dw-win { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: start; padding: 12px 0; border-top: 1px solid var(--line); }
+.dw-win:first-child { border-top: 0; }
+.dw-rank { width: 26px; height: 26px; border-radius: 50%; background: var(--green); color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center; }
+.dw-called .dw-rank { background: var(--line); color: var(--muted); }
+.dw-called .dw-title { text-decoration: line-through; color: var(--muted); }
+.dw-title { font-weight: 650; line-height: 1.35; }
+.dw-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.dw-tag { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: #eef2f1; color: var(--muted); }
+.dw-rock { background: #e6f1ee; color: #0b6b62; font-weight: 600; }
+.dw-carry { background: #fff4dc; color: #8a5a00; }
+.dw-why { margin: 6px 0 0; line-height: 1.5; }
+.dw-kudos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.dw-kudo { font-size: 13px; padding: 3px 10px; border-radius: 999px; background: #f3e8f7; color: #4b1f5c; }
+.dw-check { white-space: nowrap; }
+@media (max-width: 640px) { .dw-win { grid-template-columns: 26px 1fr; } .dw-check { grid-column: 2; justify-self: start; } }
 .ds-xf { margin-top: 22px; max-width: 760px; }
 .ds-xf-list { list-style: none; margin: 8px 0 0; padding: 0; }
 .ds-xf-list li { border-left: 3px solid var(--line); padding: 6px 0 6px 12px; margin-top: 8px; }

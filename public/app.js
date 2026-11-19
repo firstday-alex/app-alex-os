@@ -4969,7 +4969,7 @@ document.addEventListener("click", async (event) => {
    Claude call on the server, only when the button is pressed; every figure in it was
    checked against the data, and any it could not find is listed above the speech. */
 
-const speech = { latest: null, status: null, loaded: false, polling: null, error: null, notes: [], notesFrom: null, notesError: null, draft: "" };
+const speech = { latest: null, status: null, celebrated: {}, loaded: false, polling: null, error: null, notes: [], notesFrom: null, notesError: null, draft: "" };
 
 async function loadDayNotes() {
   const res = await fetch(`${FN}/day-notes`).then((r) => r.json()).catch(() => null);
@@ -5007,6 +5007,7 @@ async function loadSpeech() {
   if (res) {
     speech.latest = res.latest;
     speech.status = res.status;
+    speech.celebrated = res.celebrated ?? speech.celebrated;
   }
   renderSpeech();
   if (speech.status?.running) pollSpeech();
@@ -5019,6 +5020,7 @@ function pollSpeech() {
     if (!res) return;
     speech.latest = res.latest;
     speech.status = res.status;
+    speech.celebrated = res.celebrated ?? speech.celebrated;
     if (!res.status?.running) {
       clearInterval(speech.polling);
       speech.polling = null;
@@ -5041,13 +5043,12 @@ function renderSpeech() {
   const missed = latest ? [!latest.readStandups && "stand-ups", !latest.readImpact && "the Impact record", !latest.readStore && "store numbers", latest.readChangelog === false && "the changelog sheet"].filter(Boolean) : [];
 
   root.innerHTML = `
-    ${notesSection()}
     <div class="bar up-bar">
-      <button type="button" id="speech-run"${running ? " disabled" : ""}>${running ? "Writing…" : latest ? "Write a new one" : "Write today's speech"}</button>
+      <button type="button" id="speech-run"${running ? " disabled" : ""}>${running ? "Writing…" : latest ? "Write a new one" : "Write today's wins"}</button>
       ${latest ? `<button type="button" class="ghost" id="speech-copy">Copy</button>` : ""}
       <span class="meta" data-copy-note="speech">${
         running
-          ? `Started ${esc(new Date(status.startedAt).toLocaleTimeString())}. Reading the readout, stand-ups and this week's wins, then one call to Claude; usually under a minute.`
+          ? `Started ${esc(new Date(status.startedAt).toLocaleTimeString())}. Reading the sprint, stand-ups, notes and the changelog, then one call to Claude to rank the wins; usually under a minute.`
           : latest
             ? `Written ${latest.trigger === "morning" ? "automatically after the 8 AM readout, " : ""}${esc(new Date(latest.generatedAt).toLocaleString())}, from the readout pulled ${esc(latest.dateKey ?? "")}.${latest.trigger === "morning" ? " Add notes and write a new one to fold them in." : ""}`
             : "Not written yet."
@@ -5063,24 +5064,91 @@ function renderSpeech() {
     }
     ${missed.length ? `<p class="meta">Not available when this was written: ${esc(missed.join(", "))}.</p>` : ""}
     ${(latest?.xf?.notes ?? []).map((n) => `<div class="missing">${esc(n)}</div>`).join("")}
+    ${latest ? winsList(latest) : ""}
     ${
-      latest
-        ? `<article class="ds-speech">
-      <p class="ds-headline">${esc(latest.headline)}</p>
-      ${latest.beats.map((b) => `<section class="ds-beat"><span class="ds-beat-label">${esc(b.label)}</span><p>${esc(b.text)}</p></section>`).join("")}
-      ${latest.close ? `<p class="ds-close">${esc(latest.close)}</p>` : ""}
-    </article>
-    ${
-      latest.facts?.length
+      latest?.facts?.length
         ? `<details class="ds-facts"><summary>What it rests on (${esc(latest.facts.length)})</summary><ul>${latest.facts
             .map((f) => `<li>${esc(f.claim)} <span class="meta">· ${esc(f.source)}</span></li>`)
             .join("")}</ul></details>`
         : ""
-    }`
-        : ""
     }
+    ${notesSection()}
     ${latest ? xfSection(latest.xf) : ""}`;
 }
+
+/** The wins not yet called out, as text to paste in Slack or send up; an old speech as it was. */
+function winsCopyText(latest) {
+  if (!latest?.wins) return latest?.text ?? "";
+  const called = speech.celebrated ?? {};
+  const lines = [latest.headline, ""];
+  latest.wins.filter((w) => !called[w.key]).forEach((w, i) => {
+    lines.push(`${i + 1}. ${w.title}${w.rock ? ` (${w.rock})` : ""}`);
+    if (w.why) lines.push(`   ${w.why}`);
+    if (w.kudos?.length) lines.push(`   Kudos: ${w.kudos.map((k) => `${k.name.split(/\s+/)[0]} for ${k.for}`).join("; ")}`);
+  });
+  if (latest.close) lines.push("", latest.close);
+  return lines.join("\n");
+}
+
+/** "Tue" for a date, or "today". */
+function winDay(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toDateString() === new Date().toDateString() ? "today" : d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+/**
+ * The sprint's wins, most important first: why each matters and who to thank for which
+ * part. Tick "Called out" once said; anything not ticked carries over to tomorrow's list.
+ */
+function winsList(latest) {
+  if (!latest.wins) return `<p class="meta">This was written in the old speech format. Press Write a new one for the ranked wins list.</p>`;
+  const called = speech.celebrated ?? {};
+  const open = latest.wins.filter((w) => !called[w.key]);
+  const done = latest.wins.filter((w) => called[w.key]);
+  const today = new Date().toDateString();
+  const row = (w, n) => {
+    const carried = w.carried || (w.firstSeen && new Date(w.firstSeen).toDateString() !== today);
+    const isCalled = Boolean(called[w.key]);
+    return `<li class="dw-win${isCalled ? " dw-called" : ""}">
+      <span class="dw-rank">${n ?? "✓"}</span>
+      <div class="dw-body">
+        <div class="dw-title">${w.url ? `<a href="${esc(w.url)}" target="_blank" rel="noreferrer">${esc(w.title)}</a>` : esc(w.title)}</div>
+        <div class="dw-tags">
+          ${w.rock ? `<span class="dw-tag dw-rock">${esc(w.rock)}</span>` : ""}
+          <span class="dw-tag">${esc(w.stage)}</span>
+          ${carried && !isCalled ? `<span class="dw-tag dw-carry" title="Not called out yet">carried over since ${esc(winDay(w.firstSeen))}</span>` : ""}
+        </div>
+        ${w.why ? `<p class="dw-why">${esc(w.why)}</p>` : ""}
+        ${w.kudos?.length ? `<div class="dw-kudos">${w.kudos.map((k) => `<span class="dw-kudo">👏 <strong>${esc(k.name.split(/\s+/)[0])}</strong> for ${esc(k.for.replace(/^for\s+/i, ""))}</span>`).join("")}</div>` : ""}
+      </div>
+      <button type="button" class="${isCalled ? "ghost " : ""}sm dw-check" data-win-${isCalled ? "uncall" : "call"}="${esc(w.key)}">${isCalled ? "Undo" : "Called out"}</button>
+    </li>`;
+  };
+  return `<article class="ds-speech dw">
+      <p class="ds-headline">${esc(latest.headline)}</p>
+      <p class="meta">${esc(plural(open.length, "win", "wins"))} to celebrate, most important first. Tick <strong>Called out</strong> once you've said it; anything not ticked carries over to tomorrow.</p>
+      ${open.length ? `<ol class="dw-list">${open.map((w, i) => row(w, i + 1)).join("")}</ol>` : `<p class="sub mv-clear">✓ Every win so far has been called out.</p>`}
+      ${latest.close ? `<p class="ds-close">${esc(latest.close)}</p>` : ""}
+    </article>
+    ${done.length ? `<details class="ds-facts"><summary>Called out (${esc(done.length)})</summary><ol class="dw-list">${done.map((w) => row(w, null)).join("")}</ol></details>` : ""}`;
+}
+
+document.addEventListener("click", async (event) => {
+  const b = event.target.closest("[data-win-call], [data-win-uncall]");
+  if (!b) return;
+  const key = b.dataset.winCall ?? b.dataset.winUncall;
+  const body = b.dataset.winCall ? { called: key } : { uncalled: key };
+  b.disabled = true;
+  const res = await fetch(`${FN}/speech`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    b.disabled = false;
+    return alert(`Not saved: ${out.error ?? `HTTP ${res.status}`}`);
+  }
+  speech.celebrated = out.celebrated ?? speech.celebrated;
+  renderSpeech();
+});
 
 /** The cross-functional list the speech was written from, each item linked to where it was said. */
 function xfSection(xf) {
@@ -5133,7 +5201,7 @@ document.addEventListener("click", async (event) => {
   if (event.target.closest("#speech-copy")) {
     const note = document.querySelector('[data-copy-note="speech"]');
     try {
-      await navigator.clipboard.writeText(speech.latest?.text ?? "");
+      await navigator.clipboard.writeText(winsCopyText(speech.latest));
       note.textContent = "Copied.";
     } catch {
       note.textContent = "The browser would not copy. Select the text and copy it by hand.";
@@ -5365,7 +5433,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 // Write-ups is what gets sent or kept. Setup is only in the menu, and names itself in the
 // top bar when open. The drawer lists the same groups (index.html).
 const NAV_GROUPS = [
-  { id: "today", pages: [["readout", "What needs you"], ["speech", "Daily Speech"], ["standup", "Stand-up"]] },
+  { id: "today", pages: [["readout", "What needs you"], ["speech", "Daily wins"], ["standup", "Stand-up"]] },
   { id: "team", pages: [["sprint", "Sprint"], ["backlog", "Backlog"], ["rocks", "Rocks"], ["plan", "Quarter"], ["people", "1:1"], ["ideation", "Ideation"]] },
   { id: "writeups", pages: [["mystandup", "My stand-up"], ["upsu", "Update + Stand-up"], ["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["impact", "Overall Impact"]] },
 ];

@@ -1,15 +1,18 @@
-// Daily Speech. Agentic. On demand only: one Anthropic call when Alex presses the button
-// on the Daily Speech tab. Nothing else invokes it.
+// Daily wins (the Daily Speech tab). Agentic: one Anthropic call after the 8 AM readout and
+// when Alex presses the button.
 //
-// Writes the day's top-line storyline Alex says out loud to the team: a headline, the
-// beats (the win, across the business, the stakes, today) and a closing line. The model
-// sees what the latest readout, the last few days of stand-ups, the Impact record and the
-// cross-functional (XF) list and the site changelog sheet hold, and nothing else. XF is what people outside the team
-// said to Alex or the team since the previous working day (src/collectors/xf.js).
+// Alex, 2026-11-19: "I need a list of wins from most important to least and why they are
+// important and who I can give kudos to for what parts... every day should be a celebration
+// and important for me to manage up... the accomplishments so far in the sprint... ones I
+// don't check before next day can I carry over?"
 //
-// The model's story is judgement. Whether its numbers are real is not: code checks every
-// figure in the speech against the context it was given and lists any it cannot find, so
-// Alex sees a made-up number before saying it to the room.
+// Code decides WHAT the wins are: every sprint ticket done (or ready to ship) and every
+// change to the live site in the last week, plus anything from an earlier list Alex has not
+// ticked yet (carried over). Claude only ranks them, says why each matters, and splits the
+// kudos. Code then keeps only wins it handed over (titles are code's, never the model's),
+// keeps kudos only for that win's own assignees, adds back any win the model left out, and
+// checks every figure against the data. Ticked wins ("Called out") are kept in
+// speech/celebrated.json and left off later lists.
 
 import { betaJSONSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/beta/json-schema";
 import { ask, readSkill } from "./anthropic.js";
@@ -20,9 +23,11 @@ import { fetchXf } from "../collectors/xf.js";
 import { collectChangelog, changelogConfigured, changeForSpeech } from "../collectors/changelog.js";
 import { LEDGER_KEY } from "../impact/ledger.js";
 import { notesForSpeech } from "../store/day-notes.js";
+import { createHash } from "node:crypto";
 
 export const SPEECH_KEY = "speech/latest.json";
 export const SPEECH_STATUS_KEY = "speech/status.json";
+export const CELEBRATED_KEY = "speech/celebrated.json";
 export const speechHistoryKey = (dateKey) => `speech/history/${dateKey}.json`;
 
 const DAY_MS = 86_400_000;
@@ -33,17 +38,27 @@ const MAX_SHIPPED = 60;
 const SPEECH_SCHEMA = {
   type: "object",
   properties: {
-    headline: { type: "string", description: "the one line to remember, under 15 words" },
-    beats: {
+    headline: { type: "string", description: "the one line to remember about the sprint so far, under 15 words" },
+    wins: {
       type: "array",
-      description: "in order: the win, across the business (only when the XF list has something worth saying), the stakes, today",
+      description: "EVERY win you were given, most important first, each once",
       items: {
         type: "object",
         properties: {
-          label: { type: "string", enum: ["The win", "Across the business", "The stakes", "Today"] },
-          text: { type: "string", description: "two to four spoken sentences" },
+          key: { type: "string", description: "the win's key exactly as given" },
+          why: { type: "string", description: "one or two sentences: why it matters, tied to the rock, a test or a number from the data" },
+          kudos: {
+            type: "array",
+            description: "who to thank and for which part; only names from that win's who list",
+            items: {
+              type: "object",
+              properties: { name: { type: "string" }, for: { type: "string", description: "the part they did, a few words" } },
+              required: ["name", "for"],
+              additionalProperties: false,
+            },
+          },
         },
-        required: ["label", "text"],
+        required: ["key", "why", "kudos"],
         additionalProperties: false,
       },
     },
@@ -62,12 +77,10 @@ const SPEECH_SCHEMA = {
       },
     },
   },
-  required: ["headline", "beats", "close", "facts"],
+  required: ["headline", "wins", "close", "facts"],
   additionalProperties: false,
 };
 
-const BEAT_ORDER = ["The win", "Across the business", "The stakes", "Today"];
-const REQUIRED_BEATS = ["The win", "The stakes", "Today"];
 const firstNames = (list) => [...new Set((list ?? []).map((u) => String(u?.username ?? u?.name ?? "").split(/\s+/)[0]).filter(Boolean))];
 const iso = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : null);
 
@@ -160,20 +173,114 @@ export function unverifiedNumbers(speechText, contextText) {
   return out;
 }
 
-/** Keeps a well-formed speech, or explains why there is none. */
-export function cleanSpeech(parsed) {
-  const headline = String(parsed?.headline ?? "").trim();
-  const close = String(parsed?.close ?? "").trim();
-  const byLabel = new Map((parsed?.beats ?? []).filter((b) => b?.text?.trim()).map((b) => [b.label, b.text.trim()]));
-  const beats = BEAT_ORDER.filter((l) => byLabel.has(l)).map((label) => ({ label, text: byLabel.get(label) }));
-  if (!headline || !REQUIRED_BEATS.every((l) => byLabel.has(l))) return null;
-  const facts = (parsed?.facts ?? []).filter((f) => f?.claim && f?.source).map((f) => ({ claim: String(f.claim), source: String(f.source) }));
-  return { headline, beats, close, facts };
+// ------------------------------------------------------------------- the wins
+
+// Ticket statuses that count as a win this sprint, and how a win's stage reads.
+const WIN_STAGE = new Map([
+  ["done (this sprint)", "done"],
+  ["done", "done"],
+  ["ready for deploy", "ready to ship"],
+]);
+const CARRY_DAYS = 14;
+const fullNames = (list) => [...new Set((list ?? []).map((u) => String(u?.username ?? u?.name ?? "").trim()).filter(Boolean))];
+const first = (name) => String(name ?? "").trim().split(/\s+/)[0].toLowerCase();
+const hash = (text) => createHash("sha1").update(String(text)).digest("hex").slice(0, 12);
+
+/**
+ * The sprint's wins so far, as code sees them: done or ready-to-ship sprint tickets, and
+ * live-site changes from the changelog. Anything already called out is left off. A win from
+ * an earlier list that is not ticked and no longer shows up here (the ticket moved on, the
+ * change aged out) is carried over for up to two weeks.
+ */
+export function winCandidates({ tasks = [], production = [], celebrated = {}, previous = [], now = new Date() }) {
+  const out = new Map();
+  for (const t of sprintTickets(tasks)) {
+    const stage = WIN_STAGE.get(String(t.status ?? "").toLowerCase());
+    if (!stage) continue;
+    out.set(`task:${t.id}`, {
+      key: `task:${t.id}`,
+      kind: "ticket",
+      title: t.plainName ?? t.name,
+      stage,
+      rock: t.bigSwing?.label ?? null,
+      tactic: t.leadershipPriority?.label ?? null,
+      who: fullNames(t.assignees),
+      date: iso(t.dateDone ?? t.dateClosed ?? t.dateUpdated),
+      url: t.url ?? null,
+    });
+  }
+  for (const c of production ?? []) {
+    const key = `change:${hash(`${c.date}|${c.change}`)}`;
+    out.set(key, {
+      key,
+      kind: "change",
+      title: c.change,
+      stage: c.result ? `live: ${c.result}` : "live on the site",
+      rock: null,
+      tactic: null,
+      who: [],
+      date: c.date ?? null,
+      url: c.page ?? null,
+      details: c.details,
+      additionalMonthlyRevenue: c.additionalMonthlyRevenue,
+    });
+  }
+  const cutoff = now.getTime() - CARRY_DAYS * DAY_MS;
+  for (const w of previous ?? []) {
+    if (!w?.key || out.has(w.key) || celebrated[w.key]) continue;
+    if (Date.parse(w.firstSeen ?? 0) < cutoff) continue;
+    const { why, kudos, rank, ...rest } = w;
+    out.set(w.key, { ...rest, carried: true });
+  }
+  return [...out.values()].filter((w) => !celebrated[w.key]);
 }
 
-/** The speech as one block of text, to read or paste. */
+/**
+ * The ranked list, kept honest: only wins code handed over, in the model's order, with
+ * code's own title, kudos only for that win's own people (by first name), and every win the
+ * model skipped added at the end so nothing done this sprint goes missing. Carried wins keep
+ * the day they were first listed.
+ */
+export function cleanWins(parsed, candidates, previous = [], now = new Date()) {
+  const headline = String(parsed?.headline ?? "").trim();
+  if (!headline) return null;
+  const byKey = new Map(candidates.map((c) => [c.key, c]));
+  const firstSeen = new Map((previous ?? []).filter((w) => w?.key).map((w) => [w.key, w.firstSeen]));
+  const seen = new Set();
+  const wins = [];
+  const make = (c, why, kudos) => ({
+    ...c,
+    why,
+    kudos,
+    firstSeen: firstSeen.get(c.key) ?? now.toISOString(),
+  });
+  for (const w of parsed?.wins ?? []) {
+    const c = byKey.get(w?.key);
+    if (!c || seen.has(c.key)) continue;
+    seen.add(c.key);
+    const allowed = new Map(c.who.map((n) => [first(n), n]));
+    const kudos = [];
+    for (const k of w.kudos ?? []) {
+      const name = allowed.get(first(k?.name));
+      if (name && k.for?.trim() && !kudos.some((x) => x.name === name)) kudos.push({ name, for: k.for.trim() });
+    }
+    wins.push(make(c, String(w.why ?? "").trim(), kudos));
+  }
+  for (const c of candidates) if (!seen.has(c.key)) wins.push(make(c, c.why ?? "", []));
+  const facts = (parsed?.facts ?? []).filter((f) => f?.claim && f?.source).map((f) => ({ claim: String(f.claim), source: String(f.source) }));
+  return { headline, wins: wins.map((w, i) => ({ ...w, rank: i + 1 })), close: String(parsed?.close ?? "").trim(), facts };
+}
+
+/** The list as text, to paste in Slack or send up. */
 export function speechText(s) {
-  return [s.headline, "", ...s.beats.map((b) => b.text), ...(s.close ? ["", s.close] : [])].join("\n");
+  const lines = [s.headline, ""];
+  for (const w of s.wins ?? []) {
+    lines.push(`${w.rank}. ${w.title}${w.rock ? ` (${w.rock})` : ""}`);
+    if (w.why) lines.push(`   ${w.why}`);
+    if (w.kudos?.length) lines.push(`   Kudos: ${w.kudos.map((k) => `${k.name.split(/\s+/)[0]} for ${k.for}`).join("; ")}`);
+  }
+  if (s.close) lines.push("", s.close);
+  return lines.join("\n");
 }
 
 // ------------------------------------------------------------------- the call
@@ -201,6 +308,13 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
   });
 
   const production = await changesForSpeech({ config, env, logger, now, report });
+  const [celebratedDoc, previousSpeech] = await Promise.all([
+    store.backend.get(CELEBRATED_KEY).catch(() => null),
+    store.backend.get(SPEECH_KEY).catch(() => null),
+  ]);
+  const celebrated = celebratedDoc?.items ?? {};
+  const previous = previousSpeech?.wins ?? [];
+  const candidates = winCandidates({ tasks: detail.clickup?.tasks ?? [], production: production ?? [], celebrated, previous, now });
 
   const context = {
     production: production ?? [],
@@ -220,14 +334,17 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
     config,
     env,
     logger,
-    maxTokens: 8000,
+    maxTokens: 12000,
     effort: "medium",
     outputFormat: betaJSONSchemaOutputFormat(SPEECH_SCHEMA, "daily_speech"),
     messages: [
       {
         role: "user",
         content: [
-          `Today is ${report.dateKey}. Write the storyline Alex will say to the team this morning.`,
+          `Today is ${report.dateKey}. Rank the sprint's wins for Alex, most important first, say why each matters, and who to thank for which part.`,
+          "",
+          `THE WINS (${candidates.length}; rank every one, by key; "carried": true means Alex has not called it out yet from an earlier day)`,
+          candidates.length ? JSON.stringify(candidates.map(({ url, ...c }) => c), null, 2) : "None yet this sprint.",
           "",
           "THE ROCKS",
           JSON.stringify(context.rocks, null, 2),
@@ -265,13 +382,13 @@ export async function writeSpeech({ store, config, env = process.env, logger, no
 
   if (result.refused) return { error: "The model declined to answer.", category: result.category };
   if (result.response?.stop_reason === "max_tokens") return { error: "The answer ran past its length limit before finishing. Try again." };
-  const speech = cleanSpeech(result.parsed);
-  if (!speech) return { error: "The answer did not come back with a headline and all three beats. Try again." };
+  const speech = cleanWins(result.parsed, candidates, previous, now);
+  if (!speech) return { error: "The answer came back without a headline. Try again." };
 
   const stored = {
     ...speech,
     text: speechText(speech),
-    unverified: unverifiedNumbers(speechText(speech), contextText),
+    unverified: unverifiedNumbers(speechText(speech), contextText + JSON.stringify(candidates)),
     generatedAt: new Date().toISOString(),
     // "morning": written by itself after the 8 AM readout; "button": Alex pressed it.
     trigger,
