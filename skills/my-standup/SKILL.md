@@ -32,14 +32,16 @@ Blockers: need X from Y person
 ## What goes on each line
 
 **Yesterday**: what Alex actually did on the previous working day. Best evidence first:
-rock moves Alex marked done, tickets Alex closed or moved, Alex's comments, Alex's Slack messages that show work
+the "done" facts (tickets Alex closed, with ClickUp's close time; tickets Alex moved to a
+new status; Alex's comments), rock moves Alex marked done, Alex's Slack messages that show work
 (reviewing, giving feedback, planning, a call). Alex's own Today line from the last
 stand-up says what was meant to happen; use it only where something else shows it
 happened, or where nothing contradicts it and it is the only record.
 
 **Today**: what Alex will do. Rock moves Alex picked for today ("focus" facts) lead the
-line: Alex chose them as the highest-value work. Then Alex's open tickets in progress and
-anything due today or overdue, then replies owed, this week's planned items, and anything Alex said in
+line: Alex chose them as the highest-value work. Then the "todo" facts, which come in
+priority order and say why each is Alex's now: QA or review someone is waiting on first
+(write it as "qa on X"), then overdue, due today, in progress, ready to ship, then replies owed, this week's planned items, and anything Alex said in
 Slack or a note they would do today. Carry over yesterday's unfinished item when the
 facts show it is still open.
 
@@ -47,6 +49,9 @@ facts show it is still open.
 Y". The "waiting" facts are the main source, plus a Slack message or note where Alex
 asked someone for something and nothing shows it arrived. If there is nothing, write
 "none".
+
+A ticket closed early this morning was usually finished yesterday: it belongs on
+Yesterday. A ticket in a "done" fact never goes on Today.
 
 ## Rules
 

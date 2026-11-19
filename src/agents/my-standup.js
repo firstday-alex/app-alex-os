@@ -9,7 +9,12 @@
 //
 //   plan      Alex's last stand-up in the channel: its Today is what Alex meant to do
 //             yesterday. Alex's recent posts also go in as the style to match.
-//   clickup   from the latest readout: Alex's tickets that moved, closed, were created
+//   done      what Alex got done in ClickUp since the start of the previous working day:
+//             closed (ClickUp's own close time), moved (the status ledger, and the live
+//             read), new tickets, Alex's comments
+//   todo      Alex's open tickets, each with why it is Alex's now: QA or review someone is
+//             waiting on, overdue, due today, in progress, ready to ship, not started
+//   clickup   (older wording) from the latest readout: Alex's tickets that moved, closed, were created
 //             or got Alex's comment since the previous readout; and Alex's open tickets,
 //             in progress first, with due dates. The sprint list is read again live when
 //             the draft is written, so a ticket Alex closed after the 8 AM readout counts
@@ -40,6 +45,7 @@ import { QuarterPlanStore } from "../store/quarter-plan.js";
 import { dateKey as zonedDateKey, previousWorkingDayKey } from "../lib/time.js";
 import { quarterOfKey, weekStartOf } from "../../public/quarter.js";
 import { fetchTaskPages, normalizeTask } from "../collectors/clickup.js";
+import { StatusLedger } from "../store/status-ledger.js";
 
 export const MY_STANDUP_KEY = "mystandup/latest.json";
 export const MY_STANDUP_STATUS_KEY = "mystandup/status.json";
@@ -101,9 +107,9 @@ export function withLiveTickets(report, live) {
  * @returns {{ facts: object[], style: string[], posted: object|null, since: string }}
  */
 // One letter per kind, so no two kinds share an id prefix ("week" and "waiting" did).
-const PREFIX = { plan: "p", clickup: "c", reply: "r", week: "k", focus: "f", slack: "s", note: "n", waiting: "w" };
+const PREFIX = { plan: "p", clickup: "c", done: "d", todo: "t", reply: "r", week: "k", focus: "f", slack: "s", note: "n", waiting: "w" };
 
-export function standupFacts({ config, now, report, standups, slack, notes, waiting, plan, focus }) {
+export function standupFacts({ config, now, report, standups, slack, notes, waiting, plan, focus, ledger = null }) {
   const tz = config.system.timezone;
   const today = zonedDateKey(now, tz);
   const alex = config.people?.alex ?? {};
@@ -124,30 +130,67 @@ export function standupFacts({ config, now, report, standups, slack, notes, wait
     .slice(0, 5)
     .map((p) => [`Yesterday: ${p.yesterday ?? ""}`, `Today: ${p.today ?? ""}`, `Blockers: ${p.blockers ?? ""}`].join("\n"));
 
-  // ClickUp: what moved on Alex's tickets since the previous readout, and what is open.
+  // ClickUp, what Alex got done since the start of the previous working day ("done" facts):
+  //   - closed, with ClickUp's own close time (date_done / date_closed), read live
+  //   - moved, from the status ledger (the status and when this system saw it change; ClickUp's
+  //     time-in-status history is empty on this plan) and from the live read after 8 AM
+  //   - new tickets, and Alex's comments
+  // and what is Alex's to do ("todo" facts): every open ticket, with why it is Alex's now.
   const isMine = mineBy(alex.clickupUserId);
   const changes = report?.detail?.clickup?.changes ?? {};
-  const seen = new Set();
-  const moved = (t, what) => {
-    if (seen.has(`${t.id}:${what}`)) return;
-    seen.add(`${t.id}:${what}`);
-    add("clickup", `${what}: "${clip(t.name, 120)}"`, { url: t.url ?? null });
-  };
-  for (const t of changes.closed ?? []) if (isMine(t)) moved(t, t.live ? `Closed after the 8 AM readout (${t.from} → ${t.to})` : "Closed");
-  for (const t of changes.statusChanges ?? []) if (isMine(t)) moved(t, `Moved ${t.from} → ${t.to}`);
-  for (const t of changes.newTasks ?? []) if (isMine(t)) moved(t, "New ticket");
+  const tasks = report?.detail?.clickup?.tasks ?? [];
   const since = xfSince(now, config).getTime();
-  for (const t of report?.detail?.clickup?.tasks ?? []) {
+  const when = (ms) => new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", hour: "numeric", minute: "2-digit" }).format(new Date(ms));
+  const doneIds = new Set();
+  const said = new Set();
+  const once = (key) => (said.has(key) ? false : said.add(key));
+  for (const t of tasks) {
+    if (!isMine(t) || t.bucket !== "done") continue;
+    const at = Number(t.dateDone ?? t.dateClosed ?? 0);
+    if (at < since) continue;
+    doneIds.add(String(t.id));
+    add("done", `Closed ${when(at)} (now ${t.status}): "${clip(t.name, 120)}"${t.bigSwing?.label ? ` [rock: ${t.bigSwing.label}]` : ""}`, { url: t.url ?? null });
+  }
+  for (const t of changes.closed ?? []) {
+    if (!isMine(t) || doneIds.has(String(t.id)) || !once(`c${t.id}`)) continue;
+    doneIds.add(String(t.id));
+    add("done", `Closed${t.live ? " today, after the 8 AM readout" : " since the previous readout"} (${t.from ?? "?"} → ${t.to ?? "done"}): "${clip(t.name, 120)}"`, { url: t.url ?? null });
+  }
+  const byId = new Map(tasks.map((t) => [String(t.id), t]));
+  for (const [id, e] of Object.entries(ledger?.entries ?? {})) {
+    const t = byId.get(id);
+    if (!t || !isMine(t) || doneIds.has(id) || !e.exact || !e.previousStatus || e.since < since) continue;
+    if (String(t.status ?? "").toLowerCase() !== String(e.status ?? "").toLowerCase()) continue; // moved again since: the live change below says so
+    if (!once(`m${id}`)) continue;
+    add("done", `Moved ${e.previousStatus} → ${e.status} (seen ${when(e.since)}): "${clip(t.name, 120)}"`, { url: t.url ?? null });
+  }
+  for (const t of changes.statusChanges ?? []) {
+    if (!isMine(t) || doneIds.has(String(t.id)) || !once(`m${t.id}`)) continue;
+    add("done", `Moved ${t.from} → ${t.to}${t.live ? " today, after the 8 AM readout" : " since the previous readout"}: "${clip(t.name, 120)}"`, { url: t.url ?? null });
+  }
+  for (const t of changes.newTasks ?? []) if (isMine(t) && once(`n${t.id}`)) add("done", `New ticket: "${clip(t.name, 120)}"`, { url: t.url ?? null });
+  for (const t of tasks) {
     const c = t.lastComment;
     if (c && String(c.userId) === String(alex.clickupUserId) && Number(c.date) >= since) {
-      add("clickup", `Alex commented on "${clip(t.name, 120)}": ${clip(c.text, 200)}`, { url: t.url ?? null });
+      add("done", `Alex commented ${when(Number(c.date))} on "${clip(t.name, 120)}": ${clip(c.text, 200)}`, { url: t.url ?? null });
     }
   }
-  const open = (report?.detail?.clickup?.tasks ?? []).filter((t) => isMine(t) && t.bucket !== "done" && !t.archived);
-  const rank = (t) => (t.bucket === "inProgress" ? 0 : 1);
-  for (const t of open.sort((a, b) => rank(a) - rank(b) || Number(a.dueDate ?? Infinity) - Number(b.dueDate ?? Infinity)).slice(0, 15)) {
+
+  const open = tasks.filter((t) => isMine(t) && t.bucket !== "done" && !t.archived);
+  const why = (t) => {
+    const st = String(t.status ?? "").toLowerCase();
     const due = t.dueDate ? zonedDateKey(new Date(Number(t.dueDate)), tz) : null;
-    add("clickup", `Open, ${t.status}${due ? `, due ${due}${due < today ? " (overdue)" : due === today ? " (today)" : ""}` : ""}: "${clip(t.name, 120)}"`, { url: t.url ?? null });
+    const dueWord = due ? (due < today ? `overdue since ${due}` : due === today ? "due today" : `due ${due}`) : null;
+    if (/\b(v?qa|review)\b/.test(st)) return { rank: 0, text: `Your ${st} (someone's work is waiting on you)`, dueWord };
+    if (due && due < today) return { rank: 1, text: `Overdue since ${due}, ${st}`, dueWord };
+    if (due === today) return { rank: 2, text: `Due today, ${st}`, dueWord };
+    if (t.bucket === "inProgress") return { rank: 3, text: `In progress (${st})`, dueWord };
+    if (st === "ready for deploy") return { rank: 4, text: "Ready for deploy: ship it", dueWord };
+    return { rank: 5, text: `Not started (${st})`, dueWord };
+  };
+  const ranked = open.map((t) => ({ t, w: why(t) })).sort((a, b) => a.w.rank - b.w.rank || Number(a.t.dueDate ?? Infinity) - Number(b.t.dueDate ?? Infinity));
+  for (const { t, w } of ranked.slice(0, 15)) {
+    add("todo", `${w.text}${w.dueWord && !/due|overdue/i.test(w.text) ? `, ${w.dueWord}` : ""}: "${clip(t.name, 120)}"${t.bigSwing?.label ? ` [rock: ${t.bigSwing.label}]` : ""}`, { url: t.url ?? null });
   }
 
   // Replies Alex owes, and this week's planned work.
@@ -287,7 +330,14 @@ export async function writeMyStandup({ store, config, env = process.env, logger,
     focus = null;
   }
 
-  const gathered = standupFacts({ config, now, report, standups, slack, notes: dayNotes, waiting, plan, focus });
+  let ledger = null;
+  try {
+    ledger = await new StatusLedger(store.backend, logger).read();
+  } catch {
+    ledger = null;
+  }
+
+  const gathered = standupFacts({ config, now, report, standups, slack, notes: dayNotes, waiting, plan, focus, ledger });
   if (!gathered.facts.length) return { error: "Nothing to go on: no ClickUp activity, notes, Slack or earlier stand-up of yours was found.", notes };
 
   const yesterdayKey = previousWorkingDayKey(gathered.today, config.system.schedule?.workingWeekdays);

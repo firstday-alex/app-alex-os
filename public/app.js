@@ -3885,7 +3885,7 @@ $("rocks-list").addEventListener("change", async (event) => {
    before it is pasted. The text box is Alex's to edit; Copy takes what is in it. */
 
 const mine = { latest: null, status: null, loaded: false, polling: null, error: null, edited: null };
-const FACT_KIND = { plan: "Your last stand-up", clickup: "ClickUp", slack: "Slack", note: "Your notes", waiting: "Waiting on", reply: "Replies owed", week: "Quarter plan", focus: "Today's rock moves" };
+const FACT_KIND = { plan: "Your last stand-up", done: "ClickUp: done by you", todo: "ClickUp: yours to do", clickup: "ClickUp", slack: "Slack", note: "Your notes", waiting: "Waiting on", reply: "Replies owed", week: "Quarter plan", focus: "Today's rock moves" };
 
 async function loadMine() {
   const res = await fetch(`${FN}/mystandup`).then((r) => r.json()).catch(() => null);

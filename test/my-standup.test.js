@@ -45,10 +45,10 @@ test("facts: Alex's last plan, Alex's ClickUp moves and open tickets, notes, wai
   });
   const text = out.facts.map((f) => `[${f.id}] ${f.text}`).join("\n");
   assert.match(text, /\[p1\] On 2026-11-16 Alex said Today: sesame street feedback \+ planning/);
-  assert.match(text, /Closed: "Sesame Street feedback"/);
-  assert.match(text, /Moved in-progress → vqa: "\[DEV\] Toddler Sesame Street SKU Setup"/);
-  assert.match(text, /Open, in-progress, due 2026-11-17 \(today\): "All-in-1 Core Bundle"/);
-  assert.match(text, /Alex commented on "Commented one": Looks good, ship it/);
+  assert.match(text, /\[d\d\] Closed since the previous readout .*: "Sesame Street feedback"/);
+  assert.match(text, /\[d\d\] Moved in-progress → vqa since the previous readout: "\[DEV\] Toddler Sesame Street SKU Setup"/);
+  assert.match(text, /\[t1\] Due today, in-progress: "All-in-1 Core Bundle"/);
+  assert.match(text, /Alex commented .* on "Commented one": Looks good, ship it/);
   assert.match(text, /\[s1\] 2026-11-16 in #marketing: sent the ss feedback doc/);
   assert.match(text, /Waiting on Robson \(since 2026-11-16\): Quiz copy/);
   assert.match(text, /Planned this week: QA bundle builder/);
@@ -126,4 +126,27 @@ test("a ticket Alex closed after the 8 AM readout counts: the live read updates 
   assert.equal(out.detail.clickup.tasks[0].bigSwing.label, "Upsells", "rock fields kept from the readout");
   assert.equal(report.detail.clickup.tasks[0].status, "to do", "the stored readout is not changed");
   assert.equal(withLiveTickets(report, []), report);
+});
+
+test("done facts: ClickUp's close time and ledger moves since the previous working day; todo facts ranked with why", () => {
+  const alex = { name: "Alex Turney", clickupUserId: "1" };
+  const me = [{ id: "1", username: "Alex Turney" }];
+  const config = { system: { timezone: "America/Chicago", schedule: {} }, people: { alex } };
+  const now = new Date("2026-11-19T14:30:00Z"); // Thu 8:30 AM Central
+  const report = { detail: { clickup: { changes: {}, tasks: [
+    { id: "a", name: "AB Test Launch - Upsell Dialogue", status: "done (this sprint)", bucket: "done", assignees: me, dateDone: Date.parse("2026-11-19T14:19:00Z") },
+    { id: "old", name: "Closed last week", status: "complete", bucket: "done", assignees: me, dateDone: Date.parse("2026-11-10T14:00:00Z") },
+    { id: "b", name: "Alia POC", status: "qa", bucket: "inProgress", assignees: me },
+    { id: "c", name: "Forecast", status: "to do", bucket: "todo", assignees: me },
+    { id: "d", name: "SKU setup", status: "in progress", bucket: "inProgress", assignees: me, dueDate: Date.parse("2026-11-16T17:00:00Z") },
+    { id: "e", name: "Not mine", status: "done", bucket: "done", assignees: [{ id: "9" }], dateDone: Date.parse("2026-11-19T13:00:00Z") },
+  ] } } };
+  const ledger = { entries: { b: { status: "qa", previousStatus: "in progress", since: Date.parse("2026-11-18T14:00:00Z"), exact: true } } };
+  const { facts } = standupFacts({ config, now, report, ledger });
+  const text = facts.map((f) => `[${f.id}] ${f.text}`);
+  assert.deepEqual(text.filter((t) => t.startsWith("[d")), [
+    '[d1] Closed Thu 8:19 AM (now done (this sprint)): "AB Test Launch - Upsell Dialogue"',
+    '[d2] Moved in progress → qa (seen Wed 8:00 AM): "Alia POC"',
+  ]);
+  assert.deepEqual(text.filter((t) => t.startsWith("[t")).map((t) => t.split(":")[0]), ["[t1] Your qa (someone's work is waiting on you)", "[t2] Overdue since 2026-11-16, in progress", "[t3] Not started (to do)"]);
 });
