@@ -6,6 +6,7 @@
 
 import { groupByPerson, groupLine, YOU, NOBODY } from "./flag-groups.js";
 import { weekStartOf as qWeekStartOf, monthName as qMonthName, shortDay as qShortDay } from "./quarter.js";
+import { buildAgenda, agendaText } from "./workshop.js";
 import { buildChanges, buildLastWeekWins, buildStandupUpdate, buildThisWeekWins, changeLine, changesText, lastWeekText, standupUpdateText, windowStart } from "./update-text.js";
 
 const $ = (id) => document.getElementById(id);
@@ -145,6 +146,7 @@ function render() {
   };
   part("the flags", () => renderAllFlags({ rebuildTools: true }));
   part("Layer 1", () => renderLayer1(report));
+  part("the workshop", () => renderWorkshop(report));
   part("the sprint", () => renderLayer2(report));
   part("the backlog", () => renderBacklog());
   part("the update", () => renderUpdate(report));
@@ -2098,6 +2100,105 @@ document.addEventListener("click", async (event) => {
    label equal to the rock's title. */
 
 const rmap = { collapsed: new Set(), tactic: null, rockTickets: null };
+
+/* -------------------------------- workshop --------------------------------
+   The rock workshop agenda (public/workshop.js): live rock × tactic items ranked, quiet ones
+   grayed. Skip / Discuss anyway are kept in this browser for the week. */
+const ws = { include: new Set(), skip: new Set(), week: null, agenda: null };
+function wsLoad(since) {
+  if (ws.week === since) return;
+  ws.week = since;
+  try {
+    const saved = JSON.parse(localStorage.getItem("workshop-picks") ?? "{}");
+    const mine = saved.week === since ? saved : {};
+    ws.include = new Set(mine.include ?? []);
+    ws.skip = new Set(mine.skip ?? []);
+  } catch {
+    ws.include = new Set();
+    ws.skip = new Set();
+  }
+}
+function wsSave() {
+  try {
+    localStorage.setItem("workshop-picks", JSON.stringify({ week: ws.week, include: [...ws.include], skip: [...ws.skip] }));
+  } catch {}
+}
+function renderWorkshop(report) {
+  const host = $("workshop");
+  if (!host) return;
+  const detail = report.detail?.leadership;
+  if (!detail?.queue) {
+    host.innerHTML = `<div class="missing">The rocks were not in the latest readout.</div>`;
+    return;
+  }
+  const rocks = detail.queue.filter((r) => r.state === "active");
+  const courses = new Map((report.detail?.rockCourse ?? []).map((c) => [c.id, c]));
+  const tasks = [...(report.detail?.clickup?.tasks ?? []), ...(report.detail?.backlog?.items ?? []).map((t) => ({ ...t, fromBacklog: true }))];
+  const agenda = (ws.agenda = buildAgenda({ rocks, courses, tasks, placeOf: (t) => placeTicketOnRock(rocks, t) }));
+  wsLoad(agenda.since);
+  const on = [...agenda.live.filter((i) => !ws.skip.has(i.key)), ...agenda.quiet.filter((i) => ws.include.has(i.key))];
+  const off = [...agenda.live.filter((i) => ws.skip.has(i.key)), ...agenda.quiet.filter((i) => !ws.include.has(i.key))];
+  const first = (n) => (n ? String(n).split(/\s+/)[0] : "");
+  const link = (x) => (x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noreferrer">${esc(x.name)}</a>` : esc(x.name));
+  const item = (i, n) => {
+    const owner = i.tactic?.owner ?? i.rock.owner;
+    const tone = TACTIC_TONE[i.tactic ? i.tactic.status : i.rock.status] ?? "on";
+    const added = !i.live;
+    return `<li class="wk-item${n == null ? " wk-quiet" : ""}">
+      <span class="dw-rank">${n ?? "–"}</span>
+      <div class="wk-body">
+        <div class="wk-rock">${esc(i.rock.title)}${i.rock.course !== "on" ? ` <span class="wk-course course-${esc(i.rock.course)}">${i.rock.course === "off" ? "off course" : "drifting"}</span>` : ""}</div>
+        <div class="wk-title">${i.tactic ? esc(i.tactic.title) : "Rock update"}${owner ? ` <span class="meta">· ${esc(first(owner))}</span>` : ""}</div>
+        <div class="dw-tags">
+          ${i.workshop ? `<span class="dw-tag dw-rock">Workshop Priority</span>` : ""}
+          ${i.bau ? `<span class="dw-tag">business as usual</span>` : ""}
+          ${tone !== "on" ? `<span class="dw-tag wk-tone tone-${esc(tone)}">${esc(TACTIC_WORD[i.tactic ? i.tactic.status : i.rock.status] ?? "")}</span>` : ""}
+          ${i.reasons.map((r) => `<span class="dw-tag">${esc(r)}</span>`).join("")}
+          ${i.quietWhy ? `<span class="dw-tag">${esc(i.quietWhy)}</span>` : ""}
+          ${added && n != null ? `<span class="dw-tag dw-carry">added by you</span>` : ""}
+        </div>
+        ${i.tactic?.notes ? `<p class="wk-notes">${esc(i.tactic.notes)}</p>` : ""}
+        ${i.show.length || i.moving.length ? `<ul class="wk-tickets">
+          ${i.show.slice(0, 4).map((x) => `<li><span class="wk-done">✓</span> ${link(x)} <span class="meta">${esc(x.who.join(", "))}</span></li>`).join("")}
+          ${i.moving.slice(0, 3).map((x) => `<li><span class="mt-status">${esc(x.status ?? "")}</span> ${link(x)} <span class="meta">${esc(x.who.join(", "))}</span></li>`).join("")}
+          ${i.show.length + i.moving.length > 7 ? `<li class="meta">and ${esc(i.show.length + i.moving.length - 7)} more</li>` : ""}
+        </ul>` : ""}
+      </div>
+      <button type="button" class="ghost sm" data-wk="${esc(i.key)}">${n == null ? "Discuss anyway" : "Skip"}</button>
+    </li>`;
+  };
+  host.innerHTML = `
+    <div class="bar up-bar">
+      <button type="button" id="wk-copy">Copy agenda</button>
+      <span class="meta" data-copy-note="workshop">${esc(plural(on.length, "item", "items"))} to go over, ${esc(off.length)} grayed. Activity since ${esc(new Date(agenda.since).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }))}.</span>
+    </div>
+    <article class="ds-speech wk">
+      ${on.length ? `<ol class="dw-list">${on.map((i, n) => item(i, n + 1)).join("")}</ol>` : `<p class="sub">Nothing on the rocks has moved in the last two sprints.</p>`}
+    </article>
+    ${off.length ? `<section class="wk-off"><div class="sp-group-head"><h3>Not worth going over</h3><span class="meta">${esc(plural(off.length, "item", "items"))}: nothing done or moving, or skipped by you</span></div>
+      <ol class="dw-list">${off.map((i) => item(i, null)).join("")}</ol></section>` : ""}`;
+}
+document.addEventListener("click", async (event) => {
+  const b = event.target.closest("[data-wk]");
+  if (b) {
+    const key = b.dataset.wk;
+    const live = ws.agenda?.live.some((i) => i.key === key);
+    const set = live ? ws.skip : ws.include;
+    set.has(key) ? set.delete(key) : set.add(key);
+    wsSave();
+    if (state.report) renderWorkshop(state.report);
+    return;
+  }
+  if (event.target.closest("#wk-copy") && ws.agenda) {
+    const note = document.querySelector('[data-copy-note="workshop"]');
+    try {
+      await navigator.clipboard.writeText(agendaText(ws.agenda, { include: ws.include, skip: ws.skip }));
+      if (note) note.textContent = "Copied.";
+    } catch {
+      if (note) note.textContent = "The browser would not copy.";
+    }
+  }
+});
 
 function placeTicketOnRock(rocks, task) {
   const ids = (xs) => (xs ?? []).filter(Boolean).map(String);
@@ -5434,7 +5535,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 // top bar when open. The drawer lists the same groups (index.html).
 const NAV_GROUPS = [
   { id: "today", pages: [["readout", "What needs you"], ["speech", "Daily wins"], ["standup", "Stand-up"]] },
-  { id: "team", pages: [["sprint", "Sprint"], ["backlog", "Backlog"], ["rocks", "Rocks"], ["plan", "Quarter"], ["people", "1:1"], ["ideation", "Ideation"]] },
+  { id: "team", pages: [["sprint", "Sprint"], ["backlog", "Backlog"], ["rocks", "Rocks"], ["workshop", "Workshop"], ["plan", "Quarter"], ["people", "1:1"], ["ideation", "Ideation"]] },
   { id: "writeups", pages: [["mystandup", "My stand-up"], ["upsu", "Update + Stand-up"], ["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["impact", "Overall Impact"]] },
 ];
 // On a wide screen the drawer stays open beside the page and is the nav.
