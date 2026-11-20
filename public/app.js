@@ -3067,7 +3067,10 @@ function renderWins(kind, report) {
   root.innerHTML = `
     <p class="meta">${esc(plural(wins.count, "ticket", "tickets"))} done ${wins.from ? `${esc(day(wins.from))} to ${esc(day(wins.to))}` : ""} · ${esc(plural(wins.rocks.length, "rock", "rocks"))} · ${esc(plural(wins.kudos.length, "person", "people"))}. From ClickUp as pulled ${esc(new Date(report.generatedAt).toLocaleString())}.</p>
     <div class="bar up-bar"><button type="button" data-wins-copy="${kind}">Copy all</button><button type="button" data-wins-kudos="${kind}" title="The kudos page, filled with the ticked wins: opens a preview and downloads the .html">Kudos page</button><span class="meta" data-wins-note="${kind}"></span></div>
-    <textarea class="up-text" data-wins-text="${kind}" rows="${Math.min(20, text.split("\n").length + 1)}" readonly>${esc(text)}</textarea>
+    <details class="wins-text"${v.textOpen ? " open" : ""} data-wins-fold="${kind}">
+      <summary>Write-up to paste <span class="meta">${esc(plural(text.split("\n").filter(Boolean).length, "line", "lines"))} · Copy all copies it without opening</span></summary>
+      <textarea class="up-text" data-wins-text="${kind}" rows="${Math.min(20, text.split("\n").length + 1)}" readonly>${esc(text)}</textarea>
+    </details>
     <h3 class="lw-head">By rock</h3>
     ${wins.rocks
       .map(
@@ -3087,6 +3090,12 @@ function renderWins(kind, report) {
       )
       .join("")}</div>`;
 }
+
+// The write-up starts folded; remember if Alex opened it, so a redraw keeps it open.
+document.addEventListener("toggle", (event) => {
+  const kind = event.target.dataset?.winsFold;
+  if (kind && winsViews[kind]) winsViews[kind].textOpen = event.target.open;
+}, true);
 
 document.addEventListener("change", (event) => {
   const kind = event.target.dataset?.winsKind;

@@ -1460,3 +1460,8 @@ main:has(#view-speech:not(.hidden)) { max-width: 1500px; }
 .close-ask-msg { margin: 0 0 4px; }
 .close-ask-card button { display: grid; gap: 2px; text-align: left; padding: 10px 12px; }
 .close-ask-card button.ghost { text-align: center; }
+
+/* Wins write-up, folded until opened. */
+.wins-text { margin: 6px 0 4px; }
+.wins-text > summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.wins-text > summary .meta { font-weight: 400; margin-left: 6px; }
