@@ -1465,3 +1465,11 @@ main:has(#view-speech:not(.hidden)) { max-width: 1500px; }
 .wins-text { margin: 6px 0 4px; }
 .wins-text > summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
 .wins-text > summary .meta { font-weight: 400; margin-left: 6px; }
+
+/* Daily wins columns 2 and 3 in the same card as column 1. */
+.ds-card { margin-top: 10px; }
+.ds-card-head { margin: 0 0 4px; font-weight: 700; text-transform: capitalize; }
+.ds-card-head .meta { font-weight: 400; margin-left: 4px; }
+.sl-card .sl-mini { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; font-size: 13px; }
+.sl-card .sl-panel { padding: 8px 0 0; }
+.ds-card .ds-notes { margin: 0; }

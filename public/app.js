@@ -5326,7 +5326,7 @@ let speechTab = (() => {
 
 function speechColumns(latest) {
   const tasks = (state.report?.detail?.clickup?.tasks ?? []).filter((t) => !t.archived && t.bucket === "inProgress");
-  const xf = latest?.xf?.items ?? [];
+  const xf = [...(latest?.xf?.items ?? []), ...(slackTodo.data?.lists ?? [])];
   const ideas = xf.filter((i) => isIdea(i.text)).length;
   const counts = { wins: latest?.wins ? latest.wins.filter((w) => !(speech.celebrated ?? {})[w.key]).length : null, progress: tasks.length, xf: xf.length };
   const col = (id, body) => `<div class="ds-col${speechTab === id ? " on" : ""}" data-speech-col="${id}" role="tabpanel">${body}</div>`;
@@ -5347,7 +5347,7 @@ function speechColumns(latest) {
         }`,
       )}
       ${col("progress", inProgressSection(tasks))}
-      ${col("xf", `${xfSection(latest?.xf, ideas)}${notesSection()}`)}
+      ${col("xf", `${xfSection(latest?.xf, ideas)}<article class="ds-speech dw ds-card">${notesSection()}</article>`)}
     </div>`;
 }
 
@@ -5367,7 +5367,8 @@ document.addEventListener("click", (event) => {
 
 const PROGRESS_ORDER = ["ready for deploy", "qa", "vqa", "in review", "in-progress", "in progress", "blocked"];
 
-/** Sprint tickets in flight, from the latest readout: furthest along first. */
+/** Sprint tickets in flight, from the latest readout: furthest along first. One card per
+    status, in the same card design as Daily wins. */
 function inProgressSection(tasks) {
   const byStatus = new Map();
   for (const t of tasks) {
@@ -5378,20 +5379,56 @@ function inProgressSection(tasks) {
   const rank = (st) => (PROGRESS_ORDER.includes(st) ? PROGRESS_ORDER.indexOf(st) : PROGRESS_ORDER.length);
   const groups = [...byStatus.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]));
   const when = state.report?.generatedAt ? new Date(state.report.generatedAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }) : null;
-  const row = (t) => {
+  const row = (t, n) => {
     const who = (t.assignees ?? []).map((u) => String(u.username ?? "").split(/\s+/)[0]).filter(Boolean);
-    return `<li>
-      <div class="dw-title">${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.plainName ?? t.name)}</a>` : esc(t.plainName ?? t.name)}</div>
-      <div class="dw-tags">${who.length ? `<span class="dw-tag">${esc(who.join(", "))}</span>` : `<span class="dw-tag dw-carry">no assignee</span>`}${t.bigSwing?.label ? `<span class="dw-tag dw-rock">${esc(t.bigSwing.label)}</span>` : ""}</div>
+    return `<li class="dw-win">
+      <span class="dw-rank">${n}</span>
+      <div class="dw-body">
+        <div class="dw-title">${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.plainName ?? t.name)}</a>` : esc(t.plainName ?? t.name)}</div>
+        <div class="dw-tags">${t.bigSwing?.label ? `<span class="dw-tag dw-rock">${esc(t.bigSwing.label)}</span>` : ""}${who.length ? `<span class="dw-tag">${esc(who.join(", "))}</span>` : `<span class="dw-tag dw-carry">no assignee</span>`}</div>
+      </div>
+      <span></span>
     </li>`;
   };
   return `<h3 class="ds-col-head">In progress</h3>
     <p class="meta">${esc(plural(tasks.length, "sprint ticket", "sprint tickets"))} in flight, furthest along first${when ? `, from ClickUp as pulled ${esc(when)}` : ""}.</p>
     ${
       tasks.length
-        ? groups.map(([st, ts]) => `<section class="ds-prog"><div class="sp-group-head"><h3>${esc(st)}</h3><span class="meta">${esc(ts.length)}</span></div><ul class="ds-prog-list">${ts.map(row).join("")}</ul></section>`).join("")
-        : `<p class="meta">${state.report ? "Nothing in progress on the sprint." : "Loading the readout…"}</p>`
+        ? groups
+            .map(([st, ts]) => `<article class="ds-speech dw ds-card">
+              <p class="ds-card-head">${esc(st)} <span class="meta">${esc(ts.length)}</span></p>
+              <ol class="dw-list">${ts.map((t, i) => row(t, i + 1)).join("")}</ol>
+            </article>`)
+            .join("")
+        : `<article class="ds-speech dw ds-card"><p class="meta">${state.report ? "Nothing in progress on the sprint." : "Loading the readout…"}</p></article>`
     }`;
+}
+
+/** An ECOM list row as a Daily wins card item, with the same quick actions as Today's moves. */
+function ecomCardRow(i, n) {
+  const k = esc(i.key);
+  const late = i.due && i.due < todayIso();
+  const open = slackTodo.open?.key === i.key ? slackTodo.open.what : null;
+  return `<li class="dw-win sl-card">
+    <span class="dw-rank">${n}</span>
+    <div class="dw-body">
+      <div class="dw-title">${esc(i.text)}</div>
+      <div class="dw-tags">
+        ${i.owner ? `<span class="dw-tag">${esc(String(i.owner).split(/\s+/)[0])}</span>` : `<span class="dw-tag dw-carry">no assignee</span>`}
+        ${i.checkIn ? `<span class="dw-tag">check in ${esc(slDate(i.checkIn))}</span>` : ""}
+        ${i.due ? `<span class="dw-tag${late ? " dw-carry" : ""}">${late ? "was due" : "due"} ${esc(slDate(i.due))}</span>` : `<span class="dw-tag">no due date</span>`}
+      </div>
+      <div class="sl-mini">
+        <button type="button" class="link-btn" data-sl-open="nudge" data-sl-key="${k}">Nudge</button>
+        <button type="button" class="link-btn" data-sl-open="due" data-sl-key="${k}">Due date</button>
+        <button type="button" class="link-btn" data-sl-open="checkIn" data-sl-key="${k}">Check-in</button>
+        <button type="button" class="link-btn" data-sl-open="assignee" data-sl-key="${k}">Assignee</button>
+        <button type="button" class="link-btn" data-sl-dismiss="${k}" title="Hide it here for today. Nothing changes in Slack.">Dismiss today</button>
+      </div>
+      ${open ? `<div class="sl-panel">${slackPanel(i, open)}</div>` : ""}
+    </div>
+    <button type="button" class="sm dw-check" data-sl-complete="${k}" title="Ticks it done in your Slack List, so it leaves the open list. The row is not deleted.">Complete</button>
+  </li>`;
 }
 
 /** An XF item that floats an idea rather than asking for something: by its wording, nothing more. */
@@ -5474,29 +5511,37 @@ document.addEventListener("click", async (event) => {
 
 /** The cross-functional list the speech was written from, each item linked to where it was said. */
 function xfSection(xf) {
-  if (!xf) return `<h3 class="ds-col-head">XF asks + requirements</h3><p class="meta">Read when the wins are written.</p>`;
-  const items = xf.items ?? [];
-  const since = xf.since ? new Date(xf.since).toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" }) : "the previous working day";
-  const where = xf.channelsRead?.length ? ` Slack channels read: ${xf.channelsRead.join(", ")}.` : "";
+  // Asks + requirements come from the ECOM Slack List (Alex, 2026-11-20); comments from
+  // outside the team on sprint tickets follow, then ideas.
+  if (!slackTodo.data && !slackTodo.loading && !slackTodo.error) loadSlackTodos();
+  const ecom = slackTodo.data?.lists ?? [];
+  const listNotes = (slackTodo.data?.notes ?? []).filter((n) => /list/i.test(n));
+  const items = xf?.items ?? [];
+  const since = xf?.since ? new Date(xf.since).toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" }) : "the previous working day";
   const asks = items.filter((i) => !isIdea(i.text));
   const ideas = items.filter((i) => isIdea(i.text));
-  const list = (xs) => `<ul class="ds-xf-list">${xs
-    .map(
-      (i) => `<li>
-          <div><strong>${esc(i.from)}</strong> <span class="meta">${esc(i.how)} ${esc(i.to.map((n) => String(n).split(/\s+/)[0]).join(", "))} · ${esc(i.where)} · ${esc(new Date(i.at).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }))}</span>${i.url ? ` <a href="${esc(i.url)}" target="_blank" rel="noreferrer">Open</a>` : ""}</div>
-          <div class="ds-xf-text">${esc(i.text)}</div>
-        </li>`,
-    )
-    .join("")}</ul>`;
+  const xfRow = (i, n) => `<li class="dw-win">
+      <span class="dw-rank">${n}</span>
+      <div class="dw-body">
+        <div class="dw-title">${i.url ? `<a href="${esc(i.url)}" target="_blank" rel="noreferrer">${esc(i.from)}</a>` : esc(i.from)}</div>
+        <div class="dw-tags"><span class="dw-tag">${esc(i.how)} ${esc(i.to.map((x) => String(x).split(/\s+/)[0]).join(", "))}</span><span class="dw-tag">${esc(i.where)}</span><span class="dw-tag">${esc(new Date(i.at).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }))}</span></div>
+        <p class="dw-why">${esc(i.text)}</p>
+      </div>
+      <span></span>
+    </li>`;
+  const card = (title, count, body) => `<article class="ds-speech dw ds-card"><p class="ds-card-head">${esc(title)} <span class="meta">${esc(count)}</span></p>${body}</article>`;
   return `<h3 class="ds-col-head">XF asks + requirements</h3>
-    <p class="meta">From people outside the team since ${esc(since)}: ClickUp comments on sprint tickets${xf.channelsRead?.length ? ", and Slack @mentions and thread replies" : ""}.${esc(where)} Ideas are the ones worded as one (idea, what if, could we, suggest…); everything else is an ask.</p>
-    <section class="ds-xf">
-      ${asks.length ? list(asks) : `<p class="meta">${items.length ? "Nothing asked for; only ideas below." : "Nothing from outside the team in this window."}</p>`}
-    </section>
-    <section class="ds-xf ds-ideas">
-      <div class="sp-group-head"><h3>Ideas</h3><span class="meta">${esc(ideas.length)}</span></div>
-      ${ideas.length ? list(ideas) : `<p class="meta">No ideas from outside the team in this window.</p>`}
-    </section>`;
+    ${card(
+      "ECOM list",
+      slackTodo.data ? ecom.length : "…",
+      slackTodo.error
+        ? `<p class="meta">Slack could not be read: ${esc(slackTodo.error)}</p>`
+        : !slackTodo.data
+          ? `<p class="meta">Reading your ECOM list in Slack…</p>`
+          : `${ecom.length ? `<ol class="dw-list">${ecom.map((i, n) => ecomCardRow(i, n + 1)).join("")}</ol>` : `<p class="meta">Nothing open on the ECOM list.</p>`}${listNotes.map((n) => `<p class="meta bad">${esc(n)}</p>`).join("")}`,
+    )}
+    ${card("From other teams in ClickUp", asks.length, asks.length ? `<p class="meta">Comments on sprint tickets from outside the team since ${esc(since)}.</p><ol class="dw-list">${asks.map((i, n) => xfRow(i, n + 1)).join("")}</ol>` : `<p class="meta">${xf ? `No asks from outside the team since ${esc(since)}.` : "Read when the wins are written."}</p>`)}
+    ${card("Ideas", ideas.length, ideas.length ? `<ol class="dw-list">${ideas.map((i, n) => xfRow(i, n + 1)).join("")}</ol>` : `<p class="meta">No ideas from outside the team in this window.</p>`)}`;
 }
 
 document.addEventListener("input", (event) => {
@@ -6144,8 +6189,13 @@ async function loadSlackTodos() {
     slackTodo.error = err.message;
   } finally {
     slackTodo.loading = false;
-    renderMoves();
+    slackRedraw();
   }
+}
+/** Slack rows show in Today's moves and in Daily wins' XF column: redraw both. */
+function slackRedraw() {
+  renderMoves();
+  if (speech.loaded && !$("view-speech")?.classList.contains("hidden")) renderSpeech();
 }
 function slackWhen(iso) {
   if (!iso) return "";
@@ -6244,7 +6294,7 @@ document.addEventListener("click", async (event) => {
     return alert(`Not done: ${body.error ?? `HTTP ${res.status}`}`);
   }
   for (const k of ["todos", "reminders", "saved", "lists"]) if (slackTodo.data?.[k]) slackTodo.data[k] = slackTodo.data[k].filter((i) => i.key !== b.dataset.slDone);
-  renderMoves();
+  slackRedraw();
 });
 
 const dropSlackItem = (key) => {
@@ -6263,11 +6313,11 @@ document.addEventListener("click", async (event) => {
     const same = slackTodo.open?.key === openB.dataset.slKey && slackTodo.open?.what === openB.dataset.slOpen;
     slackTodo.open = same ? null : { key: openB.dataset.slKey, what: openB.dataset.slOpen };
     slackTodo.msg = null;
-    return renderMoves();
+    return slackRedraw();
   }
   if (t.closest("[data-sl-close]")) {
     slackTodo.open = null;
-    return renderMoves();
+    return slackRedraw();
   }
   const dis = t.closest("[data-sl-dismiss]");
   const done = t.closest("[data-sl-complete]");
@@ -6276,7 +6326,7 @@ document.addEventListener("click", async (event) => {
   const remind = t.closest("[data-sl-remind]");
   if (!dis && !done && !set && !copy && !remind) return;
   const b = dis ?? done ?? set ?? copy ?? remind;
-  const panel = b.closest(".sl-row");
+  const panel = b.closest(".sl-row, .sl-card");
   const say = (text) => {
     slackTodo.msg = text;
     const m = panel?.querySelector(".sl-msg");
@@ -6316,7 +6366,7 @@ document.addEventListener("click", async (event) => {
       b.disabled = false;
       return say(`It will land in your own Slack DM ${new Date(body.postAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}. Nothing goes to ${remind.dataset.slRemind}.`);
     }
-    renderMoves();
+    slackRedraw();
   } catch (err) {
     b.disabled = false;
     if (panel?.querySelector(".sl-msg")) say(`Not done: ${err.message}`);
@@ -6338,7 +6388,7 @@ async function loadMoves() {
     moves.error = `Could not load today's rock moves: ${err.message}`;
   } finally {
     moves.loading = false;
-    renderMoves();
+    slackRedraw();
     if (state.report) renderTopThree(state.report.flags ?? []);
   }
 }
@@ -6356,7 +6406,7 @@ async function movesChange(change) {
     moves.error = err.message;
   } finally {
     moves.busy = false;
-    renderMoves();
+    slackRedraw();
     if (state.report) renderTopThree(state.report.flags ?? []);
   }
 }
