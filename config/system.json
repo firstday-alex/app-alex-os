@@ -53,7 +53,7 @@
   "slack": {
     "advisorButtonText": "Ask for recommendation",
     "postPartialReadouts": true,
-    "todoLists": [],
+    "todoLists": ["F0CKGQN6NP5"],
     "_comment_todoLists": "Alex's Slack Lists to show under From Slack in Today's moves (My work). The list ID starts with F: open the list in Slack, then copy link; the ID is the part after /lists/<team>/. Read with SLACK_USER_TOKEN (scope lists:read). A row with a ticked checkbox counts as done and is left out.",
     "standup": {
       "channelId": "C09DZE9AVS7",
