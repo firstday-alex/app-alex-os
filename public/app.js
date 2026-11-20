@@ -188,6 +188,7 @@ function renderFlags(container, flags, emptyText) {
    its date, the same rule the pipeline applies. */
 
 const TRIAGE_LABEL = { done: "Done", snoozed: "Snoozed", waiting: "Waiting on", dismissed: "Not a problem" };
+const NEVER_NOTE = "never show again";
 const keyOf = (flag) => flag.key ?? String(flag.id ?? "").replace(/^(\d{4}-\d{2}-\d{2}|nodate):/, "");
 // Store moves and control-group moves are context for reading results, not things to
 // act on: shown with the store numbers, never in a flag list. Mirrors CONTEXT_RULES.
@@ -376,6 +377,7 @@ function triageShort(t) {
   if (!t) return "";
   if (t.status === "snoozed") return t.note === "hidden for today" ? "Hidden today" : `Snoozed to ${fmtDay(t.until)}`;
   if (t.status === "waiting") return `Waiting on ${t.waitingOn} to ${fmtDay(t.until)}`;
+  if (t.status === "dismissed" && t.note === NEVER_NOTE) return "Never shown again";
   return TRIAGE_LABEL[t.status] ?? t.status;
 }
 
@@ -419,8 +421,8 @@ function queueRow(flag, { also = 0, who = null } = {}) {
         ${t
           ? `<button type="button" class="ghost sm" data-triage="clear">Bring back</button>`
           : `${canNudge(flag) ? `<button type="button" class="ghost sm" data-q-nudge="${esc(flag.id)}" title="Draft a nudge to ${esc(nudgeTarget(flag))}, to copy or schedule in Slack">Nudge</button>` : ""}
-             <button type="button" class="ghost sm" data-triage="done" title="Handled. Hidden; if it is still true two days later, it comes back.">Done</button>
-             <button type="button" class="q-x" data-triage="hide-today" title="Hide for today. It goes to Hidden or handled below, and is back tomorrow if it still holds." aria-label="Hide for today">×</button>`}
+             <button type="button" class="ghost sm" data-triage="hide-today" title="Hide it for today. Back tomorrow if it is still true.">Dismiss</button>
+             <button type="button" class="ghost sm" data-triage="never" title="Never show this one again. Find it under Handled to bring it back.">Never show again</button>`}
       </span>
     </div>`;
 }
@@ -446,8 +448,8 @@ function groupCard(g) {
       <div class="q-list">${g.flags.map((f) => (queue.open.has(f.id) ? `<div class="q-opened">${flagCard(f)}<button type="button" class="link-btn" data-q-open="${esc(f.id)}">Close</button></div>` : queueRow(f))).join("")}</div>
       <div class="triage-actions">
         ${canNudge ? `<button type="button" class="sm" data-group-act="nudge">Draft one nudge to ${esc(g.person)}</button>` : ""}
-        <button type="button" class="ghost sm" data-group-act="done" title="Mark every item here Done. Each comes back only if its condition clears and returns.">Done all</button>
-        <button type="button" class="ghost sm" data-group-act="hide" title="Hide all of these for today. Back tomorrow if they still hold.">Hide all for today</button>
+        <button type="button" class="ghost sm" data-group-act="done" title="You fixed them all. Any still true in two days comes back.">Fixed all</button>
+        <button type="button" class="ghost sm" data-group-act="hide" title="Hide all of these for today. Back tomorrow if they still hold.">Dismiss all today</button>
       </div>
       <div class="group-panel hidden"></div>
     </div>`;
@@ -940,7 +942,7 @@ const ACTION_HELP = {
   snooze1: "Hides it until the next working day. If the problem is still there, it comes back.",
   snooze3: "Hides it for 3 working days, skipping weekends. If the problem is still there, it comes back.",
   snooze5: "Hides it for 5 working days. If the problem is still there, it comes back.",
-  done: "You have dealt with it. It leaves your queue and stays hidden while the same problem is raised. If it clears and happens again later, it comes back as new. Undo from Hidden or handled.",
+  done: "You fixed it. It leaves your queue; if it is still true two days later, it comes back marked ↺ so a fix that did not take is not lost. Undo from Handled.",
   advise: "Asks Claude for a recommendation on this flag: what to do, why, and the trade-offs, weighed against this quarter's rocks. One model call per click; a second click shows the same answer.",
   dismiss: "The flag is wrong, or this does not matter here. It stays hidden as long as the same problem is raised; if it clears and happens again later, it is new. Add why if you like: the Rule check counts these to find noisy rules.",
 };
@@ -952,7 +954,7 @@ function triageActions(flag, { compact = false, fix = false } = {}) {
   const item = (act, label, help, extra = "") =>
     `<div class="menu-row"><button type="button" class="menu-item" data-triage="${act}"${extra}>${esc(label)}</button>${infoIcon(help)}</div>`;
   return `<div class="triage-actions">
-      <span class="act-with-info"><button type="button" class="sm" data-triage="done">Done</button>${infoIcon(ACTION_HELP.done)}</span>
+      <span class="act-with-info"><button type="button" class="sm" data-triage="done">I fixed it</button>${infoIcon(ACTION_HELP.done)}</span>
       <details class="act-menu">
         <summary class="btn-ghost sm">Take action ▾</summary>
         <div class="act-pop">
@@ -997,7 +999,7 @@ function flagCard(flag, { compact = false, also = 0 } = {}) {
   const badges = `${also ? `<span class="chip">+${esc(also)} more on this ticket</span>` : ""}${ageBadges(flag)}`;
   return `
       <div class="flag sev-${esc(flag.severity)}${compact ? " ns-compact" : ""}"${t ? " data-triaged" : ""} data-flag="${esc(flag.id)}" data-key="${esc(keyOf(flag))}" data-layer="${esc(flag.layer)}">
-        ${t ? "" : `<button type="button" class="flag-x" data-triage="hide-today" title="Hide for today. Back tomorrow if it still holds." aria-label="Hide for today">×</button>`}
+        ${t ? "" : `<button type="button" class="flag-x" data-triage="ask" title="Close: fixed, dismiss for today, or never show again" aria-label="Close this card">×</button>`}
         <p class="msg">${esc(flag.message)}</p>
         <p class="meta" title="${esc(flag.rule)}">${esc(AREA_LABEL[flag.layer] ?? layerLabel(flag.layer))}${ctx.owners.length ? ` · ${esc(ctx.owners.join(", "))}` : ""}</p>
         ${badges || links ? `<div class="flag-foot">${links ? `<span class="quicklinks">${links}</span>` : ""}<span class="flag-badges">${badges}</span></div>` : ""}
@@ -1726,11 +1728,45 @@ document.addEventListener("click", (event) => {
 /* ------------------------------ triage actions ------------------------------ */
 
 /** After ×: a few seconds to take it back, and a pointer to where it went. */
-function undoToast(flagId, key, layer) {
+/** What a × means, asked: fixed, dismiss for today, or never show again. Resolves to the choice or null. */
+function askClose(message) {
+  return new Promise((resolve) => {
+    document.getElementById("close-ask")?.remove();
+    const box = document.createElement("div");
+    box.id = "close-ask";
+    box.className = "close-ask";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    box.innerHTML = `<div class="close-ask-card">
+        <p class="close-ask-q">What do you want to do with this?</p>
+        ${message ? `<p class="meta close-ask-msg">${esc(message.slice(0, 220))}</p>` : ""}
+        <button type="button" data-close-choice="done"><strong>I fixed it</strong><span class="meta">Hidden. Comes back if it is still true in two days.</span></button>
+        <button type="button" data-close-choice="today"><strong>Dismiss for today</strong><span class="meta">Back tomorrow if it is still true.</span></button>
+        <button type="button" data-close-choice="never"><strong>Never show again</strong><span class="meta">Gone for good. Bring it back from Handled.</span></button>
+        <button type="button" class="ghost" data-close-choice="">Cancel</button>
+      </div>`;
+    const finish = (v) => {
+      box.remove();
+      document.removeEventListener("keydown", onKey);
+      resolve(v || null);
+    };
+    const onKey = (e) => e.key === "Escape" && finish(null);
+    box.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-close-choice]");
+      if (b) return finish(b.dataset.closeChoice);
+      if (e.target === box) finish(null);
+    });
+    document.addEventListener("keydown", onKey);
+    document.body.append(box);
+    box.querySelector("[data-close-choice]")?.focus();
+  });
+}
+
+function undoToast(flagId, key, layer, said = "Hidden for today.") {
   document.getElementById("undo-toast")?.remove();
   const bar = document.createElement("div");
   bar.id = "undo-toast";
-  bar.innerHTML = `Hidden for today. It is under <strong>Handled</strong> in Your queue. <button type="button" class="link-btn">Undo</button>`;
+  bar.innerHTML = `${esc(said)} It is under <strong>Handled</strong> in Your queue. <button type="button" class="link-btn">Undo</button>`;
   bar.querySelector("button").addEventListener("click", async () => {
     bar.remove();
     const holder = document.createElement("div");
@@ -2076,6 +2112,24 @@ document.addEventListener("click", async (event) => {
   el.closest("details.act-menu")?.removeAttribute("open");
 
   if (action === "done") return saveTriage(card, { status: "done" });
+  if (action === "never") {
+    const { key, layer, flag } = card.dataset;
+    await saveTriage(card, { status: "dismissed", note: NEVER_NOTE });
+    return undoToast(flag, key, layer, "Won't show again.");
+  }
+  if (action === "ask") {
+    // Alex, 2026-11-20: an ambiguous × asks what is meant.
+    const choice = await askClose(card.querySelector(".msg")?.textContent ?? "");
+    if (!choice) return;
+    const { key, layer, flag } = card.dataset;
+    if (choice === "done") return saveTriage(card, { status: "done" });
+    if (choice === "never") {
+      await saveTriage(card, { status: "dismissed", note: NEVER_NOTE });
+      return undoToast(flag, key, layer, "Won't show again.");
+    }
+    await saveTriage(card, { status: "snoozed", calendarDays: 1, note: "hidden for today" });
+    return undoToast(flag, key, layer);
+  }
   if (action === "hide-today") {
     const { key, layer, flag } = card.dataset;
     await saveTriage(card, { status: "snoozed", calendarDays: 1, note: "hidden for today" });

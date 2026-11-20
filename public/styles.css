@@ -1452,3 +1452,11 @@ main:has(#view-speech:not(.hidden)) { max-width: 1500px; }
 .sl-nudge { width: 100%; font: inherit; }
 .sl-row.sl-list { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "kind text" "kind meta" "acts acts"; }
 .sl-row.sl-list .q-acts { justify-content: flex-start; margin-top: 6px; }
+
+/* The × asks what is meant (fixed, dismiss for today, never show again). */
+.close-ask { position: fixed; inset: 0; z-index: 60; background: rgba(20, 30, 28, 0.45); display: grid; place-items: center; padding: 16px; }
+.close-ask-card { width: min(420px, 100%); background: var(--bg); border-radius: 12px; padding: 18px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.3); display: grid; gap: 8px; }
+.close-ask-q { margin: 0; font-weight: 700; }
+.close-ask-msg { margin: 0 0 4px; }
+.close-ask-card button { display: grid; gap: 2px; text-align: left; padding: 10px 12px; }
+.close-ask-card button.ghost { text-align: center; }
