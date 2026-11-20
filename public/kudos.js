@@ -36,7 +36,30 @@ export function kudosWeek(wins, excluded = new Set(), { now = Date.now() } = {})
       .filter((x) => x.t);
     if (w.length) rocks.push({ n: String(r.label).slice(0, 80), w });
   }
+  placeColumns(rocks);
   return { id: isoDay(start), label: `Week of ${MONTHS[start.getMonth()]} ${start.getDate()}`, at: start.toISOString(), rocks };
+}
+
+const isBau = (name) => /^\s*(bau|business as usual)\b/i.test(String(name ?? ""));
+
+/**
+ * Which of the three columns each rock sits in (field c). Balanced the way the page balances
+ * them (each rock to the shortest column), then BAU's column is swapped with the last one.
+ * Alex, 2026-11-20: "switch column 1 with 3 of the kudos i never want bau at the front".
+ */
+export function placeColumns(rocks) {
+  const h = [0, 0, 0];
+  for (const r of rocks) {
+    const i = h[0] <= h[1] && h[0] <= h[2] ? 0 : h[1] <= h[2] ? 1 : 2;
+    r.c = i;
+    h[i] += r.w.length + 1.6;
+  }
+  const bau = rocks.find((r) => isBau(r.n));
+  if (bau && bau.c !== 2) {
+    const from = bau.c;
+    for (const r of rocks) r.c = r.c === from ? 2 : r.c === 2 ? from : r.c;
+  }
+  return rocks;
 }
 
 const escHtml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

@@ -21,7 +21,7 @@ test("the week: Monday's label, ticket names cleaned, unticked and empty rocks l
   const week = kudosWeek(wins, new Set(["q1"]));
   assert.equal(week.id, "2026-11-09");
   assert.equal(week.label, "Week of Nov 9");
-  assert.deepEqual(week.rocks, [{ n: "Bundles", w: [
+  assert.deepEqual(week.rocks, [{ n: "Bundles", c: 0, w: [
     { k: "ta1", t: "Bundle page", u: "https://app.clickup.com/t/a1" },
     { k: "ta2", t: "Gift box </script><b>" },
   ] }]);
@@ -93,4 +93,13 @@ test("images go into the week only as image data URLs, and the page carries them
   const template = readFileSync(new URL("../public/kudos/template.html", import.meta.url), "utf8");
   assert.match(kudosPage(template, week, "x"), /"i":"data:image\/png;base64,iVBORw0KGgo="/);
   assert.match(template, /seedShots\[x\.k\]=x\.i/);
+});
+
+test("BAU always sits in the last column: its column swaps with column 3", async () => {
+  const { placeColumns } = await import("../public/kudos.js");
+  const w = (n) => Array.from({ length: n }, (_, i) => ({ k: `k${i}`, t: "x" }));
+  const rocks = placeColumns([{ n: "BAU", w: w(8) }, { n: "New Products", w: w(7) }, { n: "Bundles", w: w(4) }, { n: "Quiz", w: w(1) }]);
+  assert.deepEqual(rocks.map((r) => [r.n, r.c]), [["BAU", 2], ["New Products", 1], ["Bundles", 0], ["Quiz", 0]]);
+  const none = placeColumns([{ n: "Bundles", w: w(3) }, { n: "Quiz", w: w(1) }]);
+  assert.deepEqual(none.map((r) => r.c), [0, 1]);
 });
