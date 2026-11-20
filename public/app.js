@@ -5806,7 +5806,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 // Areas by what Alex logs in for (Alex, 2026-11-20: "i don't know when to go to what tabs"):
 //   Team      keep the work moving        Kudos     celebrate the best work
 //   Cleaning  housekeeping                Planning  sprint, rocks, tactics
-//   Metrics   tests and store numbers     Post      the three things posted each day
+//   Metrics   tests and store numbers     Post/Speak the three things posted or said each day
 // Setup is only in the menu, and names itself in the top bar when open.
 const NAV_GROUPS = [
   { id: "team", pages: [["readout", "What needs you"], ["sprint", "Sprint"], ["standup", "Team stand-ups"], ["people", "1:1"]] },
