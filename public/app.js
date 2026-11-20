@@ -6029,6 +6029,23 @@ function unblockFlags() {
     .filter((f) => UNBLOCK_RULES.has(f.rule) && viewOf(f) === "open")
     .sort((a, b) => (sev[a.severity] ?? 9) - (sev[b.severity] ?? 9) || Boolean(b.isNew) - Boolean(a.isNew) || (b.openDays ?? 0) - (a.openDays ?? 0));
 }
+/* Tidy-ups in Today's moves (Alex, 2026-11-20: "where did my cleanup hygiene tasks go… as a
+   tab in today's moves"): the open tidy-up flags (missing fields, hygiene rules), the same
+   ones the queue's Tidy-ups filter shows, oldest first. */
+function tidyFlags() {
+  return (state.report?.flags ?? [])
+    .filter((f) => viewOf(f) === "open" && !isContextFlag(f) && !UNBLOCK_RULES.has(f.rule) && (f.severity === "info" || nextActionOf(f) === "fix"))
+    .sort((a, b) => (b.openDays ?? 0) - (a.openDays ?? 0));
+}
+function tidyList(list) {
+  if (!list.length) return `<p class="sub mv-clear">✓ No tidy-ups open. Tickets have their fields filled in.</p>`;
+  const row = (f) =>
+    moves.open.has(f.id)
+      ? `<div class="q-opened">${flagCard(f)}<button type="button" class="link-btn" data-mv-open="${esc(f.id)}">Close</button></div>`
+      : queueRow(f).replace(`data-q-open="${esc(f.id)}"`, `data-mv-open="${esc(f.id)}"`);
+  return `<p class="mv-unblock-sub">Ticket hygiene: missing fields and clean-up, oldest first. Nothing here is urgent; clear a few when there's time.</p>
+    <div class="q-list">${list.map(row).join("")}</div>`;
+}
 const FOCUS_MIN = 25;
 const COURSE_WORD = { off: "off course", drift: "drifting", on: "on course" };
 const WEEKDAY = (key) => new Date(`${key}T12:00:00Z`).toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
@@ -6458,6 +6475,7 @@ function renderMoves() {
   // Unblocking others comes first; with nobody waiting, the rock work is shown.
   const mySlack = (slackTodo.data?.todos ?? []).length + (slackTodo.data?.reminders ?? []).length + (slackTodo.data?.saved ?? []).length + (slackTodo.data?.lists ?? []).length;
   const tab = moves.tab ?? (unblock.length + reviews.length ? "unblock" : "rock");
+  const tidy = tidyFlags();
   const waitingN = unblock.length + reviews.length;
   const mineOpen = myOpenTickets();
   const rockCount = mineOpen.moving.length + mineOpen.todo.length + open.length + mySlack;
@@ -6491,9 +6509,10 @@ function renderMoves() {
       <div class="mv-tabs" role="tablist" aria-label="Today's moves">
         <button type="button" role="tab" class="mv-tab${tab === "unblock" ? " on" : ""}" aria-selected="${tab === "unblock"}" data-mv-tab="unblock">Unblock others${waitingN ? `<span class="mv-badge alert">${esc(waitingN)}</span>` : `<span class="mv-badge">0</span>`}</button>
         <button type="button" role="tab" class="mv-tab${tab === "rock" ? " on" : ""}" aria-selected="${tab === "rock"}" data-mv-tab="rock">My work${rockCount ? `<span class="mv-badge">${esc(rockCount)}</span>` : ""}${d.picks.length ? `<span class="mv-tab-sub">${esc(done.length)}/${esc(d.picks.length)} done</span>` : ""}</button>
+        <button type="button" role="tab" class="mv-tab${tab === "tidy" ? " on" : ""}" aria-selected="${tab === "tidy"}" data-mv-tab="tidy">Tidy-ups<span class="mv-badge">${esc(tidy.length)}</span></button>
       </div>
       ${moves.error ? `<p class="triage-error">${esc(moves.error)}</p>` : ""}
-      ${tab === "unblock" ? unblockList(unblock, reviews) : `${slackSection(["todos", "reminders", "lists", "saved"], "From Slack", "Your to-dos, reminders, lists and saved messages")}${myTicketsHtml()}${myTicketsHtml() ? `<div class="mv-sec"><span>Rock moves</span><span class="meta">Decisions and plan items that move a rock</span></div>` : ""}
+      ${tab === "tidy" ? tidyList(tidy) : tab === "unblock" ? unblockList(unblock, reviews) : `${slackSection(["todos", "reminders", "lists", "saved"], "From Slack", "Your to-dos, reminders, lists and saved messages")}${myTicketsHtml()}${myTicketsHtml() ? `<div class="mv-sec"><span>Rock moves</span><span class="meta">Decisions and plan items that move a rock</span></div>` : ""}
       ${open.length ? `<div class="mv-list">${open.map(moveCard).join("")}</div>` : ""}
       ${done.length ? `<div class="mv-list mv-done-list">${done.map(moveCard).join("")}</div>` : ""}
       ${sugs.length ? `${d.picks.length || hidden > 0 || moves.more ? `<div class="mv-sec"><span>${d.picks.length ? "More that would move a rock" : ""}</span>${hidden > 0 || moves.more ? `<button type="button" class="link-btn" data-mv="more">${moves.more ? "Fewer" : `${hidden} more`}</button>` : ""}</div>` : ""}
