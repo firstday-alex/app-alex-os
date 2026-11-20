@@ -2963,6 +2963,7 @@ function renderUpdate(report) {
   renderWins("thisweek", report);
   renderWins("lastweek", report);
   if (standup.data) renderUpsu();
+  if (speech.loaded) renderSpeech(); // the In progress column reads the readout
 }
 
 /* ---------------------------- this / last week's wins ----------------------------
@@ -5231,17 +5232,94 @@ function renderSpeech() {
     }
     ${missed.length ? `<p class="meta">Not available when this was written: ${esc(missed.join(", "))}.</p>` : ""}
     ${(latest?.xf?.notes ?? []).map((n) => `<div class="missing">${esc(n)}</div>`).join("")}
-    ${latest ? winsList(latest) : ""}
-    ${
-      latest?.facts?.length
-        ? `<details class="ds-facts"><summary>What it rests on (${esc(latest.facts.length)})</summary><ul>${latest.facts
-            .map((f) => `<li>${esc(f.claim)} <span class="meta">· ${esc(f.source)}</span></li>`)
-            .join("")}</ul></details>`
-        : ""
-    }
-    ${notesSection()}
-    ${latest ? xfSection(latest.xf) : ""}`;
+    ${speechColumns(latest)}`;
 }
+
+/* Daily wins in three columns (Alex, 2026-11-20): the wins, the work in progress, then XF
+   asks and requirements with ideas toward the bottom. On a narrow screen, tabs switch
+   between the three. */
+const SPEECH_TABS = [["wins", "Daily wins"], ["progress", "In progress"], ["xf", "XF asks + ideas"]];
+let speechTab = (() => {
+  try {
+    return localStorage.getItem("speechTab") || "wins";
+  } catch {
+    return "wins";
+  }
+})();
+
+function speechColumns(latest) {
+  const tasks = (state.report?.detail?.clickup?.tasks ?? []).filter((t) => !t.archived && t.bucket === "inProgress");
+  const xf = latest?.xf?.items ?? [];
+  const ideas = xf.filter((i) => isIdea(i.text)).length;
+  const counts = { wins: latest?.wins ? latest.wins.filter((w) => !(speech.celebrated ?? {})[w.key]).length : null, progress: tasks.length, xf: xf.length };
+  const col = (id, body) => `<div class="ds-col${speechTab === id ? " on" : ""}" data-speech-col="${id}" role="tabpanel">${body}</div>`;
+  return `<div class="ds-tabs" role="tablist">${SPEECH_TABS.map(
+    ([id, label]) => `<button type="button" role="tab" class="ds-tab${speechTab === id ? " on" : ""}" aria-selected="${speechTab === id}" data-speech-tab="${id}">${esc(label)}${counts[id] != null ? ` <span class="ds-count">${esc(counts[id])}</span>` : ""}</button>`,
+  ).join("")}</div>
+    <div class="ds-cols">
+      ${col(
+        "wins",
+        `<h3 class="ds-col-head">Daily wins</h3>
+        ${latest ? winsList(latest) : `<p class="meta">Not written yet. Press Write today's wins.</p>`}
+        ${
+          latest?.facts?.length
+            ? `<details class="ds-facts"><summary>What it rests on (${esc(latest.facts.length)})</summary><ul>${latest.facts
+                .map((f) => `<li>${esc(f.claim)} <span class="meta">· ${esc(f.source)}</span></li>`)
+                .join("")}</ul></details>`
+            : ""
+        }`,
+      )}
+      ${col("progress", inProgressSection(tasks))}
+      ${col("xf", `${xfSection(latest?.xf, ideas)}${notesSection()}`)}
+    </div>`;
+}
+
+document.addEventListener("click", (event) => {
+  const b = event.target.closest("[data-speech-tab]");
+  if (!b) return;
+  speechTab = b.dataset.speechTab;
+  try {
+    localStorage.setItem("speechTab", speechTab);
+  } catch {}
+  document.querySelectorAll("[data-speech-tab]").forEach((t) => {
+    t.classList.toggle("on", t === b);
+    t.setAttribute("aria-selected", String(t === b));
+  });
+  document.querySelectorAll("[data-speech-col]").forEach((c) => c.classList.toggle("on", c.dataset.speechCol === speechTab));
+});
+
+const PROGRESS_ORDER = ["ready for deploy", "qa", "vqa", "in review", "in-progress", "in progress", "blocked"];
+
+/** Sprint tickets in flight, from the latest readout: furthest along first. */
+function inProgressSection(tasks) {
+  const byStatus = new Map();
+  for (const t of tasks) {
+    const st = String(t.status ?? "").toLowerCase();
+    if (!byStatus.has(st)) byStatus.set(st, []);
+    byStatus.get(st).push(t);
+  }
+  const rank = (st) => (PROGRESS_ORDER.includes(st) ? PROGRESS_ORDER.indexOf(st) : PROGRESS_ORDER.length);
+  const groups = [...byStatus.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]));
+  const when = state.report?.generatedAt ? new Date(state.report.generatedAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }) : null;
+  const row = (t) => {
+    const who = (t.assignees ?? []).map((u) => String(u.username ?? "").split(/\s+/)[0]).filter(Boolean);
+    return `<li>
+      <div class="dw-title">${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.plainName ?? t.name)}</a>` : esc(t.plainName ?? t.name)}</div>
+      <div class="dw-tags">${who.length ? `<span class="dw-tag">${esc(who.join(", "))}</span>` : `<span class="dw-tag dw-carry">no assignee</span>`}${t.bigSwing?.label ? `<span class="dw-tag dw-rock">${esc(t.bigSwing.label)}</span>` : ""}</div>
+    </li>`;
+  };
+  return `<h3 class="ds-col-head">In progress</h3>
+    <p class="meta">${esc(plural(tasks.length, "sprint ticket", "sprint tickets"))} in flight, furthest along first${when ? `, from ClickUp as pulled ${esc(when)}` : ""}.</p>
+    ${
+      tasks.length
+        ? groups.map(([st, ts]) => `<section class="ds-prog"><div class="sp-group-head"><h3>${esc(st)}</h3><span class="meta">${esc(ts.length)}</span></div><ul class="ds-prog-list">${ts.map(row).join("")}</ul></section>`).join("")
+        : `<p class="meta">${state.report ? "Nothing in progress on the sprint." : "Loading the readout…"}</p>`
+    }`;
+}
+
+/** An XF item that floats an idea rather than asking for something: by its wording, nothing more. */
+const IDEA = /\b(ideas?|what if|could we|we could|maybe we|how about|suggest(ion|ing)?|brainstorm|would be (cool|nice|great|fun)|wonder if|thinking about|thought:)/i;
+const isIdea = (text) => IDEA.test(String(text ?? ""));
 
 /** The wins not yet called out, as text to paste in Slack or send up; an old speech as it was. */
 function winsCopyText(latest) {
@@ -5319,26 +5397,29 @@ document.addEventListener("click", async (event) => {
 
 /** The cross-functional list the speech was written from, each item linked to where it was said. */
 function xfSection(xf) {
-  if (!xf) return "";
+  if (!xf) return `<h3 class="ds-col-head">XF asks + requirements</h3><p class="meta">Read when the wins are written.</p>`;
   const items = xf.items ?? [];
   const since = xf.since ? new Date(xf.since).toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" }) : "the previous working day";
   const where = xf.channelsRead?.length ? ` Slack channels read: ${xf.channelsRead.join(", ")}.` : "";
-  return `<section class="ds-xf">
-    <div class="sp-group-head"><h3>Cross-functional (XF)</h3><span class="meta">${esc(plural(items.length, "item", "items"))} since ${esc(since)}</span></div>
-    <p class="meta">ClickUp comments on sprint tickets from people outside the team${xf.channelsRead?.length ? ", and Slack @mentions and thread replies" : ""}. Your notes above are read too.${esc(where)}</p>
-    ${
-      items.length
-        ? `<ul class="ds-xf-list">${items
-            .map(
-              (i) => `<li>
+  const asks = items.filter((i) => !isIdea(i.text));
+  const ideas = items.filter((i) => isIdea(i.text));
+  const list = (xs) => `<ul class="ds-xf-list">${xs
+    .map(
+      (i) => `<li>
           <div><strong>${esc(i.from)}</strong> <span class="meta">${esc(i.how)} ${esc(i.to.map((n) => String(n).split(/\s+/)[0]).join(", "))} · ${esc(i.where)} · ${esc(new Date(i.at).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }))}</span>${i.url ? ` <a href="${esc(i.url)}" target="_blank" rel="noreferrer">Open</a>` : ""}</div>
           <div class="ds-xf-text">${esc(i.text)}</div>
         </li>`,
-            )
-            .join("")}</ul>`
-        : `<p class="meta">No ClickUp comments from outside the team in this window.</p>`
-    }
-  </section>`;
+    )
+    .join("")}</ul>`;
+  return `<h3 class="ds-col-head">XF asks + requirements</h3>
+    <p class="meta">From people outside the team since ${esc(since)}: ClickUp comments on sprint tickets${xf.channelsRead?.length ? ", and Slack @mentions and thread replies" : ""}.${esc(where)} Ideas are the ones worded as one (idea, what if, could we, suggest…); everything else is an ask.</p>
+    <section class="ds-xf">
+      ${asks.length ? list(asks) : `<p class="meta">${items.length ? "Nothing asked for; only ideas below." : "Nothing from outside the team in this window."}</p>`}
+    </section>
+    <section class="ds-xf ds-ideas">
+      <div class="sp-group-head"><h3>Ideas</h3><span class="meta">${esc(ideas.length)}</span></div>
+      ${ideas.length ? list(ideas) : `<p class="meta">No ideas from outside the team in this window.</p>`}
+    </section>`;
 }
 
 document.addEventListener("input", (event) => {

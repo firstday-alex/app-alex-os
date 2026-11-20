@@ -1419,3 +1419,28 @@ body:has(#view-ecomrocks:not(.hidden)) main { max-width: 1480px; }
 .sl-row .q-acts { grid-area: acts; }
 .sl-note { margin: 4px 0 8px; }
 .sl-list .sl-kind { background: #e6f1ee; color: #0b6b62; }
+
+/* Daily wins in three columns: wins, in progress, XF asks + ideas. Tabs on a narrow screen. */
+main:has(#view-speech:not(.hidden)) { max-width: 1500px; }
+#view-speech .ds-speech, #view-speech .ds-facts, #view-speech .ds-notes, #view-speech .ds-xf { max-width: none; }
+.ds-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: start; margin-top: 14px; }
+.ds-col { min-width: 0; }
+.ds-col-head { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.ds-col .ds-speech { margin-top: 6px; }
+.ds-xf { margin-top: 10px; }
+.ds-ideas { margin-top: 26px; padding-top: 12px; border-top: 1px solid var(--line); }
+.ds-prog { margin-top: 12px; }
+.ds-prog .sp-group-head h3 { text-transform: capitalize; }
+.ds-prog-list { list-style: none; margin: 4px 0 0; padding: 0; }
+.ds-prog-list li { padding: 8px 0; border-top: 1px solid var(--line); }
+.ds-prog-list li:first-child { border-top: 0; }
+.ds-tabs { display: none; }
+@media (max-width: 1000px) {
+  .ds-cols { grid-template-columns: 1fr; }
+  .ds-col:not(.on) { display: none; }
+  .ds-col-head { display: none; }
+  .ds-tabs { display: flex; gap: 4px; margin-top: 12px; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; background: var(--bg); }
+  .ds-tab { flex: 1; background: none; color: var(--muted); border: 0; border-bottom: 3px solid transparent; border-radius: 0; padding: 10px 4px; font-weight: 600; }
+  .ds-tab.on { color: var(--ink, inherit); border-bottom-color: var(--green); }
+  .ds-count { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; background: #eef2f1; font-size: 12px; }
+}
