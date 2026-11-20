@@ -72,14 +72,11 @@ test("a Slack List named in config: open rows with title, due date and owner; ti
   assert.equal(calls.find((c) => c.method === "slackLists.items.list").params.list_id, "F0LIST1");
 });
 
-test("Slack To-dos through saved.list: open ones only, due first; a refusal leaves a note and the rest loads", async () => {
+test("Slack's To-dos tab is not asked for (Slack refuses app tokens): no saved.list call, no note about it", async () => {
   const { fetchImpl, calls } = slack();
   const out = await slackTodos({ config, env: { SLACK_USER_TOKEN: "xoxp-1" }, fetchImpl, now });
-  assert.deepEqual(out.todos.map((t) => [t.text, t.url, Boolean(t.due)]), [["A Slack message", "https://x/todo1", true], ["Review @Blake Tucker PDP copy", "https://x/todo3", false]]);
-  assert.deepEqual(calls.find((c) => c.method === "saved.list").params, { filter: "todo_with_completed", limit: "50" });
-  assert.ok(!/C3|UBLAKE/.test(JSON.stringify(out.todos)), "no Slack id in to-dos");
-  const refused = await slackTodos({ config, env: { SLACK_USER_TOKEN: "xoxp-1" }, fetchImpl: slack({ todos: false }).fetchImpl, now });
-  assert.deepEqual(refused.todos, []);
-  assert.match(refused.notes.join(" "), /not_allowed_token_type/);
-  assert.equal(refused.reminders.length, 1);
+  assert.deepEqual(out.todos, []);
+  assert.ok(!calls.some((c) => c.method === "saved.list"));
+  assert.ok(!/To-dos|not_allowed_token_type/.test(out.notes.join(" ")));
+  assert.equal(out.reminders.length, 1);
 });

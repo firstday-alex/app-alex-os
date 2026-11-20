@@ -8,8 +8,10 @@
 //   saved      messages Alex saved for later. Needs stars:read. Slack has moved saving to
 //              "Later", and the API may return nothing for it; then the page says so.
 //   lists      rows of the Slack Lists named in system.slack.todoLists (slackLists.items.list,
-//              lists:read). A row's title is its first text cell, its due date its first date
-//              cell, its owner its first person cell; a ticked checkbox means done.
+//              lists:read): Alex's ECOM list. A row's title is its first text cell, its due
+//              date the column named Due, its check-in the column named Check-In, its owner
+//              its first person cell; a ticked checkbox means done.
+// Slack's To-dos tab cannot be read by an app (Slack refuses app tokens), so it is not tried.
 //
 // Each source fails on its own: a missing scope empties that list with a note, never the rest.
 // No Slack id is kept; names come from users.info at read time.
@@ -125,48 +127,10 @@ export async function slackTodos({ config, env = process.env, logger, fetchImpl,
       .sort((a, b) => String(a.at ?? "9").localeCompare(String(b.at ?? "9")));
   })().catch((err) => missing("reminders", err));
 
-  // Slack To-dos (the sidebar tab that replaced Later). Slack has no public API for them;
-  // this tries saved.list, the undocumented method Slack's own web app uses (Alex asked to
-  // try it, 2026-11-19). Read-only. Slack may refuse a user token (not_allowed_token_type)
-  // or change it without notice; then the list is empty with a note and the rest still loads.
-  // Field names follow slackcli's reading of it (todo_state: saved | to_do | completed).
-  const todos = await (async () => {
-    const body = await call("saved.list", { filter: "todo_with_completed", limit: "50" }, ctx);
-    const raw = body.saved_items ?? body.items ?? [];
-    const items = raw.filter((i) => i && i.todo_state !== "completed" && (i.todo_state ?? "to_do") !== "saved");
-    // When Slack sends items but none read as open to-dos, say what came back, so a change in
-    // Slack's undocumented format shows up instead of an empty list.
-    if (raw.length && !items.length) {
-      const states = [...new Set(raw.map((i) => String(i?.todo_state ?? "none")))].join(", ");
-      notes.push(`Slack sent ${raw.length} saved item${raw.length === 1 ? "" : "s"}, none marked as an open to-do (states: ${states}).`);
-    }
-    if (!Array.isArray(body.saved_items) && !Array.isArray(body.items)) notes.push(`Slack's To-dos answer had no item list (keys: ${Object.keys(body ?? {}).join(", ").slice(0, 120)}).`);
-    await learn([...new Set(items.flatMap((i) => (i.message ? [i.message.user, ...mentionIds(i.message.text)] : [])))]);
-    const out = [];
-    for (const i of items) {
-      const channel = i.channel_id ?? i.item_id ?? i.channel ?? null;
-      const ts = i.message?.ts ?? i.ts ?? null;
-      let url = i.message?.permalink ?? null;
-      if (!url && channel && ts) url = await call("chat.getPermalink", { channel, message_ts: ts }, ctx).then((b) => b.permalink ?? null).catch(() => null);
-      const text = i.message?.text ? plainText(i.message.text, nameOf) : i.file?.title ?? i.file?.name ?? "A Slack message";
-      const due = Number(i.date_due) > 0 ? new Date(Number(i.date_due) * 1000).toISOString() : null;
-      out.push({
-        key: todoKey("todo", `${channel}:${ts}:${i.date_created ?? i.date_saved ?? ""}`),
-        kind: "todo",
-        from: i.message?.user ? nameOf(i.message.user) : null,
-        text,
-        due,
-        at: i.date_saved ?? i.date_created ? new Date(Number(i.date_saved ?? i.date_created) * 1000).toISOString() : null,
-        url,
-      });
-    }
-    return out.sort((a, b) => String(a.due ?? "9999").localeCompare(String(b.due ?? "9999")));
-  })().catch((err) => {
-    if (err.slackError === "not_allowed_token_type" || err.slackError === "unsupported_auth_type") notes.push("Slack does not let an app token read your To-dos (it said " + err.slackError + "); only Slack's own app can. Use a Slack reminder, or a Slack List, for to-dos you want here.");
-    else if (err.slackError === "unknown_method") notes.push("Slack has no saved.list for app tokens, so your To-dos can't be read here.");
-    else notes.push(`Could not read your Slack To-dos: ${err.message}`);
-    return [];
-  });
+  // Slack To-dos (the sidebar tab) are not read: Slack refuses app tokens
+  // (not_allowed_token_type, seen live 2026-11-20), so Alex keeps to-dos in his ECOM Slack
+  // List instead and the call was removed. `todos` stays in the answer, always empty.
+  const todos = [];
 
   // Saved for later.
   const saved = await (async () => {
