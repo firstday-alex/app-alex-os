@@ -1730,9 +1730,9 @@ function undoToast(flagId, key, layer) {
 const findFlag = (card) => (state.report?.flags ?? []).find((f) => f.id === card.dataset.flag);
 
 /* ------------------------------ schedule a nudge ------------------------------
-   Under a drafted nudge: send it in Slack as a DM from Alex at a chosen time
-   (netlify/functions/slack-schedule.mjs). Alex chose this on 2026-11-17. A line saying
-   Claude drafted it is added at the end; nothing goes until Alex presses Schedule. */
+   Under a drafted nudge: schedule it into Alex's own Slack DM at a chosen time, for Alex to
+   send on (netlify/functions/slack-schedule.mjs). Alex, 2026-11-20: "i want these to instead
+   send to me". Nothing goes to the teammate. A line saying Claude drafted it is added. */
 
 /** 9:00 on the next working day, as a datetime-local value. */
 function nextMorning() {
@@ -1746,9 +1746,9 @@ function nextMorning() {
 
 function scheduleRow() {
   return `<div class="sched-row">
-      <label>Or send it in Slack as you, at <input type="datetime-local" class="sm" data-sched-at value="${esc(nextMorning())}"></label>
+      <label>Or remind yourself in Slack at <input type="datetime-local" class="sm" data-sched-at value="${esc(nextMorning())}"></label>
       <button type="button" class="ghost sm" data-sched-send>Schedule in Slack</button>
-      <span class="meta">A DM from your account. "Drafted with Claude" is added at the end.</span>
+      <span class="meta">Lands in your DM with yourself, ready to send on. Nothing goes to them.</span>
       <span class="sched-msg"></span>
     </div>`;
 }
@@ -1777,7 +1777,7 @@ function scheduledList() {
   const items = sched.data.items ?? [];
   const when = (iso) => new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   return `<div class="sched-list">
-      <p class="q-label">Scheduled in Slack <span class="meta">${items.length ? `from ${esc(sched.data.from ?? "your account")}` : "nothing scheduled"}</span></p>
+      <p class="q-label">Nudges coming to your Slack DM <span class="meta">${items.length ? `from ${esc(sched.data.from ?? "your account")}` : "nothing scheduled"}</span></p>
       ${items.map((m) => `<div class="flag q-row sched-item">
           <span class="q-sev">${esc(when(m.postAt))}</span>
           <span class="q-msg" title="${esc(m.text)}">To ${esc(m.to)}: ${esc(m.text)}</span>
@@ -1805,11 +1805,11 @@ function schedToast(result) {
   const bar = document.createElement("div");
   bar.id = "undo-toast";
   const when = new Date(result.postAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-  bar.innerHTML = `Nudge to ${esc(result.to)} scheduled for ${esc(when)}${result.from ? `, from your Slack account (${esc(result.from)})` : ""}. In Slack it is under Drafts &amp; sent › Scheduled. <button type="button" class="link-btn">Cancel it</button>`;
+  bar.innerHTML = `Nudge for ${esc(result.to)} will land in your own Slack DM ${esc(when)}${result.from ? ` (${esc(result.from)})` : ""}, ready to send on. Nothing goes to ${esc(result.to)}. Slack does not list it until then; the Waiting pile does. <button type="button" class="link-btn">Cancel it</button>`;
   bar.querySelector("button").addEventListener("click", async () => {
     const res = await fetch(`${FN}/slack-schedule`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cancel: { channel: result.channel, scheduledId: result.scheduledId } }) });
     const body = await res.json().catch(() => ({}));
-    bar.innerHTML = res.ok ? `Cancelled. Nothing will be sent to ${esc(result.to)}.` : `Not cancelled: ${esc(body.error ?? `HTTP ${res.status}`)}`;
+    bar.innerHTML = res.ok ? `Cancelled. The reminder will not come.` : `Not cancelled: ${esc(body.error ?? `HTTP ${res.status}`)}`;
     sched.data = null;
     setTimeout(() => bar.remove(), 5000);
   });

@@ -1,12 +1,13 @@
-// Schedules a nudge Alex drafted as a Slack DM from Alex's own account, at a time Alex
-// picks. Alex chose this on 2026-11-17 ("Schedule as a DM from you"): it is the one way
-// this app sends anything to a teammate, and only when Alex presses Schedule on a draft.
+// Schedules a nudge Alex drafted into Alex's own Slack DM (the DM with himself), at a time
+// Alex picks, for Alex to send on himself. Alex, 2026-11-20: "i want these to instead send
+// to me". Nothing goes to the teammate: the message only names who it is for.
+// (Before 2026-11-20 it was sent as a DM from Alex to the teammate.)
 //
-//   - Sent with Alex's user token (SLACK_USER_TOKEN), so it reads as Alex and replies go
-//     to Alex. Needs the user scopes users:read, im:write and chat:write.
-//   - Only to someone on the team roster (config/people.json), found in Slack by name at
-//     the moment of scheduling. No Slack id is stored: the record keeps the name, the
-//     time and the text. The ids go back to the page only so it can offer Cancel.
+//   - Sent with Alex's user token (SLACK_USER_TOKEN) into his self-DM. Needs the user
+//     scopes im:write and chat:write (users:read for the Waiting list's names).
+//   - Only for someone on the team roster (config/people.json). No Slack id is stored: the
+//     record keeps the name, the time and the text. The ids go back to the page only so it
+//     can offer Cancel.
 //   - Every message ends with a line saying Claude drafted it (the org rule that anything
 //     Claude puts in Slack identifies itself).
 
@@ -14,6 +15,7 @@ import { httpJson } from "../lib/http.js";
 
 const SLACK_API = "https://slack.com/api";
 export const DRAFTED_LINE = "_Drafted with Claude_";
+const FOR_LINE = /^Nudge for (.+?), to send yourself:\n\n/;
 const MAX_DAYS_AHEAD = 120; // Slack allows up to 120 days
 
 export class ScheduleError extends Error {
@@ -52,25 +54,6 @@ async function call(method, payload, { token, config, logger, fetchImpl, get = f
 
 const norm = (s) => String(s ?? "").trim().toLowerCase();
 
-/** The Slack member whose name matches a roster name: full name first, then a unique first name. */
-async function findMember(name, ctx) {
-  const members = [];
-  let cursor = "";
-  for (let page = 0; page < 10; page++) {
-    const body = await call("users.list", { limit: "200", ...(cursor ? { cursor } : {}) }, { ...ctx, get: true });
-    members.push(...(body.members ?? []).filter((m) => !m.deleted && !m.is_bot && m.id !== "USLACKBOT"));
-    cursor = body.response_metadata?.next_cursor ?? "";
-    if (!cursor) break;
-  }
-  const names = (m) => [m.real_name, m.profile?.real_name, m.profile?.display_name, m.name].map(norm).filter(Boolean);
-  const full = members.filter((m) => names(m).includes(norm(name)));
-  if (full.length === 1) return full[0];
-  const first = norm(name).split(/\s+/)[0];
-  const byFirst = members.filter((m) => names(m).some((n) => n.split(/\s+/)[0] === first));
-  if (byFirst.length === 1) return byFirst[0];
-  throw new ScheduleError(full.length || byFirst.length > 1 ? `More than one Slack member matches ${name}.` : `No Slack member matches ${name}.`, 404);
-}
-
 /**
  * @returns {{ to, postAt, scheduledId, channel }}
  */
@@ -95,11 +78,10 @@ export async function scheduleNudge({ config, store, logger, token, to, text, po
 
   const ctx = { token, config, logger, fetchImpl };
   const me = await call("auth.test", {}, ctx);
-  const member = await findMember(person.name, ctx);
-  const dm = await call("conversations.open", { users: member.id }, ctx);
-  // "@Blake Tucker" in the draft becomes a real mention, so it reads as Alex typed it.
-  const mentioned = body.split(`@${person.name}`).join(`<@${member.id}>`);
-  const sent = await call("chat.scheduleMessage", { channel: dm.channel.id, text: `${mentioned}\n\n${DRAFTED_LINE}`, post_at: Math.floor(at.getTime() / 1000) }, ctx);
+  if (!me.user_id) throw new ScheduleError("Slack did not say whose token this is.", 502);
+  // Alex's DM with himself. The draft's "@Name" stays plain text, so nobody is pinged.
+  const dm = await call("conversations.open", { users: me.user_id }, ctx);
+  const sent = await call("chat.scheduleMessage", { channel: dm.channel.id, text: `Nudge for ${person.name}, to send yourself:\n\n${body}\n\n${DRAFTED_LINE}`, post_at: Math.floor(at.getTime() / 1000) }, ctx);
 
   const record = { at: now.toISOString(), to: person.name, postAt: at.toISOString(), text: body };
   try {
@@ -140,10 +122,12 @@ export async function listScheduled({ config, logger, token, fetchImpl }) {
   };
   const items = [];
   for (const m of (body.scheduled_messages ?? []).sort((a, b) => a.post_at - b.post_at)) {
+    const raw = String(m.text ?? "");
+    const forWhom = raw.match(FOR_LINE)?.[1] ?? null;
     items.push({
-      to: (await nameOf(m.channel_id)) ?? "someone",
+      to: forWhom ? `you (for ${forWhom})` : (await nameOf(m.channel_id)) ?? "someone",
       postAt: new Date(m.post_at * 1000).toISOString(),
-      text: String(m.text ?? "").replace(`\n\n${DRAFTED_LINE}`, "").slice(0, 160),
+      text: raw.replace(FOR_LINE, "").replace(`\n\n${DRAFTED_LINE}`, "").slice(0, 160),
       scheduledId: m.id,
       channel: m.channel_id,
     });
