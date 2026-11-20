@@ -161,7 +161,8 @@ export async function slackTodos({ config, env = process.env, logger, fetchImpl,
       const dateIn = (fields, test) => fields.find((f) => Array.isArray(f.date) && f.date[0] && test(nameOfField(f)))?.date[0] ?? null;
       const ticked = (f) => f.checkbox === true || (Array.isArray(f.checkbox) && f.checkbox[0] === true);
       const rows = (body.items ?? []).filter((it) => !(it.fields ?? []).some(ticked));
-      await learn([...new Set(rows.flatMap((it) => (it.fields ?? []).flatMap((f) => f.user ?? [])))]);
+      // People in person cells, and anyone @mentioned in a row's text, so "<@U…>" reads as their name.
+      await learn([...new Set(rows.flatMap((it) => (it.fields ?? []).flatMap((f) => [...(f.user ?? []), ...mentionIds(f.text)])))]);
       for (const it of rows) {
         const fields = it.fields ?? [];
         const textField = fields.find((f) => typeof f.text === "string" && f.text.trim() && !f.checkbox && !f.date && !f.user);
