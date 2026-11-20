@@ -201,8 +201,21 @@ function triageOf(flag) {
   const t = state.flagEntries ? state.flagEntries[keyOf(flag)]?.triage : flag.triage;
   if (!t?.status) return null;
   if (t.until && state.today && t.until <= state.today) return null;
+  if (doneButBack(t)) return null;
   return t;
 }
+/* Done that did not take: marked done two or more days ago and still raised, so it comes
+   back open (Alex, 2026-11-20: rock-linking tasks "i never fixed but i cant find"; one had
+   sat hidden as done since Oct 20 while still true every morning). */
+function doneButBack(t) {
+  if (t?.status !== "done" || !t.at || !state.today) return false;
+  const doneDay = new Date(t.at).toLocaleDateString("en-CA");
+  return (Date.parse(`${state.today}T12:00:00Z`) - Date.parse(`${doneDay}T12:00:00Z`)) / 86_400_000 >= 2;
+}
+const backSince = (flag) => {
+  const t = state.flagEntries ? state.flagEntries[keyOf(flag)]?.triage : flag.triage;
+  return doneButBack(t) ? new Date(t.at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : null;
+};
 const viewOf = (flag) => {
   if (isContextFlag(flag)) return "context";
   const t = triageOf(flag);
@@ -395,7 +408,8 @@ function queueRow(flag, { also = 0, who = null } = {}) {
   const t = triageOf(flag);
   const link = ctx.links.find((l) => l.clickup) ?? ctx.links.find((l) => l.external) ?? ctx.links.find((l) => !l.more);
   const age = flag.isNew ? "new today" : flag.openDays ? `${plural(flag.openDays, "day", "days")} open` : "";
-  const meta = [who ?? ctx.owners.join(", "), age, flag.escalated ? "escalated" : "", also ? `+${also} more on this ticket` : "", t ? triageShort(t) : ""].filter(Boolean).join(" · ");
+  const back = backSince(flag);
+  const meta = [back ? `↺ marked done ${back}, still true` : "", who ?? ctx.owners.join(", "), age, flag.escalated ? "escalated" : "", also ? `+${also} more on this ticket` : "", t ? triageShort(t) : ""].filter(Boolean).join(" · ");
   return `<div class="flag q-row sev-${esc(flag.severity)}"${t ? " data-triaged" : ""} data-flag="${esc(flag.id)}" data-key="${esc(keyOf(flag))}" data-layer="${esc(flag.layer)}">
       <span class="q-sev">${esc(SEV_SHORT[flag.severity] ?? flag.severity)}</span>
       <button type="button" class="q-msg" data-q-open="${esc(flag.id)}" title="Open the full card">${esc(flag.message)}</button>
@@ -405,7 +419,7 @@ function queueRow(flag, { also = 0, who = null } = {}) {
         ${t
           ? `<button type="button" class="ghost sm" data-triage="clear">Bring back</button>`
           : `${canNudge(flag) ? `<button type="button" class="ghost sm" data-q-nudge="${esc(flag.id)}" title="Draft a nudge to ${esc(nudgeTarget(flag))}, to copy or schedule in Slack">Nudge</button>` : ""}
-             <button type="button" class="ghost sm" data-triage="done" title="Handled. Hidden until the condition clears and comes back.">Done</button>
+             <button type="button" class="ghost sm" data-triage="done" title="Handled. Hidden; if it is still true two days later, it comes back.">Done</button>
              <button type="button" class="q-x" data-triage="hide-today" title="Hide for today. It goes to Hidden or handled below, and is back tomorrow if it still holds." aria-label="Hide for today">×</button>`}
       </span>
     </div>`;
