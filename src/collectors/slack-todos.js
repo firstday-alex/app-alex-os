@@ -132,7 +132,15 @@ export async function slackTodos({ config, env = process.env, logger, fetchImpl,
   // Field names follow slackcli's reading of it (todo_state: saved | to_do | completed).
   const todos = await (async () => {
     const body = await call("saved.list", { filter: "todo_with_completed", limit: "50" }, ctx);
-    const items = (body.saved_items ?? body.items ?? []).filter((i) => i && i.todo_state !== "completed" && (i.todo_state ?? "to_do") !== "saved");
+    const raw = body.saved_items ?? body.items ?? [];
+    const items = raw.filter((i) => i && i.todo_state !== "completed" && (i.todo_state ?? "to_do") !== "saved");
+    // When Slack sends items but none read as open to-dos, say what came back, so a change in
+    // Slack's undocumented format shows up instead of an empty list.
+    if (raw.length && !items.length) {
+      const states = [...new Set(raw.map((i) => String(i?.todo_state ?? "none")))].join(", ");
+      notes.push(`Slack sent ${raw.length} saved item${raw.length === 1 ? "" : "s"}, none marked as an open to-do (states: ${states}).`);
+    }
+    if (!Array.isArray(body.saved_items) && !Array.isArray(body.items)) notes.push(`Slack's To-dos answer had no item list (keys: ${Object.keys(body ?? {}).join(", ").slice(0, 120)}).`);
     await learn([...new Set(items.flatMap((i) => (i.message ? [i.message.user, ...mentionIds(i.message.text)] : [])))]);
     const out = [];
     for (const i of items) {

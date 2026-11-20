@@ -6084,7 +6084,8 @@ function slackSection(kinds, title, sub) {
   if (!d) return `<p class="meta sl-note">Reading Slack…</p>`;
   const items = kinds.flatMap((k) => d[k] ?? []);
   const notes = d.notes ?? [];
-  if (!items.length && !notes.length) return "";
+  // Say so when Slack had nothing, so an empty read never looks like a missing section.
+  if (!items.length && !notes.length) return `<div class="mv-sec"><span>${esc(title)}</span><span class="meta">Nothing open: no reminders, to-dos${(d.lists ?? []).length || kinds.includes("lists") ? ", list rows" : ""} or saved messages came back from Slack.</span></div>`;
   return `<div class="mv-sec"><span>${esc(title)} ${items.length ? `<span class="mt-n">${items.length}</span>` : ""}</span><span class="meta">${esc(sub)}</span></div>
     ${items.length ? `<div class="mt-list">${items.map(slackRow).join("")}</div>` : ""}
     ${notes.map((n) => `<p class="meta sl-note">${esc(n)}</p>`).join("")}`;
