@@ -34,7 +34,7 @@ const SCOPE_HINT = {
   lists: "lists:read",
 };
 
-async function call(method, params, { token, config, logger, fetchImpl, post = false }) {
+export async function call(method, params, { token, config, logger, fetchImpl, post = false }) {
   const http = config.system?.http ?? {};
   const url = post ? `${SLACK_API}/${method}` : `${SLACK_API}/${method}?${new URLSearchParams(params)}`;
   const { body } = await httpJson(url, {
@@ -159,7 +159,8 @@ export async function slackTodos({ config, env = process.env, logger, fetchImpl,
       const colName = new Map(schema.map((c) => [c.id ?? c.key, String(c.name ?? "")]));
       const nameOfField = (f) => colName.get(f.column_id) ?? colName.get(f.key) ?? "";
       const dateIn = (fields, test) => fields.find((f) => Array.isArray(f.date) && f.date[0] && test(nameOfField(f)))?.date[0] ?? null;
-      const rows = (body.items ?? []).filter((it) => !(it.fields ?? []).some((f) => Array.isArray(f.checkbox) && f.checkbox[0] === true));
+      const ticked = (f) => f.checkbox === true || (Array.isArray(f.checkbox) && f.checkbox[0] === true);
+      const rows = (body.items ?? []).filter((it) => !(it.fields ?? []).some(ticked));
       await learn([...new Set(rows.flatMap((it) => (it.fields ?? []).flatMap((f) => f.user ?? [])))]);
       for (const it of rows) {
         const fields = it.fields ?? [];

@@ -6036,7 +6036,7 @@ const WEEKDAY = (key) => new Date(`${key}T12:00:00Z`).toLocaleDateString(undefin
 /* --------------------------- Slack to-dos (Today's moves) ---------------------------
    Read live from Slack with Alex's user token (netlify/functions/slack-todos.mjs): only what
    Alex chose to come back to (reminders, Slack Lists, saved messages), under My work. */
-const slackTodo = { data: null, error: null, loading: false };
+const slackTodo = { data: null, error: null, loading: false, open: null, msg: null };
 async function loadSlackTodos() {
   if (slackTodo.loading) return;
   slackTodo.loading = true;
@@ -6059,6 +6059,12 @@ function slackWhen(iso) {
   const today = new Date().toDateString() === d.toDateString();
   return today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
+const slDate = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "");
+const todayIso = () => new Date().toLocaleDateString("en-CA");
+
+/* A row from Slack, with what can be done to it. Alex, 2026-11-20: quick actions on the ECOM
+   list (nudge, due date, check-in date, assignee), and "differentiate between remove from
+   list and dismiss": Dismiss only hides it here for today; Complete ticks it off in Slack. */
 function slackRow(i) {
   const label = `slack:${i.kind}`;
   const meta = i.kind === "todo"
@@ -6066,18 +6072,61 @@ function slackRow(i) {
     : i.kind === "reminder"
       ? `${i.at ? (Date.parse(i.at) < Date.now() ? `was due ${slackWhen(i.at)}` : `due ${slackWhen(i.at)}`) : "no time set"}${i.recurring ? " · repeats" : ""}`
       : i.kind === "list"
-        ? [i.list, i.checkIn ? `check in ${new Date(`${i.checkIn}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}` : "", i.due ? `due ${new Date(`${i.due}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}` : "", i.owner ?? ""].filter(Boolean).join(" · ")
+        ? [i.list, i.checkIn ? `check in ${slDate(i.checkIn)}` : "", i.due ? `${i.due < todayIso() ? "was due" : "due"} ${slDate(i.due)}` : "no due date", i.owner ?? "no assignee"].filter(Boolean).join(" · ")
         : `${i.from} · saved ${slackWhen(i.at)}`;
+  const k = esc(i.key);
+  const dismiss = `<button type="button" class="ghost sm" data-sl-dismiss="${k}" title="Hide it here for today. Nothing changes in Slack; it is back tomorrow.">Dismiss today</button>`;
+  const acts = i.kind === "list"
+    ? `<button type="button" class="ghost sm" data-sl-open="nudge" data-sl-key="${k}">Nudge</button>
+       <button type="button" class="ghost sm" data-sl-open="due" data-sl-key="${k}">Due date</button>
+       <button type="button" class="ghost sm" data-sl-open="checkIn" data-sl-key="${k}">Check-in</button>
+       <button type="button" class="ghost sm" data-sl-open="assignee" data-sl-key="${k}">Assignee</button>
+       ${dismiss}
+       <button type="button" class="sm" data-sl-complete="${k}" title="Ticks it done in your Slack List, so it leaves the open list. The row is not deleted.">Complete in Slack</button>`
+    : i.kind === "reminder"
+      ? `${dismiss}<button type="button" class="sm" data-sl-done="${k}"${i.reminderId ? ` data-sl-reminder="${esc(i.reminderId)}"` : ""} title="Marks the reminder complete in Slack">Complete in Slack</button>`
+      : `${dismiss}<button type="button" class="ghost sm" data-sl-done="${k}" title="Hide it here for good. It stays saved in Slack.">Remove here</button>`;
+  const open = slackTodo.open?.key === i.key ? slackTodo.open.what : null;
   return `<div class="sl-row sl-${i.kind}">
       <span class="sl-kind">${esc(label)}</span>
       <span class="sl-text" title="${esc(i.text)}">${esc(i.text)}</span>
       <span class="sl-meta">${esc(meta)}</span>
-      <span class="q-acts">
+      <span class="q-acts sl-acts">
         ${i.url ? `<a class="ql" href="${esc(i.url)}" target="_blank" rel="noreferrer">Open in Slack ↗</a>` : ""}
-        <button type="button" class="ghost sm" data-sl-done="${esc(i.key)}"${i.reminderId ? ` data-sl-reminder="${esc(i.reminderId)}"` : ""} title="${i.kind === "reminder" ? "Complete the reminder in Slack" : "Hide it here"}">Done</button>
+        ${acts}
       </span>
+      ${open ? `<div class="sl-panel">${slackPanel(i, open)}</div>` : ""}
     </div>`;
 }
+
+/** The small editor under a list row for one quick action. */
+function slackPanel(i, what) {
+  const k = esc(i.key);
+  const msg = `<span class="meta sl-msg">${esc(slackTodo.msg ?? "")}</span>`;
+  if (what === "due" || what === "checkIn") {
+    const cur = what === "due" ? i.due : i.checkIn;
+    return `<label>${what === "due" ? "Due date" : "Check-in date"} <input type="date" class="sm" data-sl-date min="${esc(todayIso())}" value="${esc(cur && cur >= todayIso() ? cur : todayIso())}"></label>
+      <button type="button" class="sm" data-sl-set="${what}" data-sl-key="${k}">Set in Slack</button>
+      <button type="button" class="ghost sm" data-sl-close>Cancel</button>${msg}`;
+  }
+  if (what === "assignee") {
+    const names = [...new Set((state.people ?? []).map((p) => p.name).filter(Boolean))];
+    return `<label>Assignee <select class="sm" data-sl-person>${names.map((n) => `<option${n === i.owner ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></label>
+      <button type="button" class="sm" data-sl-set="assignee" data-sl-key="${k}">Set in Slack</button>
+      <button type="button" class="ghost sm" data-sl-close>Cancel</button>${msg}`;
+  }
+  // Nudge: a draft to the assignee, to copy, or to land in your own Slack DM at a set time.
+  const who = i.owner ?? "";
+  const draft = `${who ? `@${who} ` : ""}quick check-in on "${i.text}"${i.due ? `, due ${slDate(i.due)}` : ""}. How is it going, and is there anything you need from me?`;
+  return `<textarea class="sl-nudge" rows="3" data-sl-text>${esc(draft)}</textarea>
+    <div class="bar">
+      <button type="button" class="sm" data-sl-copy>Copy</button>
+      ${who ? `<label>Remind me in Slack at <input type="datetime-local" class="sm" data-sl-at value="${esc(nextMorning())}"></label>
+      <button type="button" class="ghost sm" data-sl-remind="${esc(who)}">Remind me</button>` : `<span class="meta">No assignee on this row, so copy it and send it yourself.</span>`}
+      <button type="button" class="ghost sm" data-sl-close>Close</button>${msg}
+    </div>`;
+}
+
 function slackSection(kinds, title, sub) {
   if (slackTodo.error) return `<p class="meta sl-note">From Slack: ${esc(slackTodo.error)}</p>`;
   const d = slackTodo.data;
@@ -6102,6 +6151,83 @@ document.addEventListener("click", async (event) => {
   }
   for (const k of ["todos", "reminders", "saved", "lists"]) if (slackTodo.data?.[k]) slackTodo.data[k] = slackTodo.data[k].filter((i) => i.key !== b.dataset.slDone);
   renderMoves();
+});
+
+const dropSlackItem = (key) => {
+  for (const k of ["todos", "reminders", "saved", "lists"]) if (slackTodo.data?.[k]) slackTodo.data[k] = slackTodo.data[k].filter((i) => i.key !== key);
+};
+const slackPost = async (payload) => {
+  const res = await fetch(`${FN}/slack-todos`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+  return body;
+};
+document.addEventListener("click", async (event) => {
+  const t = event.target;
+  const openB = t.closest("[data-sl-open]");
+  if (openB) {
+    const same = slackTodo.open?.key === openB.dataset.slKey && slackTodo.open?.what === openB.dataset.slOpen;
+    slackTodo.open = same ? null : { key: openB.dataset.slKey, what: openB.dataset.slOpen };
+    slackTodo.msg = null;
+    return renderMoves();
+  }
+  if (t.closest("[data-sl-close]")) {
+    slackTodo.open = null;
+    return renderMoves();
+  }
+  const dis = t.closest("[data-sl-dismiss]");
+  const done = t.closest("[data-sl-complete]");
+  const set = t.closest("[data-sl-set]");
+  const copy = t.closest("[data-sl-copy]");
+  const remind = t.closest("[data-sl-remind]");
+  if (!dis && !done && !set && !copy && !remind) return;
+  const b = dis ?? done ?? set ?? copy ?? remind;
+  const panel = b.closest(".sl-row");
+  const say = (text) => {
+    slackTodo.msg = text;
+    const m = panel?.querySelector(".sl-msg");
+    if (m) m.textContent = text;
+  };
+  if (copy) {
+    try {
+      await navigator.clipboard.writeText(panel.querySelector("[data-sl-text]").value);
+      say("Copied.");
+    } catch {
+      say("The browser would not copy. Select the text and copy it.");
+    }
+    return;
+  }
+  b.disabled = true;
+  try {
+    if (dis) {
+      await slackPost({ dismiss: dis.dataset.slDismiss });
+      dropSlackItem(dis.dataset.slDismiss);
+    } else if (done) {
+      if (!confirm("Tick this off in your Slack List? It leaves the open list (the row is not deleted).")) return (b.disabled = false);
+      await slackPost({ edit: { key: done.dataset.slComplete, action: "complete" } });
+      dropSlackItem(done.dataset.slComplete);
+    } else if (set) {
+      const action = set.dataset.slSet;
+      const value = action === "assignee" ? panel.querySelector("[data-sl-person]").value : panel.querySelector("[data-sl-date]").value;
+      await slackPost({ edit: { key: set.dataset.slKey, action, value } });
+      const row = (slackTodo.data?.lists ?? []).find((i) => i.key === set.dataset.slKey);
+      if (row) row[action === "assignee" ? "owner" : action] = value;
+      slackTodo.open = null;
+    } else if (remind) {
+      const at = panel.querySelector("[data-sl-at]")?.value;
+      if (!at) return say("Pick a time.");
+      const res = await fetch(`${FN}/slack-schedule`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to: remind.dataset.slRemind, text: panel.querySelector("[data-sl-text]").value, postAt: new Date(at).toISOString() }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      b.disabled = false;
+      return say(`It will land in your own Slack DM ${new Date(body.postAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}. Nothing goes to ${remind.dataset.slRemind}.`);
+    }
+    renderMoves();
+  } catch (err) {
+    b.disabled = false;
+    if (panel?.querySelector(".sl-msg")) say(`Not done: ${err.message}`);
+    else alert(`Not done: ${err.message}`);
+  }
 });
 
 async function loadMoves() {

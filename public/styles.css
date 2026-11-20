@@ -1444,3 +1444,11 @@ main:has(#view-speech:not(.hidden)) { max-width: 1500px; }
   .ds-tab.on { color: var(--ink, inherit); border-bottom-color: var(--green); }
   .ds-count { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; background: #eef2f1; font-size: 12px; }
 }
+
+/* Quick actions on a Slack row, and the small editor under it. */
+.sl-acts { flex-wrap: wrap; }
+.sl-panel { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 0 4px; }
+.sl-panel .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; width: 100%; }
+.sl-nudge { width: 100%; font: inherit; }
+.sl-row.sl-list { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "kind text" "kind meta" "acts acts"; }
+.sl-row.sl-list .q-acts { justify-content: flex-start; margin-top: 6px; }
