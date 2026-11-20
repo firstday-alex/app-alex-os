@@ -7,7 +7,7 @@
 import { groupByPerson, groupLine, YOU, NOBODY } from "./flag-groups.js";
 import { weekStartOf as qWeekStartOf, monthName as qMonthName, shortDay as qShortDay } from "./quarter.js";
 import { buildAgenda, agendaText } from "./workshop.js";
-import { kudosWeek, kudosPage, kudosFileName } from "./kudos.js";
+import { kudosWeek, kudosPage, kudosFileName, addImages, taskIdOf } from "./kudos.js";
 import { buildChanges, buildLastWeekWins, buildStandupUpdate, buildThisWeekWins, changeLine, changesText, lastWeekText, standupUpdateText, windowStart } from "./update-text.js";
 
 const $ = (id) => document.getElementById(id);
@@ -3067,6 +3067,27 @@ document.addEventListener("click", async (event) => {
       fetch("kudos/template.html", { cache: "no-cache" }).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`template: HTTP ${r.status}`)))),
       fetch("kudos/monster.png").then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`image: HTTP ${r.status}`)))).then(asDataUrl),
     ]);
+    // The hover screenshot for each win: the newest image on its ClickUp ticket, four at a time.
+    const keys = week.rocks.flatMap((r) => r.w.map((x) => x.k));
+    const images = new Map();
+    let failed = 0;
+    let next = 0;
+    note.textContent = `Pulling ticket images from ClickUp (0 of ${keys.length})…`;
+    const worker = async () => {
+      while (next < keys.length) {
+        const key = keys[next++];
+        try {
+          const res = await fetch(`${FN}/kudos-image?task=${encodeURIComponent(taskIdOf(key))}`);
+          if (res.status === 200) images.set(key, await asDataUrl(await res.blob()));
+          else if (res.status !== 204) failed++;
+        } catch {
+          failed++;
+        }
+        note.textContent = `Pulling ticket images from ClickUp (${next} of ${keys.length})…`;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, keys.length) }, worker));
+    const withImage = addImages(week, images);
     const url = URL.createObjectURL(new Blob([kudosPage(template, week, monster)], { type: "text/html" }));
     if (tab) tab.location.href = url;
     const a = document.createElement("a");
@@ -3077,7 +3098,7 @@ document.addEventListener("click", async (event) => {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
     const n = week.rocks.reduce((sum, r) => sum + r.w.length, 0);
-    note.textContent = `Kudos page for ${week.label}: ${plural(n, "win", "wins")} across ${plural(week.rocks.length, "rock", "rocks")}. Downloaded ${a.download}${tab ? " and opened it in a new tab" : ""}. To share it as a page with screenshots, drop the file into Claude and ask to publish it.`;
+    note.textContent = `Kudos page for ${week.label}: ${plural(n, "win", "wins")} across ${plural(week.rocks.length, "rock", "rocks")}. ${withImage} with a screenshot from its ClickUp ticket${failed ? ` (${failed} could not be read)` : ""}. Downloaded ${a.download}${tab ? " and opened it in a new tab" : ""}. To share it as a page with screenshots, drop the file into Claude and ask to publish it.`;
   } catch (err) {
     if (tab) tab.close();
     note.textContent = `The kudos page could not be made: ${err.message}`;

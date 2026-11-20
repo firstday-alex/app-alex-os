@@ -117,15 +117,18 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
 <script>(function(){
   var DEFAULT=/*__WEEK__*/null;
   var COLORS=['#9fe0a8','#f26b3a','#f2b84b'];
-  var seedLinks={}; DEFAULT.rocks.forEach(function(r){r.w.forEach(function(x){if(typeof x.u==='string'&&/^https:\/\//.test(x.u))seedLinks[x.k]=x.u;});});
-  var shots={}, links=Object.assign({},seedLinks), linkEdit=null, dbWeeks={}, db=null, assets=null, canEdit=false, cur=DEFAULT.id;
+  // Ecom OS puts each win's ClickUp link (u) and the newest image on its ticket (i) in the file.
+  // A screenshot or link saved on the published page wins over these.
+  var SEED=/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+\/=]+$/;
+  var seedLinks={}, seedShots={}; DEFAULT.rocks.forEach(function(r){r.w.forEach(function(x){if(typeof x.u==='string'&&/^https:\/\//.test(x.u))seedLinks[x.k]=x.u;if(typeof x.i==='string'&&SEED.test(x.i))seedShots[x.k]=x.i;});});
+  var shots=Object.assign({},seedShots), links=Object.assign({},seedLinks), linkEdit=null, dbWeeks={}, db=null, assets=null, canEdit=false, cur=DEFAULT.id;
   var active=null, pinned=false, busy=false, closeT=null, openT=null, confirmKey=null, confirmDel=false, formMode=null;
   var $=function(id){return document.getElementById(id);};
   var pop=$('pop'), light=$('light'), lightImg=light.querySelector('img'), hint=$('hint'), fileIn=$('file');
   var colsEl=$('cols'), menu=$('menu'), menuBtn=$('menuBtn'), dlg=$('dlg');
   var ID=/^[A-Za-z0-9_-]{6,128}$/, KEY=/^[A-Za-z0-9_.-]{1,200}$/, WID=/^[A-Za-z0-9-]{1,40}$/;
   var wins=[];
-  function src(id){return '/_blob/'+id;}
+  function src(id){return SEED.test(id)?id:'/_blob/'+id;}
   function el(tag,cls,text){var e=document.createElement(tag); if(cls)e.className=cls; if(text!=null)e.textContent=text; return e;}
   function rid(){return Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-3);}
 
@@ -321,7 +324,9 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
       b.appendChild(im); b.onclick=function(){openLight(id);}; pop.appendChild(b);
       var row=el('div','row');
       var v=el('button','btn','View full size'); v.type='button'; v.onclick=function(){openLight(id);}; row.appendChild(v);
-      if(canEdit){
+      if(canEdit&&SEED.test(id)){
+        var rp=el('button','btn ghost','Replace'); rp.type='button'; rp.disabled=busy; rp.onclick=pick; row.appendChild(rp);
+      } else if(canEdit){
         var c=el('button','btn '+(confirmKey===key?'danger':'ghost'),confirmKey===key?'Click again to clear':'Clear screenshot'); c.type='button'; c.disabled=busy;
         c.onclick=function(){ if(confirmKey!==key){confirmKey=key;pinned=true;render();return;} clearShot(key); };
         row.appendChild(c);
@@ -414,7 +419,7 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
       if(!r||!ID.test(String(r.id)))throw new Error('bad id');
       return db.doc('shots/'+key).set({assetId:String(r.id),at:new Date().toISOString()}).then(function(){
         shots[key]=String(r.id);
-        if(old&&old!==r.id)return assets.delete(old).catch(function(){});
+        if(old&&old!==r.id&&ID.test(old))return assets.delete(old).catch(function(){});
       });
     }).then(function(){busy=false;refresh();if(active)render();},function(){busy=false;if(active)render('The screenshot could not be saved. Please try again.');});
   }
@@ -422,8 +427,8 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
     if(busy||!canEdit)return;
     var id=shots[key]; busy=true; render();
     db.doc('shots/'+key).delete().then(function(){
-      delete shots[key]; confirmKey=null;
-      if(id)return assets.delete(id).catch(function(){});
+      delete shots[key]; if(seedShots[key])shots[key]=seedShots[key]; confirmKey=null;
+      if(id&&ID.test(id))return assets.delete(id).catch(function(){});
     }).then(function(){busy=false;refresh();if(active)render();},function(){busy=false;confirmKey=null;if(active)render('The screenshot could not be cleared. Please try again.');});
   }
   function setLink(key,val){
@@ -458,7 +463,7 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
         if(busy)return;
         var next={};
         snap.docs.forEach(function(d){var b=d.data();if(KEY.test(d.id)&&b&&typeof b.assetId==='string'&&ID.test(b.assetId))next[d.id]=b.assetId;});
-        shots=next; refresh();
+        shots=Object.assign({},seedShots,next); refresh();
       },function(){clearTimeout(t);});
       db.collection('links').onSnapshot(function(snap){
         if(busy)return;

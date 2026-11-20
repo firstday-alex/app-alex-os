@@ -55,5 +55,27 @@ export function kudosPage(template, week, monsterSrc) {
   return html;
 }
 
+/** The ClickUp ticket id behind a win's key ("t86b7x" → "86b7x"). */
+export const taskIdOf = (key) => String(key).replace(/^t/, "");
+
+/**
+ * Put each win's ticket image into the week as a data URL (field i), for the hover. `images`
+ * maps a win key to a data URL; anything that is not a PNG, JPG, GIF or WebP data URL is
+ * dropped. Returns how many wins got one.
+ */
+export function addImages(week, images) {
+  let n = 0;
+  for (const r of week.rocks) {
+    for (const x of r.w) {
+      const src = images.get(x.k);
+      if (typeof src === "string" && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(src)) {
+        x.i = src;
+        n++;
+      }
+    }
+  }
+  return n;
+}
+
 /** "ecom-kudos-2026-11-09.html". */
 export const kudosFileName = (week) => `ecom-kudos-${week.id}.html`;

@@ -40,3 +40,57 @@ test("the page: the real template filled, nothing left unfilled, a ticket name c
   assert.deepEqual(JSON.parse(json), week);
   assert.throws(() => kudosPage("<html></html>", week, "x"), /missing/);
 });
+
+import { imageAttachments, ticketImage, isClickUpHost, MAX_IMAGE_BYTES } from "../src/send/kudos-image.js";
+import { addImages, taskIdOf } from "../public/kudos.js";
+
+const config = { clickup: { apiBase: "https://api.clickup.com/api/v2" } };
+const resp = (body, { status = 200, type = "application/json" } = {}) => ({
+  ok: status < 300, status, headers: { get: () => type },
+  json: async () => body, arrayBuffer: async () => (body instanceof Uint8Array ? body : new Uint8Array()).buffer,
+});
+
+test("ticket images: newest image only, ClickUp hosts only, deleted and non-images skipped", () => {
+  const task = { attachments: [
+    { title: "spec.pdf", extension: "pdf", url: "https://t1.p.clickup-attachments.com/a.pdf", date: "9" },
+    { title: "old.png", extension: "png", url: "https://t1.p.clickup-attachments.com/old.png", date: "1" },
+    { title: "new.jpg", extension: "jpg", url: "https://t1.p.clickup-attachments.com/new.jpg", date: "5" },
+    { title: "gone.png", extension: "png", url: "https://t1.p.clickup-attachments.com/g.png", date: "8", deleted: true },
+    { title: "evil.png", extension: "png", url: "https://evil.example/x.png", date: "7" },
+  ] };
+  assert.deepEqual(imageAttachments(task).map((a) => a.title), ["new.jpg", "old.png"]);
+  assert.equal(isClickUpHost("https://attachments.clickup.com/x"), true);
+  assert.equal(isClickUpHost("https://clickup.com.evil.io/x"), false);
+  assert.equal(isClickUpHost("http://attachments.clickup.com/x"), false);
+});
+
+test("ticket image: tries without the token, then with it; too big falls back to the thumbnail; none gives null", async () => {
+  const png = new Uint8Array([137, 80, 78, 71]);
+  const calls = [];
+  const fetchImpl = async (url, opts) => {
+    calls.push([url, Boolean(opts?.headers?.authorization)]);
+    if (url.endsWith("/task/abc")) return resp({ attachments: [{ title: "s.png", extension: "png", url: "https://t.p.clickup-attachments.com/big.png", thumbnail_large: "https://t.p.clickup-attachments.com/thumb.png", date: "2" }] });
+    if (url.endsWith("big.png")) return resp(new Uint8Array(MAX_IMAGE_BYTES + 1), { type: "image/png" });
+    if (url.endsWith("thumb.png")) return opts.headers.authorization ? resp(png, { type: "image/png" }) : resp(null, { status: 403, type: "text/html" });
+    if (url.endsWith("/task/none")) return resp({ attachments: [] });
+    throw new Error("unexpected " + url);
+  };
+  const got = await ticketImage({ taskId: "abc", config, token: "pk_1", fetchImpl });
+  assert.equal(got.type, "image/png");
+  assert.deepEqual([...got.bytes], [...png]);
+  assert.deepEqual(calls.slice(-2), [["https://t.p.clickup-attachments.com/thumb.png", false], ["https://t.p.clickup-attachments.com/thumb.png", true]]);
+  assert.equal(await ticketImage({ taskId: "none", config, token: "pk_1", fetchImpl }), null);
+  await assert.rejects(ticketImage({ taskId: "../x", config, token: "pk_1", fetchImpl }), /Bad ticket id/);
+});
+
+test("images go into the week only as image data URLs, and the page carries them", () => {
+  const week = kudosWeek(wins);
+  assert.equal(taskIdOf("ta1"), "a1");
+  const n = addImages(week, new Map([["ta1", "data:image/png;base64,iVBORw0KGgo="], ["ta2", "javascript:alert(1)"]]));
+  assert.equal(n, 1);
+  assert.equal(week.rocks[0].w[0].i, "data:image/png;base64,iVBORw0KGgo=");
+  assert.equal(week.rocks[0].w[1].i, undefined);
+  const template = readFileSync(new URL("../public/kudos/template.html", import.meta.url), "utf8");
+  assert.match(kudosPage(template, week, "x"), /"i":"data:image\/png;base64,iVBORw0KGgo="/);
+  assert.match(template, /seedShots\[x\.k\]=x\.i/);
+});
