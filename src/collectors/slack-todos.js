@@ -189,13 +189,20 @@ export async function slackTodos({ config, env = process.env, logger, fetchImpl,
     try {
       const body = await call("slackLists.items.list", { list_id: listId, include_list: "true", limit: "200" }, ctx);
       const title = body.list?.title ?? body.list?.name ?? "Slack list";
+      // Column names, so "Due Date" is the due date and "Check-In Date" is not (Alex's ECOM
+      // list has both, 2026-11-20).
+      const schema = body.list?.list_metadata?.schema ?? body.list?.schema ?? [];
+      const colName = new Map(schema.map((c) => [c.id ?? c.key, String(c.name ?? "")]));
+      const nameOfField = (f) => colName.get(f.column_id) ?? colName.get(f.key) ?? "";
+      const dateIn = (fields, test) => fields.find((f) => Array.isArray(f.date) && f.date[0] && test(nameOfField(f)))?.date[0] ?? null;
       const rows = (body.items ?? []).filter((it) => !(it.fields ?? []).some((f) => Array.isArray(f.checkbox) && f.checkbox[0] === true));
       await learn([...new Set(rows.flatMap((it) => (it.fields ?? []).flatMap((f) => f.user ?? [])))]);
       for (const it of rows) {
         const fields = it.fields ?? [];
         const textField = fields.find((f) => typeof f.text === "string" && f.text.trim() && !f.checkbox && !f.date && !f.user);
         if (!textField) continue;
-        const due = fields.find((f) => Array.isArray(f.date) && f.date[0])?.date[0] ?? null;
+        const due = dateIn(fields, (n) => /due/i.test(n)) ?? dateIn(fields, (n) => !/check/i.test(n));
+        const checkIn = dateIn(fields, (n) => /check.?in/i.test(n));
         const who = fields.find((f) => Array.isArray(f.user) && f.user[0])?.user[0] ?? null;
         lists.push({
           key: todoKey("list", `${listId}:${it.id}`),
@@ -203,6 +210,7 @@ export async function slackTodos({ config, env = process.env, logger, fetchImpl,
           list: String(title).slice(0, 60),
           text: plainText(textField.text, nameOf),
           due,
+          checkIn,
           owner: who ? nameOf(who) : null,
           at: it.date_created ? new Date(it.date_created * 1000).toISOString() : null,
           url: null,

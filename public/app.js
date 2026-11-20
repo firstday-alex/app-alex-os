@@ -6066,7 +6066,7 @@ function slackRow(i) {
     : i.kind === "reminder"
       ? `${i.at ? (Date.parse(i.at) < Date.now() ? `was due ${slackWhen(i.at)}` : `due ${slackWhen(i.at)}`) : "no time set"}${i.recurring ? " · repeats" : ""}`
       : i.kind === "list"
-        ? [i.list, i.due ? `due ${new Date(`${i.due}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}` : "", i.owner ?? ""].filter(Boolean).join(" · ")
+        ? [i.list, i.checkIn ? `check in ${new Date(`${i.checkIn}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}` : "", i.due ? `due ${new Date(`${i.due}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}` : "", i.owner ?? ""].filter(Boolean).join(" · ")
         : `${i.from} · saved ${slackWhen(i.at)}`;
   return `<div class="sl-row sl-${i.kind}">
       <span class="sl-kind">${esc(label)}</span>

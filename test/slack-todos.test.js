@@ -30,8 +30,8 @@ function slack({ starsScope = true, todos = true } = {}) {
         { item_type: "message", channel_id: "C3", ts: "11.2", todo_state: "completed", message: { text: "finished", user: "UBLAKE", ts: "11.2" } },
         { item_type: "message", channel_id: "C3", ts: "11.3", todo_state: "to_do", message: { text: "Review <@UBLAKE> PDP copy", user: "UBLAKE", ts: "11.3", permalink: "https://x/todo3" } },
       ] } : { ok: false, error: "not_allowed_token_type" },
-      "slackLists.items.list": { ok: true, list: { title: "Alex to-dos" }, items: [
-        { id: "Rec1", date_created: 1, fields: [{ column_id: "Col1", text: "Draft Q1 rock list" }, { column_id: "Col2", checkbox: [false] }, { column_id: "Col3", date: ["2026-11-20"] }, { column_id: "Col4", user: ["UBLAKE"] }] },
+      "slackLists.items.list": { ok: true, list: { title: "Alex to-dos", list_metadata: { schema: [{ id: "Col1", name: "Name" }, { id: "Col5", name: "Check-In Date" }, { id: "Col3", name: "Due Date" }] } }, items: [
+        { id: "Rec1", date_created: 1, fields: [{ column_id: "Col1", text: "Draft Q1 rock list" }, { column_id: "Col2", checkbox: [false] }, { column_id: "Col5", date: ["2026-11-18"] }, { column_id: "Col3", date: ["2026-11-20"] }, { column_id: "Col4", user: ["UBLAKE"] }] },
         { id: "Rec2", date_created: 1, fields: [{ column_id: "Col1", text: "Already ticked" }, { column_id: "Col2", checkbox: [true] }] },
       ] },
     }[method];
@@ -68,7 +68,7 @@ test("a missing scope empties one list with a note; done items stay hidden; Done
 test("a Slack List named in config: open rows with title, due date and owner; ticked rows left out", async () => {
   const { fetchImpl, calls } = slack();
   const out = await slackTodos({ config: { ...config, system: { ...config.system, slack: { todoLists: ["F0LIST1"] } } }, env: { SLACK_USER_TOKEN: "xoxp-1" }, fetchImpl, now });
-  assert.deepEqual(out.lists.map((l) => [l.list, l.text, l.due, l.owner]), [["Alex to-dos", "Draft Q1 rock list", "2026-11-20", "Blake Tucker"]]);
+  assert.deepEqual(out.lists.map((l) => [l.list, l.text, l.checkIn, l.due, l.owner]), [["Alex to-dos", "Draft Q1 rock list", "2026-11-18", "2026-11-20", "Blake Tucker"]], "Due Date by its name, not the first date column");
   assert.equal(calls.find((c) => c.method === "slackLists.items.list").params.list_id, "F0LIST1");
 });
 
