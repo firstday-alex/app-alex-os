@@ -1473,3 +1473,18 @@ main:has(#view-speech:not(.hidden)) { max-width: 1500px; }
 .sl-card .sl-mini { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; font-size: 13px; }
 .sl-card .sl-panel { padding: 8px 0 0; }
 .ds-card .ds-notes { margin: 0; }
+
+/* Speak: talking points */
+.tp-mode { display: inline-flex; gap: 4px; }
+.ds-cols.tp .tp-card { padding-top: 14px; padding-bottom: 10px; }
+.tp-list { list-style: none; margin: 4px 0 0; padding: 0; }
+.tp-row { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: start; padding: 8px 0; border-top: 1px solid var(--line); }
+.tp-list > .tp-row:first-child { border-top: 0; }
+.tp-body { min-width: 0; }
+.tp-title { font-weight: 650; line-height: 1.3; }
+.tp-line { margin-top: 2px; line-height: 1.4; }
+.tp-meta { margin-top: 2px; font-size: 13px; color: var(--muted); }
+.tp-status { text-transform: uppercase; font-size: 11px; letter-spacing: .05em; font-weight: 700; color: var(--green); }
+.tp-more summary { cursor: pointer; color: var(--muted); font-size: 13px; padding: 6px 0 2px; }
+.tp-empty { margin: 4px 0 0; }
+.ds-cols.tp .ds-headline { font-size: 1.05em; }

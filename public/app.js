@@ -5295,6 +5295,7 @@ function renderSpeech() {
     <div class="bar up-bar">
       <button type="button" id="speech-run"${running ? " disabled" : ""}>${running ? "Writing…" : latest ? "Write a new one" : "Write today's wins"}</button>
       ${latest ? `<button type="button" class="ghost" id="speech-copy">Copy</button>` : ""}
+      <span class="tp-mode" role="group" aria-label="Layout">${SPEECH_MODES.map(([id, label]) => `<button type="button" class="sm${speechMode === id ? "" : " ghost"}" data-speech-mode="${id}" aria-pressed="${speechMode === id}">${esc(label)}</button>`).join("")}</span>
       <span class="meta" data-copy-note="speech">${
         running
           ? `Started ${esc(new Date(status.startedAt).toLocaleTimeString())}. Reading the sprint, stand-ups, notes and the changelog, then one call to Claude to rank the wins; usually under a minute.`
@@ -5334,9 +5335,17 @@ function speechColumns(latest) {
   const ideas = xf.filter((i) => isIdea(i.text)).length;
   const counts = { wins: latest?.wins ? latest.wins.filter((w) => !(speech.celebrated ?? {})[w.key]).length : null, progress: tasks.length, xf: xf.length };
   const col = (id, body) => `<div class="ds-col${speechTab === id ? " on" : ""}" data-speech-col="${id}" role="tabpanel">${body}</div>`;
-  return `<div class="ds-tabs" role="tablist">${SPEECH_TABS.map(
+  const tabs = `<div class="ds-tabs" role="tablist">${SPEECH_TABS.map(
     ([id, label]) => `<button type="button" role="tab" class="ds-tab${speechTab === id ? " on" : ""}" aria-selected="${speechTab === id}" data-speech-tab="${id}">${esc(label)}${counts[id] != null ? ` <span class="ds-count">${esc(counts[id])}</span>` : ""}</button>`,
-  ).join("")}</div>
+  ).join("")}</div>`;
+  if (speechMode === "points")
+    return `${tabs}
+    <div class="ds-cols tp">
+      ${col("wins", pointsWins(latest))}
+      ${col("progress", pointsProgress(tasks))}
+      ${col("xf", pointsXf(latest?.xf))}
+    </div>`;
+  return `${tabs}
     <div class="ds-cols">
       ${col(
         "wins",
@@ -5368,6 +5377,113 @@ document.addEventListener("click", (event) => {
   });
   document.querySelectorAll("[data-speech-col]").forEach((c) => c.classList.toggle("on", c.dataset.speechCol === speechTab));
 });
+
+/* Talking points (Alex, 2026-11-20: "formatted a different way... so its easier to just hit
+   the top points in each section"). Each item is one line to say: the name, the one sentence
+   that matters, who to thank or who owns it. The top five per section show; the rest fold.
+   Full detail keeps the cards with every tag and quick action. */
+const SPEECH_MODES = [["points", "Talking points"], ["full", "Full detail"]];
+let speechMode = (() => {
+  try {
+    return localStorage.getItem("speechMode") || "points";
+  } catch {
+    return "points";
+  }
+})();
+const TP_TOP = 5;
+
+document.addEventListener("click", (event) => {
+  const b = event.target.closest("[data-speech-mode]");
+  if (!b) return;
+  speechMode = b.dataset.speechMode;
+  try {
+    localStorage.setItem("speechMode", speechMode);
+  } catch {}
+  renderSpeech();
+});
+
+/** The first sentence, cut to a length you can say in one breath. */
+function oneLine(text, max = 140) {
+  const t = String(text ?? "").replace(/\s+/g, " ").trim();
+  const first = t.match(/^.+?[.!?](?=\s|$)/)?.[0] ?? t;
+  return first.length > max ? `${first.slice(0, max - 1).replace(/\s+\S*$/, "")}…` : first;
+}
+
+const tpLink = (text, url) => (url ? `<a href="${esc(url)}" target="_blank" rel="noreferrer">${esc(text)}</a>` : esc(text));
+
+/** Top items, then the rest folded. */
+function tpList(items, row, empty) {
+  if (!items.length) return `<p class="meta tp-empty">${esc(empty)}</p>`;
+  const top = items.slice(0, TP_TOP);
+  const rest = items.slice(TP_TOP);
+  return `<ol class="tp-list">${top.map((x, i) => row(x, i + 1)).join("")}</ol>${
+    rest.length ? `<details class="tp-more"><summary>${esc(rest.length)} more</summary><ol class="tp-list" start="${TP_TOP + 1}">${rest.map((x, i) => row(x, TP_TOP + i + 1)).join("")}</ol></details>` : ""
+  }`;
+}
+
+const tpRow = (n, title, line, meta, action = "") => `<li class="tp-row">
+    <span class="dw-rank">${n}</span>
+    <div class="tp-body"><div class="tp-title">${title}</div>${line ? `<div class="tp-line">${esc(line)}</div>` : ""}${meta ? `<div class="tp-meta">${meta}</div>` : ""}</div>
+    ${action}
+  </li>`;
+
+const tpSection = (title, count, body) => `<article class="ds-speech dw ds-card tp-card"><p class="ds-card-head">${esc(title)}${count != null ? ` <span class="meta">${esc(count)}</span>` : ""}</p>${body}</article>`;
+
+function pointsWins(latest) {
+  if (!latest) return `<h3 class="ds-col-head">Daily wins</h3><p class="meta">Not written yet. Press Write today's wins.</p>`;
+  if (!latest.wins) return `<h3 class="ds-col-head">Daily wins</h3>${winsList(latest)}`;
+  const called = speech.celebrated ?? {};
+  const open = latest.wins.filter((w) => !called[w.key]);
+  const row = (w, n) =>
+    tpRow(
+      n,
+      tpLink(w.title, w.url),
+      oneLine(w.why),
+      [w.kudos?.length ? `👏 ${esc(w.kudos.map((k) => k.name.split(/\s+/)[0]).join(", "))}` : "", w.rock ? esc(w.rock) : ""].filter(Boolean).join(" · "),
+      `<button type="button" class="sm ghost dw-check" data-win-call="${esc(w.key)}" title="Tick once you've said it">Called out</button>`,
+    );
+  return `<h3 class="ds-col-head">Daily wins</h3>
+    <article class="ds-speech dw ds-card tp-card"><p class="ds-headline">${esc(latest.headline)}</p>${
+      open.length ? tpList(open, row, "") : `<p class="sub mv-clear">✓ Every win so far has been called out.</p>`
+    }</article>`;
+}
+
+function pointsProgress(tasks) {
+  const rank = (t) => {
+    const st = String(t.status ?? "").toLowerCase();
+    return PROGRESS_ORDER.includes(st) ? PROGRESS_ORDER.indexOf(st) : PROGRESS_ORDER.length;
+  };
+  const sorted = [...tasks].sort((a, b) => rank(a) - rank(b));
+  const row = (t, n) => {
+    const who = (t.assignees ?? []).map((u) => String(u.username ?? "").split(/\s+/)[0]).filter(Boolean);
+    return tpRow(n, tpLink(t.plainName ?? t.name, t.url), "", [`<span class="tp-status">${esc(t.status ?? "")}</span>`, esc(who.join(", ") || "no assignee"), t.bigSwing?.label ? esc(t.bigSwing.label) : ""].filter(Boolean).join(" · "));
+  };
+  return `<h3 class="ds-col-head">In progress</h3>
+    ${tpSection("Furthest along first", tasks.length, tpList(sorted, row, state.report ? "Nothing in progress on the sprint." : "Loading the readout…"))}`;
+}
+
+function pointsXf(xf) {
+  if (!slackTodo.data && !slackTodo.loading && !slackTodo.error) loadSlackTodos();
+  const ecom = slackTodo.data?.lists ?? [];
+  const items = xf?.items ?? [];
+  const asks = items.filter((i) => !isIdea(i.text));
+  const ideas = items.filter((i) => isIdea(i.text));
+  const ecomRow = (i, n) => {
+    const late = i.due && i.due < todayIso();
+    return tpRow(
+      n,
+      esc(oneLine(i.text, 110)),
+      "",
+      [esc(i.owner ? String(i.owner).split(/\s+/)[0] : "no assignee"), i.due ? `${late ? "was due" : "due"} ${esc(slDate(i.due))}` : "no due date"].join(" · "),
+      `<button type="button" class="sm ghost dw-check" data-sl-complete="${esc(i.key)}" title="Ticks it done in your Slack List. Full detail has the other actions.">Complete</button>`,
+    );
+  };
+  const xfRow = (i, n) => tpRow(n, tpLink(i.from, i.url), oneLine(i.text), esc(i.where));
+  return `<h3 class="ds-col-head">XF asks + requirements</h3>
+    ${tpSection("ECOM list", slackTodo.data ? ecom.length : "…", slackTodo.error ? `<p class="meta">Slack could not be read: ${esc(slackTodo.error)}</p>` : !slackTodo.data ? `<p class="meta">Reading your ECOM list in Slack…</p>` : tpList(ecom, ecomRow, "Nothing open."))}
+    ${tpSection("From other teams", asks.length, tpList(asks, xfRow, xf ? "No asks." : "Read when the wins are written."))}
+    ${tpSection("Ideas", ideas.length, tpList(ideas, xfRow, "None."))}`;
+}
 
 const PROGRESS_ORDER = ["ready for deploy", "qa", "vqa", "in review", "in-progress", "in progress", "blocked"];
 
@@ -5806,15 +5922,16 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 // Areas by what Alex logs in for (Alex, 2026-11-20: "i don't know when to go to what tabs"):
 //   Team      keep the work moving        Kudos     celebrate the best work
 //   Cleaning  housekeeping                Planning  sprint, rocks, tactics
-//   Metrics   tests and store numbers     Post/Speak the three things posted or said each day
+//   Metrics   tests and store numbers     Post/Speak what is posted or said each day (Speak: the
+//                                                   daily wins, in progress and XF asks as talking points)
 // Setup is only in the menu, and names itself in the top bar when open.
 const NAV_GROUPS = [
   { id: "team", pages: [["readout", "What needs you"], ["sprint", "Sprint"], ["standup", "Team stand-ups"], ["people", "1:1"]] },
-  { id: "kudos", pages: [["speech", "Daily wins"], ["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["impact", "Overall impact"]] },
+  { id: "kudos", pages: [["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["impact", "Overall impact"]] },
   { id: "cleaning", pages: [["cleaning", "Tidy-ups"]] },
   { id: "planning", pages: [["backlog", "Backlog"], ["workshop", "Workshop"], ["rocks", "Rocks"], ["ecomrocks", "Rock map"], ["plan", "Quarter"], ["ideation", "Ideation"]] },
   { id: "metrics", pages: [["metrics", "Tests & metrics"]] },
-  { id: "post", pages: [["mystandup", "1. My stand-up"], ["upsu", "2. Team update"], ["summary", "3. Daily summary"]] },
+  { id: "post", pages: [["mystandup", "1. My stand-up"], ["upsu", "2. Team update"], ["summary", "3. Daily summary"], ["speech", "4. Speak"]] },
 ];
 // On a wide screen the drawer stays open beside the page and is the nav.
 const drawerPinned = matchMedia("(min-width: 1280px)");
@@ -6951,7 +7068,7 @@ function renderSummary() {
   const root = $("summary");
   if (!root || $("view-summary")?.classList.contains("hidden")) return;
   const text = summary.edited ?? summaryText();
-  const missing = [!speech.latest && "Daily wins (write them on Kudos › Daily wins)", !state.report && "the readout", !slackTodo.data && !slackTodo.error && "your ECOM list (loading)", slackTodo.error && `your ECOM list (${slackTodo.error})`].filter(Boolean);
+  const missing = [!speech.latest && "Daily wins (write them on Post/Speak › 4. Speak)", !state.report && "the readout", !slackTodo.data && !slackTodo.error && "your ECOM list (loading)", slackTodo.error && `your ECOM list (${slackTodo.error})`].filter(Boolean);
   root.innerHTML = `<div class="bar up-bar">
       <button type="button" data-summary-copy>Copy</button>
       ${summary.edited != null ? `<button type="button" class="ghost" data-summary-reset>Rebuild from the data</button>` : ""}
