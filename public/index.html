@@ -25,11 +25,15 @@
     <button id="menu-toggle" aria-label="Menu" aria-expanded="false">
       <span></span><span></span><span></span>
     </button>
-    <!-- Three areas. Each opens its own row of pages underneath, built in app.js from NAV_GROUPS. -->
+    <!-- Areas by what Alex logs in to do (Alex, 2026-11-20). Each opens its own row of pages
+         underneath, built in app.js from NAV_GROUPS. -->
     <nav id="tabs" role="tablist" aria-label="Areas">
-      <button class="tab" role="tab" data-group="today">Today</button>
-      <button class="tab" role="tab" data-group="team">Team</button>
-      <button class="tab" role="tab" data-group="writeups">Write-ups</button>
+      <button class="tab" role="tab" data-group="team" title="Keep the work moving">Team</button>
+      <button class="tab" role="tab" data-group="kudos" title="Celebrate the team's best work">Kudos</button>
+      <button class="tab" role="tab" data-group="cleaning" title="Housekeeping so nothing is forgotten">Cleaning</button>
+      <button class="tab" role="tab" data-group="planning" title="Sprint planning, rocks and tactics">Planning</button>
+      <button class="tab" role="tab" data-group="metrics" title="AB tests and store numbers">Metrics</button>
+      <button class="tab" role="tab" data-group="post" title="What you post each day">Post</button>
     </nav>
     <!-- Other tools, opened in a new tab. Store numbers live in the Ecom Reporting Hub. -->
     <details class="res-menu" id="resources">
@@ -78,6 +82,27 @@
   <div id="scrim" hidden></div>
 
   <main>
+    <!-- ------------------------------- cleaning ------------------------------- -->
+    <section class="view hidden" id="view-cleaning">
+      <h2>Tidy-ups</h2>
+      <p class="sub">Housekeeping so nothing gets forgotten: tickets missing a ROCK, a due date or an owner, ROCK values with no rock, and anything you marked fixed that is still true (marked ↺). Oldest first. Dismiss hides one for today; Never show again hides it for good.</p>
+      <div id="cleaning"></div>
+    </section>
+
+    <!-- ------------------------------- metrics -------------------------------- -->
+    <section class="view hidden" id="view-metrics">
+      <h2>Tests &amp; metrics</h2>
+      <p class="sub">How performance is doing: every AB test update and store-number move from the latest readout, what needs a call first. The full numbers live in the Ecom Reporting Hub and AB Testing, linked here.</p>
+      <div id="metrics"></div>
+    </section>
+
+    <!-- ------------------------------- summary -------------------------------- -->
+    <section class="view hidden" id="view-summary">
+      <h2>Daily summary</h2>
+      <p class="sub">The short version to post: the top wins with who to thank, what is in progress, what other teams have asked for (your ECOM list and their ClickUp comments), and the metrics worth a look. Built from Daily wins, the sprint, Slack and the readout; edit it, then copy.</p>
+      <div id="summary"></div>
+    </section>
+
     <!-- ---------------------------------- readout --------------------------------- -->
     <section class="view hidden" id="view-readout">
       <!-- Your queue: everything open, ranked, top 3 in full; then the counts; then the full lists collapsed. -->

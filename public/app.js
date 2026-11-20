@@ -238,6 +238,8 @@ function renderAllFlags({ rebuildTools = false } = {}) {
   if (!$("view-people")?.classList.contains("hidden")) renderPeople();
   renderNextSteps();
   renderRuleCheck();
+  renderCleaning();
+  renderMetrics();
 }
 
 /* -------------------------------- rule check --------------------------------
@@ -3032,6 +3034,7 @@ function renderUpdate(report) {
   renderWins("lastweek", report);
   if (standup.data) renderUpsu();
   if (speech.loaded) renderSpeech(); // the In progress column reads the readout
+  if (summary.edited == null) renderSummary();
 }
 
 /* ---------------------------- this / last week's wins ----------------------------
@@ -5275,6 +5278,7 @@ function pollSpeech() {
 }
 
 function renderSpeech() {
+  if (summary.edited == null) renderSummary(); // the Daily summary reads the wins
   const root = $("speech");
   if (!root) return;
   if (!speech.loaded) {
@@ -5799,13 +5803,18 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 
 /* ----------------------------------- nav ----------------------------------- */
 
-// Three areas, each a row of pages. Today is what to act on now, Team is the work itself,
-// Write-ups is what gets sent or kept. Setup is only in the menu, and names itself in the
-// top bar when open. The drawer lists the same groups (index.html).
+// Areas by what Alex logs in for (Alex, 2026-11-20: "i don't know when to go to what tabs"):
+//   Team      keep the work moving        Kudos     celebrate the best work
+//   Cleaning  housekeeping                Planning  sprint, rocks, tactics
+//   Metrics   tests and store numbers     Post      the three things posted each day
+// Setup is only in the menu, and names itself in the top bar when open.
 const NAV_GROUPS = [
-  { id: "today", pages: [["readout", "What needs you"], ["speech", "Daily wins"], ["standup", "Stand-up"]] },
-  { id: "team", pages: [["sprint", "Sprint"], ["backlog", "Backlog"], ["rocks", "Rocks"], ["workshop", "Workshop"], ["plan", "Quarter"], ["people", "1:1"], ["ideation", "Ideation"]] },
-  { id: "writeups", pages: [["mystandup", "My stand-up"], ["upsu", "Update + Stand-up"], ["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["impact", "Overall Impact"]] },
+  { id: "team", pages: [["readout", "What needs you"], ["sprint", "Sprint"], ["standup", "Team stand-ups"], ["people", "1:1"]] },
+  { id: "kudos", pages: [["speech", "Daily wins"], ["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["impact", "Overall impact"]] },
+  { id: "cleaning", pages: [["cleaning", "Tidy-ups"]] },
+  { id: "planning", pages: [["backlog", "Backlog"], ["workshop", "Workshop"], ["rocks", "Rocks"], ["ecomrocks", "Rock map"], ["plan", "Quarter"], ["ideation", "Ideation"]] },
+  { id: "metrics", pages: [["metrics", "Tests & metrics"]] },
+  { id: "post", pages: [["mystandup", "1. My stand-up"], ["upsu", "2. Team update"], ["summary", "3. Daily summary"]] },
 ];
 // On a wide screen the drawer stays open beside the page and is the nav.
 const drawerPinned = matchMedia("(min-width: 1280px)");
@@ -6195,6 +6204,7 @@ async function loadSlackTodos() {
 /** Slack rows show in Today's moves and in Daily wins' XF column: redraw both. */
 function slackRedraw() {
   renderMoves();
+  if (summary.edited == null) renderSummary();
   if (speech.loaded && !$("view-speech")?.classList.contains("hidden")) renderSpeech();
 }
 function slackWhen(iso) {
@@ -6849,7 +6859,125 @@ $("focus")?.addEventListener("submit", (event) => {
 });
 
 // Pages that were folded into others: an old link or bookmark lands on the one that replaced it.
-const MOVED_VIEWS = { update: "upsu", wins: "impact", tests: "readout" };
+/* ------------------------- Cleaning, Metrics, Daily summary -------------------------
+   Pages for the areas Alex named on 2026-11-20. Cleaning and Metrics list flags from the
+   readout as queue rows (Dismiss / Never show again; click a row for the full card).
+   The Daily summary is the short post: wins, in progress, asks, metrics. */
+
+const pageOpen = new Set();
+function flagRows(flags) {
+  return `<div class="q-list">${flags
+    .map((f) => (pageOpen.has(f.id) ? `<div class="q-opened">${flagCard(f)}<button type="button" class="link-btn" data-page-open="${esc(f.id)}">Close</button></div>` : queueRow(f).replace(`data-q-open="${esc(f.id)}"`, `data-page-open="${esc(f.id)}"`)))
+    .join("")}</div>`;
+}
+document.addEventListener("click", (event) => {
+  const b = event.target.closest("[data-page-open]");
+  if (!b) return;
+  const id = b.dataset.pageOpen;
+  pageOpen.has(id) ? pageOpen.delete(id) : pageOpen.add(id);
+  renderCleaning();
+  renderMetrics();
+});
+
+function renderCleaning() {
+  const root = $("cleaning");
+  if (!root || $("view-cleaning")?.classList.contains("hidden")) return;
+  if (!state.report) return void (root.innerHTML = `<p class="sub">Loading the readout…</p>`);
+  const list = tidyFlags();
+  root.innerHTML = list.length ? `<p class="meta">${esc(plural(list.length, "tidy-up", "tidy-ups"))} open.</p>${flagRows(list)}` : `<p class="sub mv-clear">✓ Nothing to tidy. Tickets have their fields filled in.</p>`;
+}
+
+/** Test and store flags: open ones, plus the store moves shown for context. Calls first. */
+function metricFlags() {
+  const sev = { p1: 0, attention: 1, prompt: 2, info: 3 };
+  return (state.report?.flags ?? [])
+    .filter((f) => (String(f.layer) === "3" || String(f.layer) === "0") && ["open", "context"].includes(viewOf(f)))
+    .sort((a, b) => (sev[a.severity] ?? 9) - (sev[b.severity] ?? 9) || Boolean(b.isNew) - Boolean(a.isNew));
+}
+function renderMetrics() {
+  const root = $("metrics");
+  if (!root || $("view-metrics")?.classList.contains("hidden")) return;
+  if (!state.report) return void (root.innerHTML = `<p class="sub">Loading the readout…</p>`);
+  const flags = metricFlags();
+  const tests = flags.filter((f) => String(f.layer) === "3");
+  const store = flags.filter((f) => String(f.layer) === "0");
+  const links = `<div class="bar"><a class="ql" href="https://ecomreporting.netlify.app/" target="_blank" rel="noreferrer">Ecom Reporting Hub ↗</a><a class="ql" href="https://ecom-fd-roadmap.netlify.app/?view=tests" target="_blank" rel="noreferrer">AB Testing ↗</a></div>`;
+  root.innerHTML = `${links}
+    <h3 class="lw-head">AB tests <span class="meta">${esc(tests.length)}</span></h3>
+    ${tests.length ? flagRows(tests) : `<p class="meta">No test updates in this readout.</p>`}
+    <h3 class="lw-head">Store numbers <span class="meta">${esc(store.length)}</span></h3>
+    ${store.length ? flagRows(store) : `<p class="meta">No store-number moves flagged in this readout.</p>`}
+    <p class="meta">From the readout pulled ${esc(new Date(state.report.generatedAt).toLocaleString())}.</p>`;
+}
+
+/** The short daily post, as plain text: every line from the data, nothing made up. */
+function summaryText() {
+  const lines = [];
+  const called = speech.celebrated ?? {};
+  const wins = (speech.latest?.wins ?? []).filter((w) => !called[w.key]).slice(0, 5);
+  if (wins.length) {
+    lines.push("🏆 Wins");
+    for (const w of wins) lines.push(`• ${w.title}${w.kudos?.length ? ` (kudos ${w.kudos.map((k) => k.name.split(/\s+/)[0]).join(", ")})` : ""}`);
+  }
+  const tasks = (state.report?.detail?.clickup?.tasks ?? []).filter((t) => !t.archived && t.bucket === "inProgress");
+  const rank = (t) => {
+    const i = PROGRESS_ORDER.indexOf(String(t.status ?? "").toLowerCase());
+    return i < 0 ? PROGRESS_ORDER.length : i;
+  };
+  if (tasks.length) {
+    lines.push("", `🚧 In progress (${tasks.length})`);
+    for (const t of [...tasks].sort((a, b) => rank(a) - rank(b)).slice(0, 6)) {
+      const who = (t.assignees ?? []).map((u) => String(u.username ?? "").split(/\s+/)[0]).filter(Boolean).join(", ");
+      lines.push(`• ${t.plainName ?? t.name} (${String(t.status ?? "").toLowerCase()}${who ? `, ${who}` : ""})`);
+    }
+    if (tasks.length > 6) lines.push(`• and ${tasks.length - 6} more`);
+  }
+  const ecom = slackTodo.data?.lists ?? [];
+  const xfAsks = (speech.latest?.xf?.items ?? []).filter((i) => !isIdea(i.text));
+  if (ecom.length || xfAsks.length) {
+    lines.push("", "🙋 Asks of other teams");
+    for (const i of ecom.slice(0, 6)) lines.push(`• ${i.text}${i.owner ? ` (${String(i.owner).split(/\s+/)[0]}` : ""}${i.due ? `${i.owner ? ", " : " ("}due ${slDate(i.due)})` : i.owner ? ")" : ""}`);
+    for (const i of xfAsks.slice(0, 4)) lines.push(`• ${i.from}: ${String(i.text).slice(0, 140)}`);
+  }
+  const watch = metricFlags().filter((f) => f.severity === "p1" || f.severity === "attention" || isContextFlag(f)).slice(0, 5);
+  if (watch.length) {
+    lines.push("", "📊 Worth a look");
+    for (const f of watch) lines.push(`• ${f.message}`);
+  }
+  return lines.join("\n");
+}
+const summary = { edited: null };
+function renderSummary() {
+  const root = $("summary");
+  if (!root || $("view-summary")?.classList.contains("hidden")) return;
+  const text = summary.edited ?? summaryText();
+  const missing = [!speech.latest && "Daily wins (write them on Kudos › Daily wins)", !state.report && "the readout", !slackTodo.data && !slackTodo.error && "your ECOM list (loading)", slackTodo.error && `your ECOM list (${slackTodo.error})`].filter(Boolean);
+  root.innerHTML = `<div class="bar up-bar">
+      <button type="button" data-summary-copy>Copy</button>
+      ${summary.edited != null ? `<button type="button" class="ghost" data-summary-reset>Rebuild from the data</button>` : ""}
+      <span class="meta" data-summary-note>${missing.length ? `Not in it yet: ${esc(missing.join("; "))}.` : ""}</span>
+    </div>
+    <textarea class="up-text" data-summary-text rows="${Math.min(28, text.split("\n").length + 2)}">${esc(text)}</textarea>`;
+}
+document.addEventListener("input", (event) => {
+  if (event.target.matches?.("[data-summary-text]")) summary.edited = event.target.value;
+});
+document.addEventListener("click", async (event) => {
+  if (event.target.closest("[data-summary-reset]")) {
+    summary.edited = null;
+    return renderSummary();
+  }
+  if (!event.target.closest("[data-summary-copy]")) return;
+  const note = document.querySelector("[data-summary-note]");
+  try {
+    await navigator.clipboard.writeText(document.querySelector("[data-summary-text]").value);
+    note.textContent = "Copied.";
+  } catch {
+    note.textContent = "The browser would not copy. Select the text and copy it.";
+  }
+});
+
+const MOVED_VIEWS = { update: "upsu", wins: "impact", tests: "metrics" };
 
 function showView(name) {
   name = MOVED_VIEWS[name] ?? name;
@@ -6874,6 +7002,13 @@ function showView(name) {
   if (name === "setup" && !state.settings) loadSettings();
   if (name === "plan") loadPlan();
   if (name === "readout") loadMoves();
+  if (name === "cleaning") renderCleaning();
+  if (name === "metrics") renderMetrics();
+  if (name === "summary") {
+    if (!speech.loaded) loadSpeech();
+    if (!slackTodo.data && !slackTodo.loading) loadSlackTodos();
+    renderSummary();
+  }
   if (name === "people") renderPeople();
   if (name === "ideation" && !ideation.loaded) loadIdeation();
   if (name === "impact" && !impact.loaded) loadImpact();
