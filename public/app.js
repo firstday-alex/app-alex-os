@@ -8,6 +8,7 @@ import { groupByPerson, groupLine, YOU, NOBODY } from "./flag-groups.js";
 import { weekStartOf as qWeekStartOf, monthName as qMonthName, shortDay as qShortDay } from "./quarter.js";
 import { buildAgenda, agendaText } from "./workshop.js";
 import { kudosWeek, kudosPage, kudosFileName, addImages, taskIdOf } from "./kudos.js";
+import { groupStarred } from "./starred.js";
 import { buildChanges, buildLastWeekWins, buildStandupUpdate, buildThisWeekWins, changeLine, changesText, lastWeekText, standupUpdateText, windowStart } from "./update-text.js";
 
 const $ = (id) => document.getElementById(id);
@@ -5378,6 +5379,116 @@ document.addEventListener("click", (event) => {
   document.querySelectorAll("[data-speech-col]").forEach((c) => c.classList.toggle("on", c.dataset.speechCol === speechTab));
 });
 
+/* ------------------------------- starred wins -------------------------------
+   Alex grades a win A+, A or A- from the Daily wins list and it is kept for good under
+   Kudos › Starred wins, by week or month of completion (src/store/starred-wins.js).
+   Starring does not take a win off Daily wins; only Called out does. */
+
+const STAR_GRADES = ["A+", "A", "A-"];
+const starred = {
+  items: {},
+  loaded: false,
+  error: null,
+  by: (() => {
+    try {
+      return localStorage.getItem("starredBy") || "week";
+    } catch {
+      return "week";
+    }
+  })(),
+};
+
+async function loadStarred() {
+  const res = await fetch(`${FN}/starred-wins`).then((r) => r.json()).catch(() => null);
+  starred.loaded = true;
+  if (res?.items) starred.items = res.items;
+  else starred.error = res?.error ?? "Could not read the starred wins.";
+  renderStarred();
+  if (speech.loaded) renderSpeech();
+}
+
+/** A+ / A / A- on a win; the grade it has is filled in, pressing it again unstars. */
+function starControl(w) {
+  const now = starred.items[w.key]?.grade ?? null;
+  return `<span class="st-ctl" title="Star this win for Kudos › Starred wins. It stays here until you tick Called out.">${now ? "★" : "☆"}${STAR_GRADES.map(
+    (g) => `<button type="button" class="st-g${now === g ? " on" : ""}" data-star-key="${esc(w.key)}" data-star-grade="${esc(g)}" aria-pressed="${now === g}">${esc(g)}</button>`,
+  ).join("")}</span>`;
+}
+
+async function postStar(body) {
+  const res = await fetch(`${FN}/starred-wins`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+  const out = await res?.json().catch(() => ({}));
+  if (!res?.ok) return alert(`Not saved: ${out?.error ?? "could not reach the server"}`);
+  starred.items = out.items ?? starred.items;
+  renderStarred();
+  if (speech.loaded) renderSpeech();
+}
+
+document.addEventListener("click", async (event) => {
+  const b = event.target.closest("[data-star-grade]");
+  if (b) {
+    const key = b.dataset.starKey;
+    const grade = b.dataset.starGrade;
+    b.disabled = true;
+    if (starred.items[key]?.grade === grade) return postStar({ unstar: key });
+    const win = speech.latest?.wins?.find((w) => w.key === key) ?? starred.items[key];
+    if (!win) return alert("That win is no longer on the list.");
+    return postStar({ win, grade });
+  }
+  const un = event.target.closest("[data-unstar]");
+  if (un) return postStar({ unstar: un.dataset.unstar });
+  const by = event.target.closest("[data-starred-by]");
+  if (by) {
+    starred.by = by.dataset.starredBy;
+    try {
+      localStorage.setItem("starredBy", starred.by);
+    } catch {}
+    renderStarred();
+  }
+});
+
+function renderStarred() {
+  const root = $("starred");
+  if (!root) return;
+  if (!starred.loaded) {
+    root.innerHTML = `<p class="sub">Loading…</p>`;
+    return;
+  }
+  const items = Object.values(starred.items);
+  const groups = groupStarred(items, starred.by);
+  const tally = (list) => STAR_GRADES.map((g) => [g, list.filter((i) => i.grade === g).length]).filter(([, n]) => n).map(([g, n]) => `${n} ${g}`).join(" · ");
+  const row = (it, n) => {
+    const done = it.completedAt ? new Date(it.completedAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "";
+    return `<li class="tp-row">
+      <span class="st-badge st-${esc(it.grade.replace("+", "p").replace("-", "m"))}">${esc(it.grade)}</span>
+      <div class="tp-body">
+        <div class="tp-title">${tpLink(it.title, it.url)}</div>
+        ${it.why ? `<div class="tp-line">${esc(oneLine(it.why, 200))}</div>` : ""}
+        <div class="tp-meta">${[it.kudos?.length ? `👏 ${esc(it.kudos.map((k) => k.name.split(/\s+/)[0]).join(", "))}` : it.who?.length ? esc(it.who.map((x) => x.split(/\s+/)[0]).join(", ")) : "", it.rock ? esc(it.rock) : "", done ? `completed ${esc(done)}` : ""].filter(Boolean).join(" · ")}${starControl(it)}</div>
+      </div>
+      <button type="button" class="sm ghost" data-unstar="${esc(it.key)}" title="Take it off Starred wins">Remove</button>
+    </li>`;
+  };
+  root.innerHTML = `
+    <div class="bar up-bar">
+      <span class="tp-mode" role="group" aria-label="Group by">${[["week", "By week"], ["month", "By month"]].map(([id, label]) => `<button type="button" class="sm${starred.by === id ? "" : " ghost"}" data-starred-by="${id}" aria-pressed="${starred.by === id}">${esc(label)}</button>`).join("")}</span>
+      <span class="meta">${esc(plural(items.length, "starred win", "starred wins"))}${items.length ? ` · ${esc(tally(items))}` : ""}</span>
+    </div>
+    ${starred.error ? `<div class="missing">${esc(starred.error)}</div>` : ""}
+    ${
+      groups.length
+        ? groups
+            .map(
+              (g) => `<article class="ds-speech dw ds-card tp-card">
+            <p class="ds-card-head">${esc(g.label)} <span class="meta">${esc(tally(g.items))}</span></p>
+            <ol class="tp-list">${g.items.map((it, i) => row(it, i + 1)).join("")}</ol>
+          </article>`,
+            )
+            .join("")
+        : `<p class="meta">Nothing starred yet. On Post/Speak › 4. Speak, press A+, A or A- on a win to keep it here.</p>`
+    }`;
+}
+
 /* Talking points (Alex, 2026-11-20: "formatted a different way... so its easier to just hit
    the top points in each section"). Each item is one line to say: the name, the one sentence
    that matters, who to thank or who owns it. The top five per section show; the rest fold.
@@ -5439,7 +5550,7 @@ function pointsWins(latest) {
       n,
       tpLink(w.title, w.url),
       oneLine(w.why),
-      [w.kudos?.length ? `👏 ${esc(w.kudos.map((k) => k.name.split(/\s+/)[0]).join(", "))}` : "", w.rock ? esc(w.rock) : ""].filter(Boolean).join(" · "),
+      [w.kudos?.length ? `👏 ${esc(w.kudos.map((k) => k.name.split(/\s+/)[0]).join(", "))}` : "", w.rock ? esc(w.rock) : ""].filter(Boolean).join(" · ") + starControl(w),
       `<button type="button" class="sm ghost dw-check" data-win-call="${esc(w.key)}" title="Tick once you've said it">Called out</button>`,
     );
   return `<h3 class="ds-col-head">Daily wins</h3>
@@ -5600,6 +5711,7 @@ function winsList(latest) {
         </div>
         ${w.why ? `<p class="dw-why">${esc(w.why)}</p>` : ""}
         ${w.kudos?.length ? `<div class="dw-kudos">${w.kudos.map((k) => `<span class="dw-kudo">👏 <strong>${esc(k.name.split(/\s+/)[0])}</strong> for ${esc(k.for.replace(/^for\s+/i, ""))}</span>`).join("")}</div>` : ""}
+        ${starControl(w)}
       </div>
       <button type="button" class="${isCalled ? "ghost " : ""}sm dw-check" data-win-${isCalled ? "uncall" : "call"}="${esc(w.key)}">${isCalled ? "Undo" : "Called out"}</button>
     </li>`;
@@ -5927,7 +6039,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 // Setup is only in the menu, and names itself in the top bar when open.
 const NAV_GROUPS = [
   { id: "team", pages: [["readout", "What needs you"], ["sprint", "Sprint"], ["standup", "Team stand-ups"], ["people", "1:1"]] },
-  { id: "kudos", pages: [["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["impact", "Overall impact"]] },
+  { id: "kudos", pages: [["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["starred", "Starred wins"], ["impact", "Overall impact"]] },
   { id: "cleaning", pages: [["cleaning", "Tidy-ups"]] },
   { id: "planning", pages: [["backlog", "Backlog"], ["workshop", "Workshop"], ["rocks", "Rocks"], ["ecomrocks", "Rock map"], ["plan", "Quarter"], ["ideation", "Ideation"]] },
   { id: "metrics", pages: [["metrics", "Tests & metrics"]] },
@@ -7130,6 +7242,8 @@ function showView(name) {
   if (name === "ideation" && !ideation.loaded) loadIdeation();
   if (name === "impact" && !impact.loaded) loadImpact();
   if (name === "speech" && !speech.loaded) loadSpeech();
+  if (name === "speech" && !starred.loaded) loadStarred();
+  if (name === "starred") starred.loaded ? renderStarred() : loadStarred();
   if (name === "mystandup" && !mine.loaded) loadMine();
   if (name === "standup" && !standup.data && !standup.loading) loadStandup();
   if (name === "upsu") {

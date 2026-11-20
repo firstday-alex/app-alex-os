@@ -1488,3 +1488,13 @@ main:has(#view-speech:not(.hidden)) { max-width: 1500px; }
 .tp-more summary { cursor: pointer; color: var(--muted); font-size: 13px; padding: 6px 0 2px; }
 .tp-empty { margin: 4px 0 0; }
 .ds-cols.tp .ds-headline { font-size: 1.05em; }
+
+/* Starred wins */
+.st-ctl { display: inline-flex; align-items: center; gap: 2px; margin-left: 8px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.dw-body > .st-ctl { margin: 6px 0 0; }
+.st-g { padding: 1px 7px; font-size: 12px; line-height: 1.5; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-weight: 600; }
+.st-g.on { background: var(--green); border-color: var(--green); color: #fff; }
+.st-badge { min-width: 30px; height: 26px; padding: 0 4px; border-radius: 13px; font-weight: 800; font-size: 13px; display: grid; place-items: center; color: #fff; background: var(--green); }
+.st-A { background: #4f7f5f; }
+.st-Am { background: #7f9f86; }
+.tp-row:has(.st-badge) { grid-template-columns: auto 1fr auto; }
