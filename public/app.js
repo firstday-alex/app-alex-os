@@ -7,6 +7,7 @@
 import { groupByPerson, groupLine, YOU, NOBODY } from "./flag-groups.js";
 import { weekStartOf as qWeekStartOf, monthName as qMonthName, shortDay as qShortDay } from "./quarter.js";
 import { buildAgenda, agendaText } from "./workshop.js";
+import { kudosWeek, kudosPage, kudosFileName } from "./kudos.js";
 import { buildChanges, buildLastWeekWins, buildStandupUpdate, buildThisWeekWins, changeLine, changesText, lastWeekText, standupUpdateText, windowStart } from "./update-text.js";
 
 const $ = (id) => document.getElementById(id);
@@ -2996,7 +2997,7 @@ function renderWins(kind, report) {
     </label>`;
   root.innerHTML = `
     <p class="meta">${esc(plural(wins.count, "ticket", "tickets"))} done ${wins.from ? `${esc(day(wins.from))} to ${esc(day(wins.to))}` : ""} · ${esc(plural(wins.rocks.length, "rock", "rocks"))} · ${esc(plural(wins.kudos.length, "person", "people"))}. From ClickUp as pulled ${esc(new Date(report.generatedAt).toLocaleString())}.</p>
-    <div class="bar up-bar"><button type="button" data-wins-copy="${kind}">Copy all</button><span class="meta" data-wins-note="${kind}"></span></div>
+    <div class="bar up-bar"><button type="button" data-wins-copy="${kind}">Copy all</button><button type="button" data-wins-kudos="${kind}" title="The kudos page, filled with the ticked wins: opens a preview and downloads the .html">Kudos page</button><span class="meta" data-wins-note="${kind}"></span></div>
     <textarea class="up-text" data-wins-text="${kind}" rows="${Math.min(20, text.split("\n").length + 1)}" readonly>${esc(text)}</textarea>
     <h3 class="lw-head">By rock</h3>
     ${wins.rocks
@@ -3036,6 +3037,50 @@ document.addEventListener("click", async (event) => {
     note.textContent = "Copied.";
   } catch {
     note.textContent = "The browser would not copy. Select the text and copy it by hand.";
+  }
+});
+
+/* The kudos page: Alex's page design (public/kudos/template.html) filled with the ticked
+   wins. Opens a preview in a new tab and downloads the file, with the monster image inside it,
+   so it can be sent as is or published as a Claude page. */
+const asDataUrl = (blob) =>
+  new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+document.addEventListener("click", async (event) => {
+  const kind = event.target.dataset?.winsKudos;
+  const v = winsViews[kind];
+  if (!v?.wins) return;
+  const note = document.querySelector(`[data-wins-note="${kind}"]`);
+  const week = kudosWeek(v.wins, v.excluded);
+  if (!week.rocks.length) {
+    note.textContent = "Every win is unticked, so there is nothing to put on the page.";
+    return;
+  }
+  const tab = window.open("", "_blank"); // now, while the click still counts, or the browser blocks it
+  note.textContent = "Making the kudos page…";
+  try {
+    const [template, monster] = await Promise.all([
+      fetch("kudos/template.html", { cache: "no-cache" }).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`template: HTTP ${r.status}`)))),
+      fetch("kudos/monster.png").then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`image: HTTP ${r.status}`)))).then(asDataUrl),
+    ]);
+    const url = URL.createObjectURL(new Blob([kudosPage(template, week, monster)], { type: "text/html" }));
+    if (tab) tab.location.href = url;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = kudosFileName(week);
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    const n = week.rocks.reduce((sum, r) => sum + r.w.length, 0);
+    note.textContent = `Kudos page for ${week.label}: ${plural(n, "win", "wins")} across ${plural(week.rocks.length, "rock", "rocks")}. Downloaded ${a.download}${tab ? " and opened it in a new tab" : ""}. To share it as a page with screenshots, drop the file into Claude and ask to publish it.`;
+  } catch (err) {
+    if (tab) tab.close();
+    note.textContent = `The kudos page could not be made: ${err.message}`;
   }
 });
 
