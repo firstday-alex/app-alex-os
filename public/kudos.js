@@ -16,6 +16,9 @@ export function mondayOf(ms) {
   return d;
 }
 
+/** A win's key on the page: "t" and its ClickUp id. */
+export const winKeyOf = (id) => `t${String(id).replace(/[^A-Za-z0-9_.-]/g, "")}`.slice(0, 200);
+
 const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /**
@@ -31,7 +34,7 @@ export function kudosWeek(wins, excluded = new Set(), { now = Date.now() } = {})
       .filter((t) => !excluded.has(String(t.id)))
       .map((t) => {
         const url = String(t.url ?? "");
-        return { k: `t${String(t.id).replace(/[^A-Za-z0-9_.-]/g, "")}`.slice(0, 200), t: cleanName(t.plainName ?? t.name).slice(0, 240), ...(/^https:\/\//.test(url) ? { u: url } : {}) };
+        return { k: winKeyOf(t.id), t: cleanName(t.plainName ?? t.name).slice(0, 240), ...(/^https:\/\//.test(url) ? { u: url } : {}) };
       })
       .filter((x) => x.t);
     if (w.length) rocks.push({ n: String(r.label).slice(0, 80), w });
@@ -100,5 +103,8 @@ export function addImages(week, images) {
   return n;
 }
 
-/** "ecom-kudos-2026-11-09.html". */
-export const kudosFileName = (week) => `ecom-kudos-${week.id}.html`;
+/** "ecom-kudos-2026-11-09.html", or with a saved version's name: "ecom-kudos-2026-11-09-final-for-drew.html". */
+export const kudosFileName = (week, name = "") => {
+  const slug = String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+  return `ecom-kudos-${week.id}${slug ? `-${slug}` : ""}.html`;
+};

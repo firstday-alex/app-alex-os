@@ -7,7 +7,7 @@
 import { groupByPerson, groupLine, YOU, NOBODY } from "./flag-groups.js";
 import { weekStartOf as qWeekStartOf, monthName as qMonthName, shortDay as qShortDay } from "./quarter.js";
 import { buildAgenda, agendaText } from "./workshop.js";
-import { kudosWeek, kudosPage, kudosFileName, addImages, taskIdOf } from "./kudos.js";
+import { kudosWeek, kudosPage, kudosFileName, addImages, taskIdOf, winKeyOf } from "./kudos.js";
 import { groupStarred } from "./starred.js";
 import { buildChanges, buildLastWeekWins, buildStandupUpdate, buildThisWeekWins, changeLine, changesText, lastWeekText, standupUpdateText, windowStart } from "./update-text.js";
 
@@ -3063,14 +3063,28 @@ function renderWins(kind, report) {
   }
   const day = (ms) => new Date(ms).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   const text = lastWeekText(wins, v.excluded, { title: v.title });
-  const item = (t) => `<label class="up-item">
+  const weekId = kudosWeek(wins).id;
+  v.weekId = weekId;
+  if (!kudosPhotos[weekId]) loadWeekPhotos(weekId);
+  const photos = kudosPhotos[weekId]?.map ?? {};
+  const photoCtl = (t) => {
+    const key = winKeyOf(t.id);
+    const id = photos[key];
+    return `<span class="kp-photo">${
+      id
+        ? `<img src="${FN}/kudos?photo=${esc(id)}" alt="" loading="lazy"><button type="button" class="link-btn" data-kp-pick="${esc(key)}" data-kp-week="${esc(weekId)}">Change</button><button type="button" class="link-btn" data-kp-clear="${esc(key)}" data-kp-week="${esc(weekId)}">Remove</button>`
+        : `<button type="button" class="link-btn" data-kp-pick="${esc(key)}" data-kp-week="${esc(weekId)}" title="A photo or image for this win on the kudos page, in place of the ClickUp ticket's image">📷 Add photo</button>`
+    }</span>`;
+  };
+  const item = (t) => `<div class="up-item kp-item"><label class="kp-label">
       <input type="checkbox" data-wins-kind="${kind}" data-wins-task="${esc(t.id)}"${v.excluded.has(String(t.id)) ? "" : " checked"}>
-      <span>${esc(t.plainName ?? t.name)}</span>
+      <span>${esc(t.plainName ?? t.name)}</span></label>
       ${t.url ? `<a class="meta" href="${esc(t.url)}" target="_blank" rel="noreferrer">open</a>` : ""}
-    </label>`;
+      ${photoCtl(t)}
+    </div>`;
   root.innerHTML = `
     <p class="meta">${esc(plural(wins.count, "ticket", "tickets"))} done ${wins.from ? `${esc(day(wins.from))} to ${esc(day(wins.to))}` : ""} · ${esc(plural(wins.rocks.length, "rock", "rocks"))} · ${esc(plural(wins.kudos.length, "person", "people"))}. From ClickUp as pulled ${esc(new Date(report.generatedAt).toLocaleString())}.</p>
-    <div class="bar up-bar"><button type="button" data-wins-copy="${kind}">Copy all</button><button type="button" data-wins-kudos="${kind}" title="The kudos page, filled with the ticked wins: opens a preview and downloads the .html">Kudos page</button><span class="meta" data-wins-note="${kind}"></span></div>
+    <div class="bar up-bar"><button type="button" data-wins-copy="${kind}">Copy all</button><button type="button" data-wins-kudos="${kind}" title="The kudos page, filled with the ticked wins: opens a preview and downloads the .html">Kudos page</button><button type="button" class="ghost" data-wins-save="${kind}" title="Save this page, with its photos, under a name in Kudos › Kudos pages">Save version</button><span class="meta" data-wins-note="${kind}"></span></div>
     <details class="wins-text"${v.textOpen ? " open" : ""} data-wins-fold="${kind}">
       <summary>Write-up to paste <span class="meta">${esc(plural(text.split("\n").filter(Boolean).length, "line", "lines"))} · Copy all copies it without opening</span></summary>
       <textarea class="up-text" data-wins-text="${kind}" rows="${Math.min(20, text.split("\n").length + 1)}" readonly>${esc(text)}</textarea>
@@ -3132,6 +3146,150 @@ const asDataUrl = (blob) =>
     r.onerror = () => reject(r.error);
     r.readAsDataURL(blob);
   });
+/* Photos on wins, and saved versions (Alex, 2026-11-21). A photo Alex adds replaces the
+   ClickUp ticket's image on the page. Images are shrunk in the browser (longest side 1400px,
+   JPEG) before they are stored or put in a page, so a page with many stays small. */
+const kudosPhotos = {}; // weekId → { map: { winKey: photoId } }
+
+async function loadWeekPhotos(weekId) {
+  kudosPhotos[weekId] = { map: {}, loading: true };
+  const res = await fetch(`${FN}/kudos?week=${encodeURIComponent(weekId)}`).then((r) => r.json()).catch(() => null);
+  kudosPhotos[weekId] = { map: res?.photos ?? {} };
+  if (state.report) for (const kind of Object.keys(winsViews)) if (winsViews[kind].weekId === weekId) renderWins(kind, state.report);
+}
+
+async function shrinkImage(blob, max = 1400) {
+  try {
+    if (blob.type === "image/gif" && blob.size < 1_500_000) return asDataUrl(blob); // keep the animation
+    const bmp = await createImageBitmap(blob);
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  } catch {
+    return asDataUrl(blob);
+  }
+}
+
+const kudosPost = async (body) => {
+  const res = await fetch(`${FN}/kudos`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+  const out = await res?.json().catch(() => ({}));
+  if (!res?.ok) throw new Error(out?.error ?? "could not reach the server");
+  return out;
+};
+
+const kudosFile = Object.assign(document.createElement("input"), { type: "file", accept: "image/png,image/jpeg,image/gif,image/webp", hidden: true });
+document.body.append(kudosFile);
+let kudosPick = null;
+kudosFile.addEventListener("change", async () => {
+  const file = kudosFile.files?.[0];
+  const pick = kudosPick;
+  kudosFile.value = "";
+  if (!file || !pick) return;
+  try {
+    const { id } = await kudosPost({ photo: await shrinkImage(file) });
+    const out = await kudosPost({ week: pick.weekId, key: pick.key, photoId: id });
+    kudosPhotos[pick.weekId] = { map: out.photos };
+  } catch (err) {
+    alert(`The photo was not saved: ${err.message}`);
+  }
+  if (state.report) for (const kind of Object.keys(winsViews)) renderWins(kind, state.report);
+});
+
+document.addEventListener("click", async (event) => {
+  const pick = event.target.closest("[data-kp-pick]");
+  if (pick) {
+    kudosPick = { key: pick.dataset.kpPick, weekId: pick.dataset.kpWeek };
+    kudosFile.click();
+    return;
+  }
+  const clear = event.target.closest("[data-kp-clear]");
+  if (!clear) return;
+  try {
+    const out = await kudosPost({ week: clear.dataset.kpWeek, key: clear.dataset.kpClear, photoId: null });
+    kudosPhotos[clear.dataset.kpWeek] = { map: out.photos };
+  } catch (err) {
+    alert(`Not changed: ${err.message}`);
+  }
+  if (state.report) for (const kind of Object.keys(winsViews)) renderWins(kind, state.report);
+});
+
+const kudosAssets = () =>
+  Promise.all([
+    fetch("kudos/template.html", { cache: "no-cache" }).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`template: HTTP ${r.status}`)))),
+    fetch("kudos/monster.png").then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`image: HTTP ${r.status}`)))).then(asDataUrl),
+  ]);
+
+/** Fetch `n` jobs four at a time, saying how far along it is. */
+async function fourAtATime(items, job, say) {
+  let next = 0;
+  let done = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const it = items[next++];
+      await job(it);
+      say?.(++done, items.length);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, items.length) }, worker));
+}
+
+/**
+ * Each win's image: Alex's photo when there is one, else the newest image on its ClickUp
+ * ticket. `freeze` stores ClickUp images as photos too and returns "photo:<id>" refs, for a
+ * saved version; otherwise data URLs to put straight in the page.
+ */
+async function kudosImages(week, { freeze = false, say } = {}) {
+  const mine = kudosPhotos[week.id]?.map ?? (await fetch(`${FN}/kudos?week=${week.id}`).then((r) => r.json()).then((r) => r.photos ?? {}).catch(() => ({})));
+  const keys = week.rocks.flatMap((r) => r.w.map((x) => x.k));
+  const images = new Map();
+  let failed = 0;
+  let fromClickUp = 0;
+  await fourAtATime(
+    keys,
+    async (key) => {
+      try {
+        if (mine[key]) {
+          if (freeze) images.set(key, `photo:${mine[key]}`);
+          else {
+            const r = await fetch(`${FN}/kudos?photo=${mine[key]}`);
+            if (r.ok) images.set(key, await asDataUrl(await r.blob()));
+          }
+          return;
+        }
+        const res = await fetch(`${FN}/kudos-image?task=${encodeURIComponent(taskIdOf(key))}`);
+        if (res.status === 204) return;
+        if (res.status !== 200) return void failed++;
+        const small = await shrinkImage(await res.blob());
+        fromClickUp++;
+        images.set(key, freeze ? `photo:${(await kudosPost({ photo: small })).id}` : small);
+      } catch {
+        failed++;
+      }
+    },
+    say,
+  );
+  return { images, failed, fromClickUp, mine: keys.filter((k) => mine[k]).length };
+}
+
+/** Open the page in the tab opened on the click, and download it. */
+function openAndDownload(html, fileName, tab) {
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  if (tab) tab.location.href = url;
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 document.addEventListener("click", async (event) => {
   const kind = event.target.dataset?.winsKudos;
   const v = winsViews[kind];
@@ -3145,45 +3303,134 @@ document.addEventListener("click", async (event) => {
   const tab = window.open("", "_blank"); // now, while the click still counts, or the browser blocks it
   note.textContent = "Making the kudos page…";
   try {
-    const [template, monster] = await Promise.all([
-      fetch("kudos/template.html", { cache: "no-cache" }).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`template: HTTP ${r.status}`)))),
-      fetch("kudos/monster.png").then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`image: HTTP ${r.status}`)))).then(asDataUrl),
-    ]);
-    // The hover screenshot for each win: the newest image on its ClickUp ticket, four at a time.
-    const keys = week.rocks.flatMap((r) => r.w.map((x) => x.k));
-    const images = new Map();
-    let failed = 0;
-    let next = 0;
-    note.textContent = `Pulling ticket images from ClickUp (0 of ${keys.length})…`;
-    const worker = async () => {
-      while (next < keys.length) {
-        const key = keys[next++];
-        try {
-          const res = await fetch(`${FN}/kudos-image?task=${encodeURIComponent(taskIdOf(key))}`);
-          if (res.status === 200) images.set(key, await asDataUrl(await res.blob()));
-          else if (res.status !== 204) failed++;
-        } catch {
-          failed++;
-        }
-        note.textContent = `Pulling ticket images from ClickUp (${next} of ${keys.length})…`;
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(4, keys.length) }, worker));
-    const withImage = addImages(week, images);
-    const url = URL.createObjectURL(new Blob([kudosPage(template, week, monster)], { type: "text/html" }));
-    if (tab) tab.location.href = url;
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = kudosFileName(week);
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    const [template, monster] = await kudosAssets();
+    const got = await kudosImages(week, { say: (n, of) => (note.textContent = `Gathering images (${n} of ${of})…`) });
+    const withImage = addImages(week, got.images);
+    openAndDownload(kudosPage(template, week, monster), kudosFileName(week), tab);
     const n = week.rocks.reduce((sum, r) => sum + r.w.length, 0);
-    note.textContent = `Kudos page for ${week.label}: ${plural(n, "win", "wins")} across ${plural(week.rocks.length, "rock", "rocks")}. ${withImage} with a screenshot from its ClickUp ticket${failed ? ` (${failed} could not be read)` : ""}. Downloaded ${a.download}${tab ? " and opened it in a new tab" : ""}. To share it as a page with screenshots, drop the file into Claude and ask to publish it.`;
+    note.textContent = `Kudos page for ${week.label}: ${plural(n, "win", "wins")} across ${plural(week.rocks.length, "rock", "rocks")}, ${withImage} with an image (${got.mine} your photos, ${got.fromClickUp} from ClickUp)${got.failed ? `; ${got.failed} could not be read` : ""}. Downloaded ${kudosFileName(week)}${tab ? " and opened it in a new tab" : ""}. Save version keeps it in Kudos › Kudos pages.`;
   } catch (err) {
     if (tab) tab.close();
     note.textContent = `The kudos page could not be made: ${err.message}`;
+  }
+});
+
+document.addEventListener("click", async (event) => {
+  const kind = event.target.dataset?.winsSave;
+  const v = winsViews[kind];
+  if (!v?.wins) return;
+  const note = document.querySelector(`[data-wins-note="${kind}"]`);
+  const week = kudosWeek(v.wins, v.excluded);
+  if (!week.rocks.length) {
+    note.textContent = "Every win is unticked, so there is nothing to save.";
+    return;
+  }
+  const already = (kudosRepo.versions ?? []).filter((x) => x.weekId === week.id).length;
+  const name = prompt("Name this version", `${week.label}${already ? ` v${already + 1}` : ""}`);
+  if (name == null) return;
+  event.target.disabled = true;
+  try {
+    const got = await kudosImages(week, { freeze: true, say: (n, of) => (note.textContent = `Keeping a copy of each image (${n} of ${of})…`) });
+    for (const r of week.rocks) for (const x of r.w) if (got.images.has(x.k)) x.i = got.images.get(x.k);
+    const out = await kudosPost({ save: { name, kind, week } });
+    kudosRepo.versions = out.versions;
+    renderKudosRepo();
+    note.textContent = `Saved "${out.version.name}" in Kudos › Kudos pages: ${plural(out.version.wins, "win", "wins")}, ${out.version.photos} with an image.`;
+  } catch (err) {
+    note.textContent = `Not saved: ${err.message}`;
+  }
+  event.target.disabled = false;
+});
+
+/* --------------------------- Kudos › Kudos pages ---------------------------
+   The saved versions, by week, newest first: open, download, rename, take off the list. */
+const kudosRepo = { versions: null, error: null };
+
+async function loadKudosRepo() {
+  const res = await fetch(`${FN}/kudos?versions=1`).then((r) => r.json()).catch(() => null);
+  kudosRepo.versions = res?.versions ?? [];
+  kudosRepo.error = res ? null : "Could not read the saved pages.";
+  renderKudosRepo();
+}
+
+function renderKudosRepo() {
+  const root = $("kudospages");
+  if (!root) return;
+  if (!kudosRepo.versions) {
+    root.innerHTML = `<p class="sub">Loading…</p>`;
+    return;
+  }
+  const byWeek = new Map();
+  for (const x of kudosRepo.versions) {
+    if (!byWeek.has(x.weekId)) byWeek.set(x.weekId, { label: x.weekLabel, items: [] });
+    byWeek.get(x.weekId).items.push(x);
+  }
+  const weeks = [...byWeek.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  root.innerHTML = `${kudosRepo.error ? `<div class="missing">${esc(kudosRepo.error)}</div>` : ""}
+    ${
+      weeks.length
+        ? weeks
+            .map(
+              ([, g]) => `<article class="ds-speech dw ds-card tp-card">
+          <p class="ds-card-head">${esc(g.label)} <span class="meta">${esc(plural(g.items.length, "version", "versions"))}</span></p>
+          <ol class="tp-list">${g.items
+            .map(
+              (x) => `<li class="tp-row kp-row">
+              <span class="dw-rank">📄</span>
+              <div class="tp-body"><div class="tp-title">${esc(x.name)}</div>
+                <div class="tp-meta">saved ${esc(new Date(x.savedAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))} · from ${esc(x.kind === "thisweek" ? "This week's wins" : "Last week's wins")} · ${esc(plural(x.wins, "win", "wins"))} · ${esc(plural(x.photos, "image", "images"))}</div>
+                <div class="sl-mini"><button type="button" class="link-btn" data-kv-open="${esc(x.id)}">Open</button><button type="button" class="link-btn" data-kv-download="${esc(x.id)}">Download</button><button type="button" class="link-btn" data-kv-rename="${esc(x.id)}">Rename</button><button type="button" class="link-btn" data-kv-remove="${esc(x.id)}">Remove</button><span class="meta" data-kv-note="${esc(x.id)}"></span></div>
+              </div><span></span>
+            </li>`,
+            )
+            .join("")}</ol>
+        </article>`,
+            )
+            .join("")
+        : `<p class="meta">Nothing saved yet. On This week's wins or Last week's wins, press Save version.</p>`
+    }`;
+}
+
+document.addEventListener("click", async (event) => {
+  const b = event.target.closest("[data-kv-open], [data-kv-download], [data-kv-rename], [data-kv-remove]");
+  if (!b) return;
+  const id = b.dataset.kvOpen ?? b.dataset.kvDownload ?? b.dataset.kvRename ?? b.dataset.kvRemove;
+  const note = document.querySelector(`[data-kv-note="${id}"]`);
+  const meta = (kudosRepo.versions ?? []).find((x) => x.id === id);
+  try {
+    if (b.dataset.kvRename) {
+      const name = prompt("New name", meta?.name ?? "");
+      if (!name) return;
+      kudosRepo.versions = (await kudosPost({ rename: { id, name } })).versions;
+      return renderKudosRepo();
+    }
+    if (b.dataset.kvRemove) {
+      if (!confirm(`Take "${meta?.name}" off Kudos pages?`)) return;
+      kudosRepo.versions = (await kudosPost({ remove: id })).versions;
+      return renderKudosRepo();
+    }
+    const tab = b.dataset.kvOpen ? window.open("", "_blank") : null;
+    note.textContent = "Building the page…";
+    const v = await fetch(`${FN}/kudos?version=${encodeURIComponent(id)}`).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
+    const [template, monster] = await kudosAssets();
+    const week = v.week;
+    const images = new Map();
+    const refs = week.rocks.flatMap((r) => r.w.filter((x) => /^photo:/.test(x.i ?? "")));
+    await fourAtATime(refs, async (x) => {
+      const r = await fetch(`${FN}/kudos?photo=${encodeURIComponent(x.i.slice(6))}`);
+      if (r.ok) images.set(x.k, await asDataUrl(await r.blob()));
+    });
+    for (const r of week.rocks) for (const x of r.w) delete x.i;
+    addImages(week, images);
+    const html = kudosPage(template, week, monster);
+    if (b.dataset.kvOpen) {
+      const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+      if (tab) tab.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } else openAndDownload(html, kudosFileName(week, v.name), null);
+    note.textContent = "";
+  } catch (err) {
+    if (note) note.textContent = `Could not: ${err.message}`;
   }
 });
 
@@ -6039,7 +6286,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 // Setup is only in the menu, and names itself in the top bar when open.
 const NAV_GROUPS = [
   { id: "team", pages: [["readout", "What needs you"], ["sprint", "Sprint"], ["standup", "Team stand-ups"], ["people", "1:1"]] },
-  { id: "kudos", pages: [["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["starred", "Starred wins"], ["impact", "Overall impact"]] },
+  { id: "kudos", pages: [["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["kudospages", "Kudos pages"], ["starred", "Starred wins"], ["impact", "Overall impact"]] },
   { id: "cleaning", pages: [["cleaning", "Tidy-ups"]] },
   { id: "planning", pages: [["backlog", "Backlog"], ["workshop", "Workshop"], ["rocks", "Rocks"], ["ecomrocks", "Rock map"], ["plan", "Quarter"], ["ideation", "Ideation"]] },
   { id: "metrics", pages: [["metrics", "Tests & metrics"]] },
@@ -7244,6 +7491,7 @@ function showView(name) {
   if (name === "speech" && !speech.loaded) loadSpeech();
   if (name === "speech" && !starred.loaded) loadStarred();
   if (name === "starred") starred.loaded ? renderStarred() : loadStarred();
+  if (name === "kudospages" || ((name === "thisweek" || name === "lastweek") && !kudosRepo.versions)) loadKudosRepo();
   if (name === "mystandup" && !mine.loaded) loadMine();
   if (name === "standup" && !standup.data && !standup.loading) loadStandup();
   if (name === "upsu") {

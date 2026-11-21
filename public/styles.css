@@ -1498,3 +1498,11 @@ main:has(#view-speech:not(.hidden)) { max-width: 1500px; }
 .st-A { background: #4f7f5f; }
 .st-Am { background: #7f9f86; }
 .tp-row:has(.st-badge) { grid-template-columns: auto 1fr auto; }
+
+/* Kudos photos */
+.kp-item { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.kp-label { display: flex; align-items: center; gap: 8px; flex: 1 1 260px; min-width: 0; }
+.kp-photo { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.kp-photo img { width: 34px; height: 34px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+.kp-row .dw-rank { background: transparent; font-size: 18px; }
+.kp-item .kp-photo, .kp-item .kp-photo span { flex: none; }
