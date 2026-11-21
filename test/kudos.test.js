@@ -114,3 +114,16 @@ test("the kudos week is the one most wins were finished in, not the earliest", a
   // A tie goes to the later week.
   assert.equal(mondayOf(busiestWeek([stray, rest[0]])).getDate(), 16);
 });
+
+test("the kudos page carries Ecom OS photo access only when given, and view-only otherwise", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const template = await readFile(new URL("../public/kudos/template.html", import.meta.url), "utf8");
+  const week = kudosWeek({ from: new Date(2026, 10, 17).getTime(), rocks: [{ label: "R", tasks: [{ id: "a1", name: "Win </script>" }] }] });
+  const plain = kudosPage(template, week, "x");
+  assert.match(plain, /var APP=null;/);
+  const app = { api: "https://os.example/.netlify/functions/kudos", origin: "https://os.example", week: week.id, mine: ["ta1"] };
+  const html = kudosPage(template, week, "x", app);
+  assert.ok(html.includes(`var APP=${JSON.stringify(app)};`));
+  assert.ok(!html.includes("/*__APP__*/"));
+  assert.ok(!html.includes("Win </script>"));
+});

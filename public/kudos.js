@@ -68,15 +68,20 @@ export function placeColumns(rocks) {
 
 const escHtml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/** The page: the template with the week, its title and the monster image filled in. */
-export function kudosPage(template, week, monsterSrc) {
+/** The page: the template with the week, its title, the monster image and (optionally) Ecom OS photo access filled in. */
+export function kudosPage(template, week, monsterSrc, app = null) {
   // JSON inside a <script>: escape "<" so a ticket named "</script>" cannot end it.
   const json = JSON.stringify(week).replace(/</g, "\\u003c").replace(/[\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16)}`);
   const fill = (s, token, value) => {
     if (!s.includes(token)) throw new Error(`The kudos template is missing ${token}.`);
     return s.split(token).join(value);
   };
-  let html = fill(template, "/*__WEEK__*/null", json);
+  // Ecom OS mode: { api, origin, week, mine } lets the page add and remove photos (the page
+  // checks it is on that origin and that week). null leaves the page view-only. Filled
+  // first, so a ticket name cannot carry the token in.
+  const appJson = app ? JSON.stringify(app).replace(/</g, "\\u003c") : "null";
+  let html = fill(template, "/*__APP__*/null", appJson);
+  html = fill(html, "/*__WEEK__*/null", json);
   html = fill(html, "<title>__TITLE__</title>", `<title>${escHtml(`Ecom Team KUDOS: ${week.label}`)}</title>`);
   html = fill(html, 'src="__MONSTER__"', `src="${escHtml(monsterSrc)}"`);
   return html;

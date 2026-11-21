@@ -3151,6 +3151,13 @@ const asDataUrl = (blob) =>
    JPEG) before they are stored or put in a page, so a page with many stays small. */
 const kudosPhotos = {}; // weekId → { map: { winKey: photoId } }
 
+// A Kudos page tab changed a photo: show it on the wins list too.
+window.addEventListener("message", (event) => {
+  if (event.origin !== location.origin) return;
+  const weekId = event.data?.kudosPhotos;
+  if (typeof weekId === "string" && /^\d{4}-\d{2}-\d{2}$/.test(weekId)) loadWeekPhotos(weekId);
+});
+
 async function loadWeekPhotos(weekId) {
   kudosPhotos[weekId] = { map: {}, loading: true };
   const res = await fetch(`${FN}/kudos?week=${encodeURIComponent(weekId)}`).then((r) => r.json()).catch(() => null);
@@ -3274,7 +3281,8 @@ async function kudosImages(week, { freeze = false, say } = {}) {
     },
     say,
   );
-  return { images, failed, fromClickUp, mine: keys.filter((k) => mine[k]).length };
+  const mineKeys = keys.filter((k) => mine[k]);
+  return { images, failed, fromClickUp, mine: mineKeys.length, mineKeys };
 }
 
 /** Open the page in the tab opened on the click, and download it. */
@@ -3306,7 +3314,9 @@ document.addEventListener("click", async (event) => {
     const [template, monster] = await kudosAssets();
     const got = await kudosImages(week, { say: (n, of) => (note.textContent = `Gathering images (${n} of ${of})…`) });
     const withImage = addImages(week, got.images);
-    openAndDownload(kudosPage(template, week, monster), kudosFileName(week), tab);
+    // The tab can add and remove photos on this week's wins, saved here (Alex, 2026-11-21).
+    const app = { api: new URL(`${FN}/kudos`, location.href).href, origin: location.origin, week: week.id, mine: got.mineKeys };
+    openAndDownload(kudosPage(template, week, monster, app), kudosFileName(week), tab);
     const n = week.rocks.reduce((sum, r) => sum + r.w.length, 0);
     note.textContent = `Kudos page for ${week.label}: ${plural(n, "win", "wins")} across ${plural(week.rocks.length, "rock", "rocks")}, ${withImage} with an image (${got.mine} your photos, ${got.fromClickUp} from ClickUp)${got.failed ? `; ${got.failed} could not be read` : ""}. Downloaded ${kudosFileName(week)}${tab ? " and opened it in a new tab" : ""}. Save version keeps it in Kudos › Kudos pages.`;
   } catch (err) {
