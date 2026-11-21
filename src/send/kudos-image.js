@@ -1,7 +1,11 @@
 // The hover screenshot for a win on the kudos page: the newest image attached to its ClickUp
 // ticket. Alex, 2026-11-19: "can it pull an image for hover from the clickup ticket to show in
-// the html kudos file?" Read only. The token stays on the server; the browser gets the bytes
-// and puts them inside the page.
+// the html kudos file?" The token stays on the server; the browser gets the bytes and puts
+// them inside the page.
+//
+// Adding a photo attaches it to the ticket (attachImage), so it becomes the newest image and
+// the page shows it. Alex, 2026-11-21: "should the photos just upload to the clickup" / "i
+// dont think we need to delete right because app takes most recent photo". Nothing is deleted.
 
 const IMAGE = /^(png|jpe?g|gif|webp)$/i;
 const TYPES = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
@@ -66,4 +70,27 @@ export async function ticketImage({ taskId, config, token, fetchImpl = fetch, lo
     }
   }
   return null;
+}
+
+const DATA_URL = /^data:(image\/(png|jpeg|gif|webp));base64,([A-Za-z0-9+/=]+)$/;
+const EXT = { png: "png", jpeg: "jpg", gif: "gif", webp: "webp" };
+
+/**
+ * Attach a photo (a data URL, shrunk in the browser) to a ClickUp ticket. Returns { url } of
+ * the new attachment. Named kudos-<date>.<ext> so it reads as what it is on the ticket.
+ */
+export async function attachImage({ taskId, dataUrl, config, token, fetchImpl = fetch, now = new Date() }) {
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(String(taskId ?? ""))) throw Object.assign(new Error("Bad ticket id."), { status: 400 });
+  if (!token) throw Object.assign(new Error("CLICKUP_TOKEN is not set."), { status: 500 });
+  const m = String(dataUrl ?? "").match(DATA_URL);
+  if (!m) throw Object.assign(new Error("Send a PNG, JPG, GIF or WebP image."), { status: 400 });
+  const bytes = Buffer.from(m[3], "base64");
+  if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) throw Object.assign(new Error("That image is too big, even shrunk. Try a smaller one."), { status: 400 });
+  const name = `kudos-${now.toISOString().slice(0, 10)}.${EXT[m[2]]}`;
+  const form = new FormData();
+  form.append("attachment", new Blob([bytes], { type: m[1] }), name);
+  const res = await fetchImpl(`${config.clickup.apiBase}/task/${encodeURIComponent(taskId)}/attachment`, { method: "POST", headers: { authorization: token }, body: form, signal: AbortSignal.timeout(60000) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(`ClickUp did not take the photo: ${body.err ?? `HTTP ${res.status}`}`), { status: 502 });
+  return { url: body.url ?? null, name };
 }

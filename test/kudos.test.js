@@ -127,3 +127,24 @@ test("the kudos page carries Ecom OS photo access only when given, and view-only
   assert.ok(!html.includes("/*__APP__*/"));
   assert.ok(!html.includes("Win </script>"));
 });
+
+test("a kudos photo is attached to the ClickUp ticket, and bad input never reaches ClickUp", async () => {
+  const { attachImage } = await import("../src/send/kudos-image.js");
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init, file: init.body.get("attachment") });
+    return new Response(JSON.stringify({ url: "https://t.clickup-attachments.com/x.jpg" }), { status: 200 });
+  };
+  const config = { clickup: { apiBase: "https://api.clickup.com/api/v2" } };
+  const out = await attachImage({ taskId: "86b7x", dataUrl: "data:image/jpeg;base64,/9j/AA==", config, token: "tok", fetchImpl, now: new Date("2026-11-21T10:00:00Z") });
+  assert.equal(out.url, "https://t.clickup-attachments.com/x.jpg");
+  assert.equal(calls[0].url, "https://api.clickup.com/api/v2/task/86b7x/attachment");
+  assert.equal(calls[0].init.headers.authorization, "tok");
+  assert.equal(calls[0].file.name, "kudos-2026-11-21.jpg");
+  assert.equal(calls[0].file.type, "image/jpeg");
+  await assert.rejects(attachImage({ taskId: "../x", dataUrl: "data:image/jpeg;base64,AA==", config, token: "tok", fetchImpl }), /Bad ticket id/);
+  await assert.rejects(attachImage({ taskId: "86b7x", dataUrl: "data:text/html;base64,AA==", config, token: "tok", fetchImpl }), /PNG, JPG/);
+  assert.equal(calls.length, 1);
+  const refused = async () => new Response(JSON.stringify({ err: "Team not authorized" }), { status: 401 });
+  await assert.rejects(attachImage({ taskId: "86b7x", dataUrl: "data:image/png;base64,iVBORw0KGgo=", config, token: "tok", fetchImpl: refused }), /ClickUp did not take the photo: Team not authorized/);
+});

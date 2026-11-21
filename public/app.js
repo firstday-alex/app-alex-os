@@ -3073,7 +3073,9 @@ function renderWins(kind, report) {
     return `<span class="kp-photo">${
       id
         ? `<img src="${FN}/kudos?photo=${esc(id)}" alt="" loading="lazy"><button type="button" class="link-btn" data-kp-pick="${esc(key)}" data-kp-week="${esc(weekId)}">Change</button><button type="button" class="link-btn" data-kp-clear="${esc(key)}" data-kp-week="${esc(weekId)}">Remove</button>`
-        : `<button type="button" class="link-btn" data-kp-pick="${esc(key)}" data-kp-week="${esc(weekId)}" title="A photo or image for this win on the kudos page, in place of the ClickUp ticket's image">📷 Add photo</button>`
+        : kudosAttached[key]
+          ? `<img src="${esc(kudosAttached[key])}" alt="" loading="lazy"><span class="meta">on the ClickUp ticket</span><button type="button" class="link-btn" data-kp-pick="${esc(key)}" data-kp-week="${esc(weekId)}">Replace</button>`
+          : `<button type="button" class="link-btn" data-kp-pick="${esc(key)}" data-kp-week="${esc(weekId)}" title="Attaches the photo to the ClickUp ticket. The kudos page shows the newest image on the ticket, so this is the one it shows.">📷 Add photo</button>`
     }</span>`;
   };
   const item = (t) => `<div class="up-item kp-item"><label class="kp-label">
@@ -3151,11 +3153,13 @@ const asDataUrl = (blob) =>
    JPEG) before they are stored or put in a page, so a page with many stays small. */
 const kudosPhotos = {}; // weekId → { map: { winKey: photoId } }
 
-// A Kudos page tab changed a photo: show it on the wins list too.
+// A Kudos page tab attached a photo to a ticket: show it on the wins list too.
 window.addEventListener("message", (event) => {
   if (event.origin !== location.origin) return;
-  const weekId = event.data?.kudosPhotos;
-  if (typeof weekId === "string" && /^\d{4}-\d{2}-\d{2}$/.test(weekId)) loadWeekPhotos(weekId);
+  const got = event.data?.kudosAttached;
+  if (!got || !/^\d{4}-\d{2}-\d{2}$/.test(String(got.week)) || !/^t[A-Za-z0-9_.-]{1,200}$/.test(String(got.key))) return;
+  if (/^data:image\/(png|jpeg|gif|webp);base64,/.test(String(got.photo))) kudosAttached[got.key] = got.photo;
+  loadWeekPhotos(got.week);
 });
 
 async function loadWeekPhotos(weekId) {
@@ -3193,15 +3197,30 @@ const kudosPost = async (body) => {
 const kudosFile = Object.assign(document.createElement("input"), { type: "file", accept: "image/png,image/jpeg,image/gif,image/webp", hidden: true });
 document.body.append(kudosFile);
 let kudosPick = null;
+/** Photos attached to a ticket this session, by win key, so the list can show them. */
+const kudosAttached = {};
+
+/**
+ * Add a photo to a win: attach it to the ClickUp ticket, where the kudos page takes the
+ * newest image from. A photo kept here from before (the old way) is taken off the win, or it
+ * would keep covering the ticket's image.
+ */
+async function attachKudosPhoto(key, weekId, file) {
+  const photo = await shrinkImage(file);
+  const res = await fetch(`${FN}/kudos-image`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ task: taskIdOf(key), photo }) }).catch(() => null);
+  const out = await res?.json().catch(() => ({}));
+  if (!res?.ok) throw new Error(out?.error ?? "could not reach the server");
+  kudosAttached[key] = photo;
+  if (kudosPhotos[weekId]?.map?.[key]) kudosPhotos[weekId] = { map: (await kudosPost({ week: weekId, key, photoId: null })).photos };
+}
+
 kudosFile.addEventListener("change", async () => {
   const file = kudosFile.files?.[0];
   const pick = kudosPick;
   kudosFile.value = "";
   if (!file || !pick) return;
   try {
-    const { id } = await kudosPost({ photo: await shrinkImage(file) });
-    const out = await kudosPost({ week: pick.weekId, key: pick.key, photoId: id });
-    kudosPhotos[pick.weekId] = { map: out.photos };
+    await attachKudosPhoto(pick.key, pick.weekId, file);
   } catch (err) {
     alert(`The photo was not saved: ${err.message}`);
   }
@@ -3269,7 +3288,8 @@ async function kudosImages(week, { freeze = false, say } = {}) {
           }
           return;
         }
-        const res = await fetch(`${FN}/kudos-image?task=${encodeURIComponent(taskIdOf(key))}`);
+        // no-store: a photo just attached must not lose to a copy the browser kept.
+        const res = await fetch(`${FN}/kudos-image?task=${encodeURIComponent(taskIdOf(key))}`, { cache: "no-store" });
         if (res.status === 204) return;
         if (res.status !== 200) return void failed++;
         const small = await shrinkImage(await res.blob());
@@ -3315,7 +3335,7 @@ document.addEventListener("click", async (event) => {
     const got = await kudosImages(week, { say: (n, of) => (note.textContent = `Gathering images (${n} of ${of})…`) });
     const withImage = addImages(week, got.images);
     // The tab can add and remove photos on this week's wins, saved here (Alex, 2026-11-21).
-    const app = { api: new URL(`${FN}/kudos`, location.href).href, origin: location.origin, week: week.id, mine: got.mineKeys };
+    const app = { api: new URL(`${FN}/kudos`, location.href).href, imageApi: new URL(`${FN}/kudos-image`, location.href).href, origin: location.origin, week: week.id, mine: got.mineKeys };
     openAndDownload(kudosPage(template, week, monster, app), kudosFileName(week), tab);
     const n = week.rocks.reduce((sum, r) => sum + r.w.length, 0);
     note.textContent = `Kudos page for ${week.label}: ${plural(n, "win", "wins")} across ${plural(week.rocks.length, "rock", "rocks")}, ${withImage} with an image (${got.mine} your photos, ${got.fromClickUp} from ClickUp)${got.failed ? `; ${got.failed} could not be read` : ""}. Downloaded ${kudosFileName(week)}${tab ? " and opened it in a new tab" : ""}. Save version keeps it in Kudos › Kudos pages.`;
