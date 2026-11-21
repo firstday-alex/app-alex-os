@@ -145,6 +145,21 @@ export function buildThisWeekWins(tasks, { handleFor }) {
   return buildLastWeekWins(tasks, { handleFor, statuses: THIS_SPRINT_DONE_STATUSES });
 }
 
+/** A date from the Monday-to-Sunday week (local) holding the most of `dates`; the later week on a tie. */
+export function busiestWeek(dates) {
+  const weeks = new Map();
+  for (const ms of dates) {
+    const d = new Date(ms);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const key = d.getTime();
+    weeks.set(key, (weeks.get(key) ?? 0) + 1);
+  }
+  let best = null;
+  for (const [key, n] of weeks) if (best == null || n > weeks.get(best) || (n === weeks.get(best) && key > best)) best = key;
+  return best;
+}
+
 export function buildLastWeekWins(tasks, { handleFor, statuses = LAST_SPRINT_STATUSES }) {
   const done = (tasks ?? []).filter((t) => !t.archived && statuses.has(statusKey(t)));
   const dates = done.map(doneDate).filter(Boolean);
@@ -170,6 +185,10 @@ export function buildLastWeekWins(tasks, { handleFor, statuses = LAST_SPRINT_STA
     count: done.length,
     from: dates.length ? Math.min(...dates) : null,
     to: dates.length ? Math.max(...dates) : null,
+    // A done date in the week most of these wins were finished in: the week the kudos page
+    // is about. Not the earliest, so one ticket closed a week early cannot drag the page
+    // back a week (Alex, 2026-11-21: "week of nov 9 ... should be this week monday the 16th").
+    week: busiestWeek(dates),
     // Most wins first; "No rock" last, because work that ladders to nothing is the footnote.
     rocks: [...rocks.values()]
       .sort((a, b) => (a.label === NO_ROCK) - (b.label === NO_ROCK) || b.tasks.length - a.tasks.length || a.label.localeCompare(b.label))

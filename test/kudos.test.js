@@ -103,3 +103,14 @@ test("BAU always sits in the last column: its column swaps with column 3", async
   const none = placeColumns([{ n: "Bundles", w: w(3) }, { n: "Quiz", w: w(1) }]);
   assert.deepEqual(none.map((r) => r.c), [0, 1]);
 });
+
+test("the kudos week is the one most wins were finished in, not the earliest", async () => {
+  const { busiestWeek } = await import("../public/update-text.js");
+  const stray = new Date(2026, 10, 13, 12).getTime(); // Fri Nov 13
+  const rest = [17, 18, 19, 20].map((d) => new Date(2026, 10, d, 12).getTime()); // Nov 16 week
+  const week = busiestWeek([stray, ...rest]);
+  assert.equal(kudosWeek({ from: stray, week, rocks: [] }).label, "Week of Nov 16");
+  assert.equal(kudosWeek({ from: stray, rocks: [] }).label, "Week of Nov 9");
+  // A tie goes to the later week.
+  assert.equal(mondayOf(busiestWeek([stray, rest[0]])).getDate(), 16);
+});

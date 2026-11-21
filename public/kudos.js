@@ -24,10 +24,11 @@ const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,
 /**
  * The week the page shows, in the template's shape:
  * { id, label, at, rocks: [{ n, w: [{ k, t, u }] }] }. Unticked tickets are left out, and a
- * rock with nothing left goes too. The week is the one the earliest win was finished in.
+ * rock with nothing left goes too. The week is the one most of the wins were finished in
+ * (wins.week); wins.from, the earliest, only when that is missing.
  */
 export function kudosWeek(wins, excluded = new Set(), { now = Date.now() } = {}) {
-  const start = mondayOf(wins.from ?? now);
+  const start = mondayOf(wins.week ?? wins.from ?? now);
   const rocks = [];
   for (const r of wins.rocks ?? []) {
     const w = r.tasks
