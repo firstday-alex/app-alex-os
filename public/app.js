@@ -8,6 +8,7 @@ import { groupByPerson, groupLine, YOU, NOBODY } from "./flag-groups.js";
 import { weekStartOf as qWeekStartOf, monthName as qMonthName, shortDay as qShortDay } from "./quarter.js";
 import { buildAgenda, agendaText } from "./workshop.js";
 import { kudosWeek, kudosPage, kudosFileName, addImages, taskIdOf, winKeyOf } from "./kudos.js";
+import { reportHtml } from "./kudos-report.js";
 import { groupStarred } from "./starred.js";
 import { buildChanges, buildLastWeekWins, buildStandupUpdate, buildThisWeekWins, changeLine, changesText, lastWeekText, standupUpdateText, windowStart } from "./update-text.js";
 
@@ -3086,7 +3087,7 @@ function renderWins(kind, report) {
     </div>`;
   root.innerHTML = `
     <p class="meta">${esc(plural(wins.count, "ticket", "tickets"))} done ${wins.from ? `${esc(day(wins.from))} to ${esc(day(wins.to))}` : ""} · ${esc(plural(wins.rocks.length, "rock", "rocks"))} · ${esc(plural(wins.kudos.length, "person", "people"))}. From ClickUp as pulled ${esc(new Date(report.generatedAt).toLocaleString())}.</p>
-    <div class="bar up-bar"><button type="button" data-wins-copy="${kind}">Copy all</button><button type="button" data-wins-kudos="${kind}" title="The kudos page, filled with the ticked wins: opens a preview and downloads the .html">Kudos page</button><button type="button" class="ghost" data-wins-save="${kind}" title="Save this page, with its photos, under a name in Kudos › Kudos pages">Save version</button><span class="meta" data-wins-note="${kind}"></span></div>
+    <div class="bar up-bar"><button type="button" data-wins-copy="${kind}">Copy all</button><button type="button" data-wins-kudos="${kind}" title="The kudos page, filled with the ticked wins: opens a preview and downloads the .html">Kudos page</button><button type="button" class="ghost" data-wins-report="${kind}" title="A report of the ticked wins with every image printed, ready to save as a PDF">Report PDF</button><button type="button" class="ghost" data-wins-save="${kind}" title="Save this page, with its photos, under a name in Kudos › Kudos pages">Save version</button><span class="meta" data-wins-note="${kind}"></span></div>
     <details class="wins-text"${v.textOpen ? " open" : ""} data-wins-fold="${kind}">
       <summary>Write-up to paste <span class="meta">${esc(plural(text.split("\n").filter(Boolean).length, "line", "lines"))} · Copy all copies it without opening</span></summary>
       <textarea class="up-text" data-wins-text="${kind}" rows="${Math.min(20, text.split("\n").length + 1)}" readonly>${esc(text)}</textarea>
@@ -3267,7 +3268,8 @@ async function fourAtATime(items, job, say) {
 
 /**
  * Each win's image: Alex's photo when there is one, else the newest image on its ClickUp
- * ticket. `freeze` stores ClickUp images as photos too and returns "photo:<id>" refs, for a
+ * ticket. `freeze`, for a saved version, returns the ClickUp attachment's link (a copy is kept
+ * as "photo:<id>" only when ClickUp gave no link), and "photo:<id>" for photos kept here, for a
  * saved version; otherwise data URLs to put straight in the page.
  */
 async function kudosImages(week, { freeze = false, say } = {}) {
@@ -3292,6 +3294,13 @@ async function kudosImages(week, { freeze = false, say } = {}) {
         const res = await fetch(`${FN}/kudos-image?task=${encodeURIComponent(taskIdOf(key))}`, { cache: "no-store" });
         if (res.status === 204) return;
         if (res.status !== 200) return void failed++;
+        // A saved version keeps the attachment's link, not a copy (it is hosted in ClickUp).
+        const link = res.headers.get("x-image-url");
+        if (freeze && link && /^https:\/\/([a-z0-9-]+\.)*(clickup\.com|clickup-attachments\.com)\//i.test(link)) {
+          fromClickUp++;
+          images.set(key, link);
+          return;
+        }
         const small = await shrinkImage(await res.blob());
         fromClickUp++;
         images.set(key, freeze ? `photo:${(await kudosPost({ photo: small })).id}` : small);
@@ -3345,6 +3354,33 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+// The wins report: opens in a tab that starts Save as PDF (src: public/kudos-report.js).
+document.addEventListener("click", async (event) => {
+  const kind = event.target.dataset?.winsReport;
+  const v = winsViews[kind];
+  if (!v?.wins) return;
+  const note = document.querySelector(`[data-wins-note="${kind}"]`);
+  const week = kudosWeek(v.wins, v.excluded);
+  if (!week.rocks.length) {
+    note.textContent = "Every win is unticked, so there is nothing to report.";
+    return;
+  }
+  const tab = window.open("", "_blank"); // now, while the click still counts
+  note.textContent = "Making the report…";
+  try {
+    const got = await kudosImages(week, { say: (n, of) => (note.textContent = `Gathering images (${n} of ${of})…`) });
+    const html = reportHtml(v.wins, { excluded: v.excluded, images: got.images, handleFor, title: v.title, weekLabel: week.label, pulledAt: state.report?.generatedAt });
+    if (!tab) throw new Error("the browser blocked the new tab; allow pop-ups for this site and try again");
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    tab.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 120_000);
+    note.textContent = `Report for ${week.label} opened${got.failed ? ` (${got.failed} image(s) could not be read)` : ""}. In the print window, choose Save as PDF.`;
+  } catch (err) {
+    if (tab) tab.close();
+    note.textContent = `The report could not be made: ${err.message}`;
+  }
+});
+
 document.addEventListener("click", async (event) => {
   const kind = event.target.dataset?.winsSave;
   const v = winsViews[kind];
@@ -3360,7 +3396,7 @@ document.addEventListener("click", async (event) => {
   if (name == null) return;
   event.target.disabled = true;
   try {
-    const got = await kudosImages(week, { freeze: true, say: (n, of) => (note.textContent = `Keeping a copy of each image (${n} of ${of})…`) });
+    const got = await kudosImages(week, { freeze: true, say: (n, of) => (note.textContent = `Noting each image (${n} of ${of})…`) });
     for (const r of week.rocks) for (const x of r.w) if (got.images.has(x.k)) x.i = got.images.get(x.k);
     const out = await kudosPost({ save: { name, kind, week } });
     kudosRepo.versions = out.versions;
@@ -3445,10 +3481,13 @@ document.addEventListener("click", async (event) => {
     const [template, monster] = await kudosAssets();
     const week = v.week;
     const images = new Map();
-    const refs = week.rocks.flatMap((r) => r.w.filter((x) => /^photo:/.test(x.i ?? "")));
+    // Each image: a photo kept here, or a link to the ClickUp attachment, fetched through the
+    // server (the token stays there) and put inside the page so it opens anywhere.
+    const refs = week.rocks.flatMap((r) => r.w.filter((x) => /^(photo:|https:\/\/)/.test(x.i ?? "")));
     await fourAtATime(refs, async (x) => {
-      const r = await fetch(`${FN}/kudos?photo=${encodeURIComponent(x.i.slice(6))}`);
-      if (r.ok) images.set(x.k, await asDataUrl(await r.blob()));
+      const at = x.i.startsWith("photo:") ? `${FN}/kudos?photo=${encodeURIComponent(x.i.slice(6))}` : `${FN}/kudos-image?url=${encodeURIComponent(x.i)}`;
+      const r = await fetch(at);
+      if (r.status === 200) images.set(x.k, await asDataUrl(await r.blob()));
     });
     for (const r of week.rocks) for (const x of r.w) delete x.i;
     addImages(week, images);

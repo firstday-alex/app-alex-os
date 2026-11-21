@@ -148,3 +148,35 @@ test("a kudos photo is attached to the ClickUp ticket, and bad input never reach
   const refused = async () => new Response(JSON.stringify({ err: "Team not authorized" }), { status: 401 });
   await assert.rejects(attachImage({ taskId: "86b7x", dataUrl: "data:image/png;base64,iVBORw0KGgo=", config, token: "tok", fetchImpl: refused }), /ClickUp did not take the photo: Team not authorized/);
 });
+
+test("the wins report: unticked wins left out, images printed, names escaped, links kept", async () => {
+  const { reportHtml } = await import("../public/kudos-report.js");
+  const wins = {
+    rocks: [
+      { label: "Bundles", tasks: [{ id: "a1", name: "Bundle <page>", url: "https://app.clickup.com/t/a1", assignees: [{ id: 1, username: "Robson" }], dateClosed: new Date(2026, 10, 17).getTime() }, { id: "a2", name: "Skipped one" }] },
+      { label: "Only skipped", tasks: [{ id: "b1", name: "Gone" }] },
+    ],
+    kudos: [{ who: "Robson", rocks: ["Bundles"], tasks: [{ id: "a1", name: "Bundle <page>" }] }],
+  };
+  const img = "data:image/png;base64,iVBORw0KGgo=";
+  const html = reportHtml(wins, { excluded: new Set(["a2", "b1"]), images: new Map([["ta1", img], ["ta2", "javascript:alert(1)"]]), title: "This week's wins", weekLabel: "Week of Nov 16" });
+  assert.match(html, /<title>Ecom Team wins report: Week of Nov 16<\/title>/);
+  assert.match(html, /1 win across 1 rock, from 1 person\. From ClickUp\./);
+  assert.ok(html.includes("Bundle &lt;page&gt;") && !html.includes("Bundle <page>"));
+  assert.ok(html.includes(`<img src="${img}"`));
+  assert.ok(!html.includes("Skipped one") && !html.includes("Only skipped") && !html.includes("javascript:"));
+  assert.ok(html.includes('href="https://app.clickup.com/t/a1"'));
+  assert.match(html, /Robson · done Tue, Nov 17/);
+  assert.match(html, /🙌 Robson \(Bundles\)/);
+});
+
+test("a saved version keeps ClickUp image links and photo refs, nothing else", async () => {
+  const { cleanWeek } = await import("../src/store/kudos-repo.js");
+  const w = cleanWeek({ id: "2026-11-16", label: "Week of Nov 16", rocks: [{ n: "R", w: [
+    { k: "ta1", t: "A", i: "https://t123.p.clickup-attachments.com/t123/abc/x.png" },
+    { k: "ta2", t: "B", i: "photo:0b5f2a8e-1111-4c4c-9d9d-123456789abc" },
+    { k: "ta3", t: "C", i: "https://evil.example/x.png" },
+    { k: "ta4", t: "D", i: "data:image/png;base64,AAAA" },
+  ] }] });
+  assert.deepEqual(w.rocks[0].w.map((x) => x.i ?? null), ["https://t123.p.clickup-attachments.com/t123/abc/x.png", "photo:0b5f2a8e-1111-4c4c-9d9d-123456789abc", null, null]);
+});

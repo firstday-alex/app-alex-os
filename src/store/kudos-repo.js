@@ -4,10 +4,12 @@
 //   kudos/photos/<id>.json          one photo: { type, data } (base64), shrunk in the browser first
 //   kudos/week-photos/<week>.json   which photo goes on which win that week: { [winKey]: photoId }
 //   kudos/versions.json             the saved pages: { items: { [id]: { id, name, weekId, ... } } }
-//   kudos/versions/<id>.json        one saved page's week, its images as "photo:<id>"
+//   kudos/versions/<id>.json        one saved page's week; each image a link to the ClickUp
+//                                   attachment, or "photo:<id>" for a photo kept here
 //
-// A saved version keeps its own copy of every image (photos are never changed in place), so it
-// opens the same however the wins, the photos or the tickets change later.
+// A saved version points at the exact attachment it showed (not "the newest on the ticket"),
+// so a newer image on the ticket does not change it. Alex, 2026-11-21: "the saved kudos
+// versions can just be html and links to the images since they are hosted in clickup".
 
 import { randomUUID } from "node:crypto";
 
@@ -17,6 +19,17 @@ const WEEK = /^\d{4}-\d{2}-\d{2}$/;
 const WIN = /^t[A-Za-z0-9_.-]{1,200}$/;
 const ID = /^[0-9a-f-]{36}$/;
 const PHOTO_REF = /^photo:([0-9a-f-]{36})$/;
+
+/** A link to an image on ClickUp's own hosts. */
+export function isClickUpImageUrl(v) {
+  if (typeof v !== "string" || v.length > 1000) return false;
+  try {
+    const u = new URL(v);
+    return u.protocol === "https:" && /(^|\.)(clickup\.com|clickup-attachments\.com)$/i.test(u.hostname);
+  } catch {
+    return false;
+  }
+}
 
 export class KudosError extends Error {
   constructor(message, status = 400) {
@@ -73,7 +86,7 @@ export function cleanWeek(week) {
     ...(Number.isInteger(r?.c) && r.c >= 0 && r.c <= 2 ? { c: r.c } : {}),
     w: (Array.isArray(r?.w) ? r.w : []).slice(0, 80).flatMap((x) => {
       if (!WIN.test(String(x?.k ?? "")) || !clip(x?.t, 240)) return [];
-      return [{ k: x.k, t: clip(x.t, 240), ...(/^https:\/\//.test(String(x.u ?? "")) ? { u: String(x.u).slice(0, 500) } : {}), ...(PHOTO_REF.test(String(x.i ?? "")) ? { i: x.i } : {}) }];
+      return [{ k: x.k, t: clip(x.t, 240), ...(/^https:\/\//.test(String(x.u ?? "")) ? { u: String(x.u).slice(0, 500) } : {}), ...(PHOTO_REF.test(String(x.i ?? "")) || isClickUpImageUrl(x.i) ? { i: x.i } : {}) }];
     }),
   })).filter((r) => r.n && r.w.length);
   check(rocks.length, "There are no wins on that page.");

@@ -65,11 +65,23 @@ export async function ticketImage({ taskId, config, token, fetchImpl = fetch, lo
       });
       if (got?.bytes) {
         const type = /^image\/(png|jpeg|gif|webp)$/.test(got.type) ? got.type : TYPES[extOf(a)] ?? "image/png";
-        return { bytes: got.bytes, type, title: String(a.title ?? "") };
+        return { bytes: got.bytes, type, title: String(a.title ?? ""), url };
       }
     }
   }
   return null;
+}
+
+/**
+ * One ClickUp-hosted image by its link, for a saved kudos version (which keeps the link, not
+ * a copy). Only ClickUp's own hosts are fetched. { bytes, type } or null.
+ */
+export async function clickupImage({ url, token, fetchImpl = fetch }) {
+  if (!isClickUpHost(url) || String(url).length > 1000) throw Object.assign(new Error("Only ClickUp image links."), { status: 400 });
+  const got = await download(url, token, fetchImpl);
+  if (!got?.bytes) return null;
+  const type = /^image\/(png|jpeg|gif|webp)$/.test(got.type) ? got.type : TYPES[String(new URL(url).pathname.split(".").pop()).toLowerCase()] ?? null;
+  return type ? { bytes: got.bytes, type } : null;
 }
 
 const DATA_URL = /^data:(image\/(png|jpeg|gif|webp));base64,([A-Za-z0-9+/=]+)$/;
