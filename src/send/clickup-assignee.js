@@ -6,6 +6,8 @@
 // was retired and the assignees are now who a ticket belongs to.)
 
 import { httpJson } from "../lib/http.js";
+import { sprintDriftFromStore } from "../delta/assignee-drift.js";
+import { zonedParts, shiftDateKey } from "../lib/time.js";
 
 export class AssigneeWriteError extends Error {
   constructor(message, status = 400) {
@@ -66,4 +68,44 @@ export async function setAssignee({ config, store, logger, token, taskIds, assig
   }
   logger?.info?.("ticket_assignee.set", { set: set.length, failed: failed.length });
   return { assignee: entry.assignee, set, failed };
+}
+
+/**
+ * Put a done ticket back on the people it had when it first came onto the sprint: add them,
+ * and take off whoever is on it now who was not then. Only a ticket the reassignment check
+ * flags right now (src/delta/assignee-drift.js), so it cannot be used to reassign anything
+ * else. Alex, 2026-11-22: "prompt me if i want to update it back to the original".
+ */
+export async function restoreAssignees({ config, store, logger, token, taskId, fetchImpl, now = new Date() }) {
+  const id = String(taskId ?? "");
+  if (!/^[a-z0-9]+$/i.test(id)) throw new AssigneeWriteError("Which ticket?");
+  if (!token) throw new AssigneeWriteError("CLICKUP_TOKEN is not set.", 500);
+  const drift = await sprintDriftFromStore({ store, config, now, zonedParts, shiftDateKey });
+  const t = drift.tickets.find((x) => x.id === id);
+  if (!t) throw new AssigneeWriteError("That ticket is not flagged as reassigned any more. Refresh and look again.", 409);
+  const was = new Set(t.was.map((u) => u.id));
+  const nowIds = new Set(t.now.map((u) => u.id));
+  const add = [...was].filter((u) => !nowIds.has(u)).map(Number);
+  const rem = [...nowIds].filter((u) => !was.has(u)).map(Number);
+  const http = config.system.http ?? {};
+  await httpJson(`${config.clickup.apiBase}/task/${id}`, {
+    method: "PUT",
+    headers: { authorization: token },
+    body: { assignees: { add, rem } },
+    logger,
+    label: "clickup.task.restore_assignees",
+    fetchImpl,
+    timeoutMs: http.timeoutMs,
+    maxAttempts: Math.min(http.maxAttempts ?? 3, 3),
+    backoffMsSchedule: http.backoffMsSchedule,
+  });
+  const at = new Date().toISOString();
+  const entry = { at, actor: "dashboard", field: "assignees", action: "restore", taskId: id, name: t.name, was: t.was, before: t.now, added: add.map(String), removed: rem.map(String) };
+  try {
+    await store.backend.set(`clickup/writes/${at}-assignee-restore.json`, entry);
+  } catch (err) {
+    logger?.warn?.("ticket_assignee.audit_failed", { err });
+  }
+  logger?.info?.("ticket_assignee.restored", { taskId: id, added: add.length, removed: rem.length });
+  return { taskId: id, assignees: t.was, added: add.map(String), removed: rem.map(String) };
 }

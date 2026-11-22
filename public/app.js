@@ -2816,6 +2816,81 @@ const stageRank = (task) => {
   return i < 0 ? STAGES.length : i;
 };
 
+/* -------------------------- done tickets that changed hands --------------------------
+   Done this sprint, but not on the people it had when it came onto the sprint: put it back,
+   or keep it (remembered in this browser). src/delta/assignee-drift.js does the comparing. */
+const drift = { for: null, tickets: null, error: null, note: "" };
+const DRIFT_KEEP = "mos.driftKeep";
+const keptDrift = () => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(DRIFT_KEEP) ?? "[]"));
+  } catch {
+    return new Set();
+  }
+};
+// Kept per ticket and per change, so a ticket that changes hands again is asked about again.
+const driftKey = (t) => `${t.id}:${t.now.map((u) => u.id).sort().join(",")}`;
+const namesOf = (list) => (list.length ? list.map((u) => handleFor(u)).join(" and ") : "nobody");
+
+async function loadDrift(forReport) {
+  drift.for = forReport;
+  const res = await fetch(`${FN}/assignee-drift`).then((r) => r.json()).catch(() => null);
+  drift.tickets = res?.tickets ?? [];
+  drift.error = res?.error ?? (res ? null : "could not reach the server");
+  const box = $("sp-drift");
+  if (box) box.innerHTML = driftHtml();
+}
+
+function driftHtml() {
+  const kept = keptDrift();
+  const list = (drift.tickets ?? []).filter((t) => !kept.has(driftKey(t)));
+  if (drift.error) return `<p class="meta">Reassignment check: ${esc(drift.error)}</p>`;
+  if (!list.length) return drift.note ? `<p class="meta">${esc(drift.note)}</p>` : "";
+  const day = (key) => new Date(`${key}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return `<div class="flag sev-attention sp-drift">
+    <p class="msg"><strong>${esc(plural(list.length, "done ticket", "done tickets"))} changed hands this sprint.</strong> Put each back on who it had when it came onto the sprint, or keep it as is.</p>
+    ${list
+      .map(
+        (t) => `<div class="sp-drift-row" data-drift="${esc(t.id)}">
+        <span class="sp-name">${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)}</span>
+        <span class="meta">${esc(namesOf(t.was))} on ${esc(day(t.firstSeen))} → now ${esc(namesOf(t.now))}</span>
+        <span class="grow"></span>
+        <button type="button" class="sm" data-drift-restore="${esc(t.id)}">Put back to ${esc(namesOf(t.was))}</button>
+        <button type="button" class="sm ghost" data-drift-keep="${esc(driftKey(t))}">Keep as is</button>
+      </div>`,
+      )
+      .join("")}
+    ${drift.note ? `<p class="meta">${esc(drift.note)}</p>` : ""}
+  </div>`;
+}
+
+document.addEventListener("click", async (event) => {
+  const keep = event.target.closest("[data-drift-keep]");
+  if (keep) {
+    const kept = keptDrift();
+    kept.add(keep.dataset.driftKeep);
+    try {
+      localStorage.setItem(DRIFT_KEEP, JSON.stringify([...kept].slice(-500)));
+    } catch {}
+    $("sp-drift").innerHTML = driftHtml();
+    return;
+  }
+  const put = event.target.closest("[data-drift-restore]");
+  if (!put) return;
+  const t = (drift.tickets ?? []).find((x) => x.id === put.dataset.driftRestore);
+  put.disabled = true;
+  try {
+    const res = await fetch(`${FN}/assignee-drift`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskId: put.dataset.driftRestore }) });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error ?? `HTTP ${res.status}`);
+    drift.tickets = drift.tickets.filter((x) => x.id !== put.dataset.driftRestore);
+    drift.note = `"${t?.name ?? "The ticket"}" is back on ${namesOf(out.assignees ?? [])} in ClickUp.`;
+  } catch (err) {
+    drift.note = `Not changed: ${err.message}`;
+  }
+  $("sp-drift").innerHTML = driftHtml();
+});
+
 /** Midnight starting the working day before today: Friday on a Saturday, Sunday or Monday. */
 function prevWorkingDayStart(now = new Date()) {
   const d = new Date(now);
@@ -3002,6 +3077,7 @@ function renderLayer2(report) {
   // The board first: by person, the people who need a look on top, titles only by default.
   $("layer2").innerHTML = `
     <p class="sp-stats">${tiles}</p>
+    <div id="sp-drift">${driftHtml()}</div>
     <div class="bar sp-bar">
       <div class="dod-windows" role="group" aria-label="Group by">
         ${[["person", "By person"], ["stage", "By what it waits on"]].map(([id, label]) => `<button type="button" class="ghost dod-window${id === sprintGroup ? " on" : ""}" data-sprint-group="${id}" aria-pressed="${id === sprintGroup}">${esc(label)}</button>`).join("")}
@@ -3039,6 +3115,7 @@ function renderLayer2(report) {
     </details>`;
   // Always fetched, even for the readout window: it is what brings the rock changes.
   loadDodWindow(dodWindow);
+  if (drift.for !== report.generatedAt) loadDrift(report.generatedAt);
   renderNextSteps();
 }
 
