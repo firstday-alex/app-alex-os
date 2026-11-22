@@ -859,7 +859,7 @@ ul.plain { margin: 0; padding-left: 18px; }
 .q-label .meta { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }
 .q-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .flag.q-row {
-  display: grid; grid-template-columns: 78px minmax(0, 1fr) auto; grid-template-areas: "sev msg acts" "sev meta acts";
+  display: grid; grid-template-columns: max-content minmax(0, 1fr) auto; grid-template-areas: "sev msg acts" "sev meta acts";
   align-items: center; column-gap: 10px; padding: 7px 10px; margin: 0;
 }
 .q-sev { grid-area: sev; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
