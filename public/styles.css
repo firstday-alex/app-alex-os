@@ -1562,3 +1562,17 @@ main:has(#view-speech:not(.hidden)) { max-width: 1500px; }
 .tab-badge { display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--red); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; vertical-align: 2px; }
 @media (max-width: 640px) { .start-detail { white-space: normal; } }
 .start-step.done { opacity: .65; border-style: dashed; }
+
+/* Queue and Next steps rows: the full title wraps instead of being cut off (Alex,
+   2026-11-22: "go wider ... i can't quickly decide next steps because the titles are cut
+   off"), and these pages use more of a wide screen. */
+main:has(:is(#view-sprint, #view-readout, #view-start, #view-donehygiene):not(.hidden)) { max-width: 1500px; }
+:is(#next-steps, #queue, #view-readout) .q-msg { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.35; }
+:is(#next-steps, #queue, #view-readout) .q-meta { white-space: normal; }
+.flag.q-row { grid-template-areas: "sev msg acts" "sev meta acts" "note note note"; }
+.q-acts { flex-wrap: wrap; justify-content: flex-end; }
+.q-acts .ql { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-comment { grid-area: note; margin-top: 8px; padding: 8px 10px; border-left: 3px solid var(--green); background: var(--bg); border-radius: 4px; font-size: 13px; }
+.q-c-line + .q-c-line { margin-top: 6px; }
+.q-c-ticket { display: block; font-weight: 600; margin-bottom: 2px; }
+@media (max-width: 640px) { .flag.q-row { grid-template-areas: "sev acts" "msg msg" "meta meta" "note note"; } }

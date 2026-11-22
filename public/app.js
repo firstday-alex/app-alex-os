@@ -413,8 +413,41 @@ document.addEventListener("click", (event) => {
 });
 
 /** One line: severity, what, who and how long, the main link, Nudge, and Done / × (or Bring back). */
+/** The tickets a flag is about: its own ticket, or the ones it lists (carried over, too much in progress). */
+function ticketsOfFlag(flag) {
+  const tasks = state.flagCtx?.tasks ?? new Map();
+  const subject = subjectOf(flag);
+  if (subject.type === "task") return [tasks.get(baseId(subject.id))].filter(Boolean);
+  return (flag.values?.tickets ?? []).map((t) => tasks.get(String(t.id))).filter(Boolean);
+}
+
+/**
+ * The latest ClickUp comment on each of a flag's tickets, for Latest comment on a row.
+ * Alex, 2026-11-22: "maybe there is like a view latest comment button that lets me see the
+ * latest update?" Read from the readout; nothing is fetched.
+ */
+function latestCommentsHtml(flag) {
+  const tickets = ticketsOfFlag(flag);
+  if (!tickets.length) return "";
+  const many = tickets.length > 1;
+  return tickets
+    .map((t) => {
+      const c = t.lastComment;
+      const head = many ? `<span class="q-c-ticket">${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)}</span>` : "";
+      const body =
+        c === undefined
+          ? `<span class="meta">Comments not read yet; they are read on the next refresh.</span>`
+          : c
+            ? `<strong>${esc(c.user ?? "someone")}</strong>, ${esc(agoText(c.date))}: ${esc(c.text || "(no text)")}`
+            : `<span class="meta">No comments on this ticket.</span>`;
+      return `<div class="q-c-line">${head}${body}</div>`;
+    })
+    .join("");
+}
+
 function queueRow(flag, { also = 0, who = null } = {}) {
   const ctx = flagContext(flag);
+  const comments = latestCommentsHtml(flag);
   const t = triageOf(flag);
   const link = ctx.links.find((l) => l.clickup) ?? ctx.links.find((l) => l.external) ?? ctx.links.find((l) => !l.more);
   const age = flag.isNew ? "new today" : flag.openDays ? `${plural(flag.openDays, "day", "days")} open` : "";
@@ -426,14 +459,27 @@ function queueRow(flag, { also = 0, who = null } = {}) {
       <span class="q-meta">${esc(meta)}</span>
       <span class="q-acts">
         ${link ? `<a class="ql" href="${esc(link.href)}"${link.external ? ' target="_blank" rel="noreferrer"' : ""}>${esc(link.label)}${link.external ? " ↗" : ""}</a>` : ""}
+        ${comments ? `<button type="button" class="ghost sm" data-q-comment aria-expanded="false" title="The latest ClickUp comment on ${ticketsOfFlag(flag).length > 1 ? "each ticket" : "the ticket"}">Latest comment</button>` : ""}
         ${t
           ? `<button type="button" class="ghost sm" data-triage="clear">Bring back</button>`
           : `${canNudge(flag) ? `<button type="button" class="ghost sm" data-q-nudge="${esc(flag.id)}" title="Draft a nudge to ${esc(nudgeTarget(flag))}, to copy or schedule in Slack">Nudge</button>` : ""}
              <button type="button" class="ghost sm" data-triage="hide-today" title="Hide it for today. Back tomorrow if it is still true.">Dismiss</button>
              <button type="button" class="ghost sm" data-triage="never" title="Never show this one again. Find it under Handled to bring it back.">Never show again</button>`}
       </span>
+      ${comments ? `<div class="q-comment" hidden>${comments}</div>` : ""}
     </div>`;
 }
+
+// Latest comment: show or hide the comments under the row, in place.
+document.addEventListener("click", (event) => {
+  const b = event.target.closest("[data-q-comment]");
+  if (!b) return;
+  const box = b.closest(".q-row")?.querySelector(".q-comment");
+  if (!box) return;
+  box.hidden = !box.hidden;
+  b.setAttribute("aria-expanded", String(!box.hidden));
+  b.textContent = box.hidden ? "Latest comment" : "Hide comment";
+});
 
 /* Routine sprint checks, one item per person (public/flag-groups.js, shared with the
    readout). A group sits where its highest-ranked flag would, so a person with an old
