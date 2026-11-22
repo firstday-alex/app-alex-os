@@ -2724,16 +2724,16 @@ function waitingOn(task) {
   if (asked.length && task.bucket !== "done") {
     // A ticket nobody has started is not alarming until its status moves.
     const tone = stage.id === "start" ? "" : Date.now() - c.date > 2 * DAY_MS ? "bad" : "warn";
-    return { text: `Waiting on ${asked.join(", ")}`, why: `${c.user ?? "someone"} asked ${agoText(c.date)}`, tone };
+    return { text: `Waiting on ${asked.join(", ")}`, why: `${c.user ?? "someone"} asked ${agoText(c.date)}`, tone, act: tone === "bad" ? `Chase ${String(asked[0]).split(/\s+/)[0]}: answered yet?` : null };
   }
   if (stage.id === "work" && task.signal === "stalled") {
-    return { text: "Stalled: needs a question", why: `untouched ${task.idleDays ?? "?"}d`, tone: "bad" };
+    return { text: "Stalled: needs a question", why: `untouched ${task.idleDays ?? "?"}d`, tone: "bad", act: "Nudge: why no progress?" };
   }
   if (stage.id === "work") {
     const who = nameList(doing(task));
-    return { text: who ? `With ${who}` : "Nobody on it", why: task.status, tone: who ? "" : "bad" };
+    return { text: who ? `With ${who}` : "Nobody on it", why: task.status, tone: who ? "" : "bad", act: who ? null : "Assign: who owns this?" };
   }
-  return { text: stage.label, why: task.status, tone: STAGE_TONE[stage.id] ?? "" };
+  return { text: stage.label, why: task.status, tone: STAGE_TONE[stage.id] ?? "", act: stage.id === "blocked" ? "Unblock: what is it waiting on?" : null };
 }
 
 /** The ClickUp due date as a chip: red once it has passed, amber within two days. */
@@ -2760,7 +2760,7 @@ function agoText(ms) {
 /** A ticket as just its title, for the compact board: red edge when it needs a question; the rest on hover. */
 function ticketTitle(task) {
   const wait = waitingOn(task);
-  const tip = [task.status, wait.text, task.statusAge ? `${task.statusAge.exact ? "" : "at least "}${plural(task.statusAge.days, "day", "days")} in status` : "", task.bigSwing?.label].filter(Boolean).join(" · ");
+  const tip = [wait.act, task.status, wait.text, task.statusAge ? `${task.statusAge.exact ? "" : "at least "}${plural(task.statusAge.days, "day", "days")} in status` : "", task.bigSwing?.label].filter(Boolean).join(" · ");
   const name = esc(task.name);
   return `<div class="sp-title${wait.tone === "bad" ? " sp-title-bad" : wait.tone === "warn" ? " sp-title-warn" : ""}" title="${esc(tip)}">${task.url ? `<a href="${esc(task.url)}" target="_blank" rel="noreferrer">${name}</a>` : name}</div>`;
 }
@@ -2875,7 +2875,8 @@ function personAttention(open, done) {
     add(50 + Math.min(since ?? 5, 10) * 5, last == null ? "Nothing moved this sprint" : `Nothing moved since ${new Date(last).toLocaleDateString(undefined, { weekday: "short" })}`, since == null || since >= 3 ? "bad" : "warn", last == null ? "None of their tickets has changed status this sprint." : `Last move ${new Date(last).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}.`);
   }
   const stuck = open.filter((t) => t.signal === "stalled" || stageOf(t).id === "blocked").length;
-  if (stuck) add(15 * stuck, `${stuck} stalled or blocked`, "bad", "Tickets stalled in progress or blocked.");
+  // Scored, not shown: the red tickets' action chips ("Nudge: why no progress?") say it.
+  score += 15 * stuck;
   const wip = flaggedTickets("nextstep.too_much_in_progress");
   if (open.some((t) => wip.has(String(t.id)))) add(20, "Too much in progress", "warn", "More tickets in progress at once than the limit: ask which gets finished first.");
   const rolled = flaggedTickets("nextstep.carried_over");
@@ -2982,10 +2983,16 @@ function renderLayer2(report) {
   const groupHtml = groups
     .filter((g) => g.tasks.length || (!sprintFilter && g.attention?.reasons.length))
     .map((g) => {
-      const urgent = g.tasks.filter((t) => waitingOn(t).tone === "bad").length;
+      // What to do about the red tickets, by action: "Nudge: why no progress? ×2".
+      const acts = new Map();
+      for (const t of g.tasks) {
+        const w = waitingOn(t);
+        if (w.tone === "bad") acts.set(w.act ?? "Ask what it needs", [...(acts.get(w.act ?? "Ask what it needs") ?? []), t.name]);
+      }
+      const actChips = [...acts].map(([act, names]) => `<span class="chip sp-act" title="${esc(names.join("\n"))}">${esc(act)}${names.length > 1 ? ` ×${names.length}` : ""}</span>`).join("");
       const reasons = (g.attention?.reasons ?? []).map((r) => `<span class="chip sp-att sp-att-${esc(r.tone)}" title="${esc(r.why)}">${esc(r.text)}</span>`).join("");
       return `<section class="sp-group${sprintDetail ? "" : " sp-compact"}${g.attention?.score >= 50 ? " sp-group-flag" : ""}">
-        <div class="sp-group-head"><h3>${esc(g.title)}</h3><span class="meta">${esc(plural(g.tasks.length, "ticket", "tickets"))}${urgent ? ` · <span class="bad">${esc(urgent)} need a question</span>` : ""}</span>${reasons}
+        <div class="sp-group-head"><h3>${esc(g.title)}</h3><span class="meta">${esc(plural(g.tasks.length, "ticket", "tickets"))}</span>${actChips}${reasons}
           ${g.personId ? `<span class="grow"></span><a class="meta" href="#people/${encodeURIComponent(g.personId)}">1:1 prep →</a>` : ""}</div>
         ${sprintGroup !== "stage" ? laneHtml(g.tasks) : g.tasks.map((t) => ticketRow(t)).join("")}
       </section>`;
