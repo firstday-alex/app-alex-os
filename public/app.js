@@ -154,7 +154,7 @@ function render() {
   part("the backlog", () => renderBacklog());
   part("the update", () => renderUpdate(report));
   // Only when it is the page on screen: it calls the server, which other pages do not need.
-  if (!$("view-donehygiene")?.classList.contains("hidden")) part("Done Tickets Hygiene", () => renderDoneHygiene());
+  if (!$("view-donehygiene")?.classList.contains("hidden")) part("Ticket Hygiene", () => renderDoneHygiene());
   $("report-text").textContent = report.text ?? "";
   if (failed.length) {
     $("banners").insertAdjacentHTML(
@@ -550,10 +550,21 @@ queue.f = { view: "open", kind: "", person: "", area: "", q: "" };
 const queueFiltered = () => Boolean(queue.f.kind || queue.f.person || queue.f.area || queue.f.q.trim());
 
 /** Every flag in a pile, ranked: P1, P2 and decisions by priority, then tidy-ups by age. */
+/* Flags whose fix is a field on a ticket live on Ticket Hygiene, not in Your queue (Alex,
+   2026-11-22: "let's put no rock under hygiene"). */
+const HYGIENE_RULES = new Set(["crosslayer.no_big_swing"]);
+/** Open "no ROCK" flags, one per person, with the tickets still to place. */
+function noRockPeople() {
+  return rankedFlags(state.report?.flags ?? [])
+    .filter((f) => HYGIENE_RULES.has(f.rule))
+    .map((f) => ({ flag: f, name: f.subject?.label ?? "Someone", tickets: ticketsWithoutRock(f) }))
+    .filter((p) => p.tickets.length);
+}
+
 function queuePool(flags, view, covered) {
   if (view !== "open") return flags.filter((f) => !isContextFlag(f) && viewOf(f) === view);
   // Everything to act on, ranked; tidying (missing fields, tidy-ups) is on Cleaning.
-  const elsewhere = (f) => covered.has(f.id) || nextActionOf(f) === "fix";
+  const elsewhere = (f) => covered.has(f.id) || nextActionOf(f) === "fix" || HYGIENE_RULES.has(f.rule);
   return rankedFlags(flags).filter((f) => !elsewhere(f));
 }
 
@@ -737,16 +748,18 @@ function renderTopThree(flags) {
     <div class="q-seg" role="group" aria-label="Pile">${QUEUE_VIEWS
       .map(([k, l]) => `<button type="button" class="${f.view === k ? "on" : ""}" aria-pressed="${f.view === k}" data-qf-view="${k}">${esc(l)} <span>${esc(viewCount(k))}</span></button>`)
       .join("")}</div>
-    <div class="q-kinds" role="group" aria-label="Kind">${QUEUE_KINDS
-      .map(([k, l]) => {
-        const n = k ? base.filter((x) => actionKey(x) === k).length : base.length;
-        if (k && !n && f.kind !== k) return "";
-        return `<button type="button" class="q-kind ${k || "all"}${f.kind === k ? " on" : ""}" aria-pressed="${f.kind === k}" data-qf-kind="${k}">${esc(l)} <span>${esc(n)}</span></button>`;
-      })
-      .join("")}</div>
     <select id="q-person" class="sm" aria-label="Person">${option("", "Everyone", f.person)}${owners.map((o) => option(o, o, f.person)).join("")}</select>
     <select id="q-area" class="sm" aria-label="Area">${option("", "All areas", f.area)}${areas.map((k) => option(k, AREA_LABEL[k] ?? k, f.area)).join("")}</select>
     ${queueFiltered() ? `<button type="button" class="link-btn" data-qf-clear>Clear</button>` : ""}`;
+
+  // The kinds are the third row of the nav, so they stay in reach while scrolling.
+  $("kindtabs").innerHTML = QUEUE_KINDS
+    .map(([k, l]) => {
+      const n = k ? base.filter((x) => actionKey(x) === k).length : base.length;
+      if (k && !n && f.kind !== k) return "";
+      return `<button type="button" class="kindtab ${k || "all"}${f.kind === k ? " on" : ""}" aria-pressed="${f.kind === k}" data-qf-kind="${k}">${esc(l)} <span>${esc(n)}</span></button>`;
+    })
+    .join("");
 
   const close = (id) => `<button type="button" class="link-btn" data-q-open="${esc(id)}">Close</button>`;
   const row = (x) => (queue.open.has(x.id) ? `<div class="q-opened">${flagCard(x)}${close(x.id)}</div>` : queueRow(x));
@@ -805,6 +818,14 @@ $("start-here")?.addEventListener("click", (event) => {
   }
   queue.all = false;
   renderTopThree(state.report?.flags ?? []);
+});
+$("kindtabs").addEventListener("click", (event) => {
+  const k = event.target.closest("[data-qf-kind]");
+  if (!k) return;
+  queue.f.kind = k.dataset.qfKind;
+  queue.all = false;
+  renderTopThree(state.report?.flags ?? []);
+  if (window.scrollY > ($("start-here")?.offsetTop ?? 0)) $("start-here")?.scrollIntoView({ block: "start" });
 });
 $("start-here")?.addEventListener("change", (event) => {
   const key = { "q-person": "person", "q-area": "area" }[event.target.id];
@@ -2931,7 +2952,7 @@ async function loadDrift(forReport) {
 /* Done Tickets Hygiene has three tabs (Alex, 2026-11-22: "update any not set rock fields or
    tactic fields with dropdowns and tab between assignees, rocks, and tactics"): who it is on,
    ROCK not on a live rock, TACTIC not set. Each sets the field in ClickUp from a dropdown. */
-let hygieneTab = "assignees";
+let hygieneTab = null; // first open: No ROCK when anyone has it, else Assignees
 const tactics = { options: null, error: null, loading: false };
 const hygieneNote = { rocks: "", tactics: "" };
 
@@ -2961,6 +2982,24 @@ function hygieneRow(t, control, extra = "") {
     <span class="grow"></span>
     ${control}
   </div>`;
+}
+
+/** Open sprint work with no ROCK, per person: pick a rock for a ticket and Set. */
+function noRockHtml() {
+  const people = noRockPeople();
+  if (!people.length) return `<p class="sub">Everyone with open sprint tickets has at least one on a live rock.</p>${hygieneNote.rocks ? `<p class="meta">${esc(hygieneNote.rocks)}</p>` : ""}`;
+  const rocks = rockChoices();
+  if (!rocks.length) return `<div class="missing">No live rocks with a ClickUp ROCK option to choose from.</div>`;
+  const options = `<option value="">ROCK…</option>${rocks.map((r) => `<option value="${esc(r.id)}">${esc(r.title)}</option>`).join("")}`;
+  return `${hygieneNote.rocks ? `<p class="meta">${esc(hygieneNote.rocks)}</p>` : ""}${people
+    .map((p) => `<div class="flag sev-p1 sp-drift">
+      <p class="msg"><strong>${esc(p.name)}</strong> has ${esc(plural(p.tickets.length, "open sprint ticket", "open sprint tickets"))} and none is on a live rock. Set a ROCK on their main ticket; one is enough.</p>
+      ${p.tickets
+        .slice(0, 10)
+        .map((t) => hygieneRow(t, `<select class="sm" data-hyg-rock="${esc(t.id)}" aria-label="ROCK for ${esc(t.name)}">${options}</select><button type="button" class="sm" data-hyg-set="rock" data-id="${esc(t.id)}">Set</button>`, `${t.status ? ` · ${esc(t.status)}` : ""}${t.bigSwing?.label ? ` · now "${esc(t.bigSwing.label)}", not a live rock` : ""}`))
+        .join("")}
+    </div>`)
+    .join("")}`;
 }
 
 function rocksHtml() {
@@ -3023,22 +3062,26 @@ function renderDoneHygiene() {
   }
   const kept = keptDrift();
   const counts = {
+    norock: noRockPeople().length,
     assignees: drift.tickets == null ? "…" : drift.tickets.filter((t) => !kept.has(driftKey(t))).length,
     rocks: needsRock().length,
     tactics: needsTactic().length,
   };
-  const tabs = [["assignees", "Assignees"], ["rocks", "Rocks"], ["tactics", "Tactics"]]
+  if (!hygieneTab) hygieneTab = counts.norock ? "norock" : "assignees";
+  const tabs = [["norock", "No ROCK (open)"], ["assignees", "Done: assignees"], ["rocks", "Done: ROCK"], ["tactics", "Done: TACTIC"]]
     .map(([id, label]) => `<button type="button" role="tab" class="ghost dod-window${id === hygieneTab ? " on" : ""}" aria-selected="${id === hygieneTab}" data-hyg-tab="${id}">${esc(label)} <span class="meta">${esc(counts[id])}</span></button>`)
     .join("");
   const body =
-    hygieneTab === "rocks"
+    hygieneTab === "norock"
+      ? noRockHtml()
+      : hygieneTab === "rocks"
       ? rocksHtml()
       : hygieneTab === "tactics"
         ? tacticsHtml()
         : drift.tickets == null
           ? `<p class="meta">Checking this sprint's done tickets…</p>`
           : driftHtml() || `<p class="sub">Every ticket done this sprint is on the people it had when it came onto the sprint.</p>`;
-  box.innerHTML = `<div class="dod-windows hyg-tabs" role="tablist" aria-label="Done ticket checks">${tabs}</div>${body}`;
+  box.innerHTML = `<div class="dod-windows hyg-tabs" role="tablist" aria-label="Ticket checks">${tabs}</div>${body}`;
 }
 
 document.addEventListener("click", async (event) => {
@@ -3070,7 +3113,7 @@ document.addEventListener("click", async (event) => {
     if (!res.ok || !out.set?.length) throw new Error(out.error ?? out.failed?.[0]?.error ?? `HTTP ${res.status}`);
     // Update the ticket here too, so it leaves the list without waiting for a refresh.
     const tasksList = state.report?.detail?.clickup?.tasks ?? [];
-    for (const x of [t, tasksList.find((y) => String(y.id) === String(id))].filter(Boolean)) {
+    for (const x of [t, tasksList.find((y) => String(y.id) === String(id)), state.flagCtx?.tasks?.get(String(id))].filter(Boolean)) {
       if (which === "rock") x.bigSwing = { optionId: out.rock.optionId, label: out.rock.title };
       else x.leadershipPriority = { optionId: out.tactic.id, label: out.tactic.label };
     }
@@ -3216,7 +3259,7 @@ function startItems() {
   const noWork = people.filter((p) => p.attention.reasons.some((r) => /^(No open tickets|Nothing in progress|All waiting on QA\/deploy)$/.test(r.text)));
   if (noWork.length) add({ score: 85, group: "team", tone: "bad", text: `Not enough work: ${firstNames(noWork)}`, detail: noWork.map((p) => `${String(p.name).split(/\s+/)[0]}: ${p.attention.reasons.find((r) => /^(No open|Nothing in|All waiting)/.test(r.text)).text.replace(/^./, (c) => c.toLowerCase())}`).join(" · "), go: { view: "sprint" } });
 
-  const p1 = by((f) => f.severity === "p1" && !nextActionOf(f));
+  const p1 = by((f) => f.severity === "p1" && !nextActionOf(f) && !HYGIENE_RULES.has(f.rule));
   if (p1.length) add({ score: 75, group: "team", tone: "bad", text: `${plural(p1.length, "P1 item", "P1 items")} open`, detail: p1.slice(0, 2).map((f) => f.message).join(" · "), go: { view: "readout" } });
 
   const offCourse = by((f) => f.rule === "leadership.rock_off_course");
@@ -3238,6 +3281,8 @@ function startItems() {
   const changed = (drift.tickets ?? []).filter((t) => !kept.has(driftKey(t))).length;
   const noRock = needsRock().length;
   const noTactic = needsTactic().length;
+  const openNoRock = noRockPeople();
+  if (openNoRock.length) add({ score: 72, group: "team", tone: "bad", text: `No ROCK on any open ticket: ${openNoRock.map((p) => String(p.name).split(/\s+/)[0]).join(", ")}`, detail: "Pick a rock for their main ticket on Ticket Hygiene › No ROCK.", go: { view: "donehygiene", hyg: "norock" } });
   const parts = [changed && `${plural(changed, "changed hands", "changed hands")}`, noRock && `${noRock} without a live ROCK`, noTactic && `${noTactic} without a TACTIC`].filter(Boolean);
   if (parts.length) add({ score: 30, group: "team", tone: "", text: `Done tickets to tidy: ${parts.join(", ")}`, detail: "Put back or keep, then set the missing fields from a dropdown.", go: { view: "donehygiene" } });
 
@@ -3315,7 +3360,7 @@ function renderStart() {
               (x, i) => `<li class="start-item${x.tone ? ` start-${esc(x.tone)}` : ""}">
             <span class="start-rank">${i + 1}</span>
             <div class="start-body"><p class="start-text">${esc(x.text)}</p>${x.detail ? `<p class="meta start-detail">${esc(x.detail)}</p>` : ""}</div>
-            <button type="button" class="sm" data-start-go="${esc(x.go.view)}"${x.go.filter ? ` data-start-filter="${esc(x.go.filter)}"` : ""}${x.go.ns ? ` data-start-ns="${esc(x.go.ns)}"` : ""}>Open →</button>
+            <button type="button" class="sm" data-start-go="${esc(x.go.view)}"${x.go.filter ? ` data-start-filter="${esc(x.go.filter)}"` : ""}${x.go.ns ? ` data-start-ns="${esc(x.go.ns)}"` : ""}${x.go.hyg ? ` data-start-hyg="${esc(x.go.hyg)}"` : ""}>Open →</button>
           </li>`,
             )
             .join("")}</ol>${more ? `<p class="meta">${esc(plural(more, "more item", "more items"))} below these; they show here as the top ones clear.</p>` : ""}`
@@ -3349,6 +3394,7 @@ document.addEventListener("click", (event) => {
     // The board was drawn with the old filter; draw it again with this one.
     if (state.report) renderLayer2(state.report);
   }
+  if (go.dataset.startHyg) hygieneTab = go.dataset.startHyg;
   location.hash = go.dataset.startGo;
   // A reply, sprint call or nudge: open Your queue filtered to that action.
   if (go.dataset.startNs !== undefined) showQueue({ kind: go.dataset.startNs });
@@ -7084,7 +7130,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 //                                                   daily wins, in progress and XF asks as talking points)
 // Setup is only in the menu, and names itself in the top bar when open.
 const NAV_GROUPS = [
-  { id: "team", pages: [["start", "Start here"], ["readout", "What needs you"], ["sprint", "Sprint Management"], ["donehygiene", "Done Tickets Hygiene"], ["standup", "Team stand-ups"], ["people", "1:1"]] },
+  { id: "team", pages: [["start", "Start here"], ["readout", "What needs you"], ["sprint", "Sprint Management"], ["donehygiene", "Ticket Hygiene"], ["standup", "Team stand-ups"], ["people", "1:1"]] },
   { id: "kudos", pages: [["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["kudospages", "Kudos pages"], ["starred", "Starred wins"], ["impact", "Overall impact"]] },
   { id: "cleaning", pages: [["cleaning", "Tidy-ups"]] },
   { id: "planning", pages: [["backlog", "Backlog"], ["workshop", "Workshop"], ["rocks", "Rocks"], ["ecomrocks", "Rock map"], ["plan", "Quarter"], ["ideation", "Ideation"]] },
@@ -7123,14 +7169,15 @@ function pageCounts(items) {
   const urgent = (view) => items.some((x) => x.go.view === view && x.tone === "bad");
   const open = rankedFlags(state.report.flags ?? []);
   const kept = keptDrift();
-  const hygiene = (drift.tickets ?? []).filter((t) => !kept.has(driftKey(t))).length + needsRock().length + needsTactic().length;
+  const openNoRock = noRockPeople().length;
+  const hygiene = (drift.tickets ?? []).filter((t) => !kept.has(driftKey(t))).length + needsRock().length + needsTactic().length + openNoRock;
   const people = sprintPeopleAttention().filter((p) => p.attention.score >= 50).length;
   const offCourse = open.filter((f) => f.rule === "leadership.rock_off_course").length;
   const wins = items.some((x) => x.go.view === "thisweek");
   return {
     readout: { n: open.length, urgent: urgent("readout") },
     sprint: { n: people, urgent: urgent("sprint") },
-    donehygiene: { n: hygiene, urgent: false },
+    donehygiene: { n: hygiene, urgent: openNoRock > 0 },
     plan: { n: offCourse, urgent: offCourse > 0 },
     thisweek: { n: wins ? 1 : 0, urgent: false },
   };
@@ -8188,7 +8235,7 @@ function renderCleaning() {
   // Done tickets have their own tidying page under Team; one button gets there from here.
   const kept = keptDrift();
   const done = (drift.tickets ?? []).filter((t) => !kept.has(driftKey(t))).length + needsRock().length + needsTactic().length;
-  const toDone = `<a class="start-step cl-done" href="#donehygiene"><b>Done tickets: assignees, rocks and tactics →</b><span class="meta">${done ? `${esc(plural(done, "done ticket", "done tickets"))} to tidy on Done Tickets Hygiene` : "Done Tickets Hygiene: nothing to tidy"}</span></a>`;
+  const toDone = `<a class="start-step cl-done" href="#donehygiene"><b>Done tickets: assignees, rocks and tactics →</b><span class="meta">${done ? `${esc(plural(done, "done ticket", "done tickets"))} to tidy on Ticket Hygiene` : "Ticket Hygiene: nothing to tidy"}</span></a>`;
   root.innerHTML = toDone + (list.length ? `<p class="meta">${esc(plural(list.length, "tidy-up", "tidy-ups"))} open on open tickets.</p>${flagRows(list)}` : `<p class="sub mv-clear">✓ Nothing to tidy on open tickets. They have their fields filled in.</p>`);
 }
 
@@ -8297,6 +8344,7 @@ function showView(name) {
     button.setAttribute("aria-selected", String(button.dataset.group === group?.id));
   }
   renderSubtabs(name);
+  $("kindtabs").hidden = name !== "readout";
   $("view-title").textContent = group ? "" : VIEW_TITLES[name] ?? name;
   $("view-title").hidden = Boolean(group);
   // Keep an existing deep-link target: showView is also called on boot from the hash,

@@ -65,6 +65,8 @@
     <span class="chip" id="chip-mode">—</span>
     <button id="refresh">Refresh</button>
     <nav id="subtabs" aria-label="Pages"></nav>
+    <!-- What needs you only: the kinds of item, a third row (Alex, 2026-11-22). -->
+    <nav id="kindtabs" aria-label="Kinds" hidden></nav>
   </header>
 
   <nav id="drawer" aria-hidden="true">
@@ -197,8 +199,8 @@
     </section>
 
     <section class="view hidden" id="view-donehygiene">
-      <h2>Done Tickets Hygiene</h2>
-      <p class="sub">Tickets done this sprint that are not on the people they had when they came onto the sprint, from this app's daily ClickUp snapshots. Put each back in ClickUp, or keep it as is.</p>
+      <h2>Ticket Hygiene</h2>
+      <p class="sub">Fields to set and hands to check, each fixed in ClickUp from here: open sprint work with no ROCK, and tickets done this sprint that changed hands or are missing a ROCK or TACTIC.</p>
       <div id="done-hygiene"></div>
     </section>
 

@@ -1683,3 +1683,34 @@ details.section:not([open]) > summary { margin-bottom: 10px; }
 .q-kind.decide { color: var(--amber-ink); }
 .q-kind.nudge { color: var(--link); }
 .q-tidy { margin: 0 0 10px; font-size: 13px; }
+
+/* Compact nav (Alex, 2026-11-22: "clean up the top nav and bottom nav so they don't take so
+   much vertical space"): each row is one line that scrolls sideways, badges sit inline. */
+#tabs .tab, .subtab, .kindtab { white-space: nowrap; }
+#subtabs, #kindtabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+#subtabs::-webkit-scrollbar, #kindtabs::-webkit-scrollbar, #tabs::-webkit-scrollbar { display: none; }
+#kindtabs { flex-basis: 100%; display: flex; gap: 6px; padding-top: 6px; }
+#kindtabs[hidden], #kindtabs:empty { display: none; }
+.kindtab { flex: none; font: inherit; font-size: 12.5px; font-weight: 600; padding: 3px 11px; border-radius: 999px; border: 1px solid transparent; background: rgba(28, 43, 42, 0.06); color: var(--muted); cursor: pointer; }
+.kindtab span { font-weight: 500; opacity: .8; }
+.kindtab.reply { color: var(--red); }
+.kindtab.decide { color: var(--amber-ink); }
+.kindtab.nudge { color: var(--link); }
+.kindtab.on { border-color: currentColor; box-shadow: 0 0 0 1px currentColor inset; background: rgba(255, 255, 255, 0.8); }
+.kindtab.all.on { background: var(--ink); color: #fff; border-color: var(--ink); box-shadow: none; }
+@media (max-width: 640px) {
+  #topbar { flex-wrap: wrap; gap: 4px 6px; padding: 6px 10px; }
+  #tabs { order: 1; flex: 1 1 0; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  #menu-toggle { order: 0; padding: 4px; }
+  #resources { order: 2; }
+  #topbar > .grow { display: none; }
+  #refresh { order: 3; }
+  #subtabs { order: 4; padding-top: 4px; margin-top: 0; gap: 2px; }
+  #kindtabs { order: 5; padding-top: 2px; }
+  #tabs .tab, .res-menu > summary.tab { flex: none; padding: 5px 7px; font-size: 14px; }
+  .subtab { flex: none; padding: 3px 10px; font-size: 13px; }
+  .tab-badge { margin-left: 3px; min-width: 16px; padding: 0 4px; font-size: 10px; line-height: 16px; }
+}
+.hyg-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.hyg-tabs::-webkit-scrollbar { display: none; }
+.hyg-tabs > button { flex: none; white-space: nowrap; }
