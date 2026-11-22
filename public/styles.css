@@ -1769,3 +1769,19 @@ input, select, textarea, button { max-width: 100%; }
   main { overflow-x: clip; }
 }
 .kindtab.nudge { color: var(--link); }
+
+/* A run's label reads across the top of its cards, not down the side (Alex, 2026-11-22:
+   "move this vertical label across the top of the card horizontally"). */
+.q-run { display: flex; flex-direction: column; gap: 6px; }
+.q-run-label {
+  writing-mode: horizontal-tb; transform: none; align-self: flex-start; max-width: 100%;
+  padding: 3px 10px; border-radius: 999px; text-align: left;
+}
+/* Phones: the row's tag (NUDGE, REPLY, P2) keeps its width on one line; the buttons wrap
+   beside it instead of squeezing it into a letter per line. */
+.q-sev { white-space: nowrap; }
+@media (max-width: 640px) {
+  .flag.q-row { grid-template-columns: max-content minmax(0, 1fr); }
+  .flag.q-row .q-acts { justify-content: flex-end; flex-wrap: wrap; }
+  .flag.q-row .q-sev { align-self: start; margin-top: 6px; }
+}
