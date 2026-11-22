@@ -2818,7 +2818,8 @@ const stageRank = (task) => {
 
 /* -------------------------- done tickets that changed hands --------------------------
    Done this sprint, but not on the people it had when it came onto the sprint: put it back,
-   or keep it (remembered in this browser). src/delta/assignee-drift.js does the comparing. */
+   or keep it (remembered in this browser). src/delta/assignee-drift.js does the comparing.
+   Its own tab after Sprint Management (Alex, 2026-11-22: "Done Tickets Hygeine"). */
 const drift = { for: null, tickets: null, error: null, note: "" };
 const DRIFT_KEEP = "mos.driftKeep";
 const keptDrift = () => {
@@ -2837,14 +2838,27 @@ async function loadDrift(forReport) {
   const res = await fetch(`${FN}/assignee-drift`).then((r) => r.json()).catch(() => null);
   drift.tickets = res?.tickets ?? [];
   drift.error = res?.error ?? (res ? null : "could not reach the server");
-  const box = $("sp-drift");
-  if (box) box.innerHTML = driftHtml();
+  renderDoneHygiene();
+}
+
+/** The Done Tickets Hygiene tab: checks once per readout, then renders what it found. */
+function renderDoneHygiene() {
+  const box = $("done-hygiene");
+  if (!box) return;
+  const forReport = state.report?.generatedAt ?? null;
+  if (drift.for !== forReport) {
+    box.innerHTML = `<p class="meta">Checking this sprint's done tickets…</p>`;
+    loadDrift(forReport);
+    return;
+  }
+  box.innerHTML = driftHtml() || `<p class="sub">Every ticket done this sprint is on the people it had when it came onto the sprint.</p>`;
 }
 
 function driftHtml() {
   const kept = keptDrift();
   const list = (drift.tickets ?? []).filter((t) => !kept.has(driftKey(t)));
-  if (drift.error) return `<p class="meta">Reassignment check: ${esc(drift.error)}</p>`;
+  if (drift.tickets == null) return "";
+  if (drift.error) return `<div class="missing">The check could not run: ${esc(drift.error)}</div>`;
   if (!list.length) return drift.note ? `<p class="meta">${esc(drift.note)}</p>` : "";
   const day = (key) => new Date(`${key}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   return `<div class="flag sev-attention sp-drift">
@@ -2872,7 +2886,7 @@ document.addEventListener("click", async (event) => {
     try {
       localStorage.setItem(DRIFT_KEEP, JSON.stringify([...kept].slice(-500)));
     } catch {}
-    $("sp-drift").innerHTML = driftHtml();
+    renderDoneHygiene();
     return;
   }
   const put = event.target.closest("[data-drift-restore]");
@@ -2888,7 +2902,7 @@ document.addEventListener("click", async (event) => {
   } catch (err) {
     drift.note = `Not changed: ${err.message}`;
   }
-  $("sp-drift").innerHTML = driftHtml();
+  renderDoneHygiene();
 });
 
 /** Midnight starting the working day before today: Friday on a Saturday, Sunday or Monday. */
@@ -3077,7 +3091,6 @@ function renderLayer2(report) {
   // The board first: by person, the people who need a look on top, titles only by default.
   $("layer2").innerHTML = `
     <p class="sp-stats">${tiles}</p>
-    <div id="sp-drift">${driftHtml()}</div>
     <div class="bar sp-bar">
       <div class="dod-windows" role="group" aria-label="Group by">
         ${[["person", "By person"], ["stage", "By what it waits on"]].map(([id, label]) => `<button type="button" class="ghost dod-window${id === sprintGroup ? " on" : ""}" data-sprint-group="${id}" aria-pressed="${id === sprintGroup}">${esc(label)}</button>`).join("")}
@@ -3115,7 +3128,6 @@ function renderLayer2(report) {
     </details>`;
   // Always fetched, even for the readout window: it is what brings the rock changes.
   loadDodWindow(dodWindow);
-  if (drift.for !== report.generatedAt) loadDrift(report.generatedAt);
   renderNextSteps();
 }
 
@@ -6596,7 +6608,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 //                                                   daily wins, in progress and XF asks as talking points)
 // Setup is only in the menu, and names itself in the top bar when open.
 const NAV_GROUPS = [
-  { id: "team", pages: [["readout", "What needs you"], ["sprint", "Sprint Management"], ["standup", "Team stand-ups"], ["people", "1:1"]] },
+  { id: "team", pages: [["readout", "What needs you"], ["sprint", "Sprint Management"], ["donehygiene", "Done Tickets Hygiene"], ["standup", "Team stand-ups"], ["people", "1:1"]] },
   { id: "kudos", pages: [["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["kudospages", "Kudos pages"], ["starred", "Starred wins"], ["impact", "Overall impact"]] },
   { id: "cleaning", pages: [["cleaning", "Tidy-ups"]] },
   { id: "planning", pages: [["backlog", "Backlog"], ["workshop", "Workshop"], ["rocks", "Rocks"], ["ecomrocks", "Rock map"], ["plan", "Quarter"], ["ideation", "Ideation"]] },
@@ -7797,6 +7809,7 @@ function showView(name) {
     renderSummary();
   }
   if (name === "people") renderPeople();
+  if (name === "donehygiene") renderDoneHygiene();
   if (name === "ideation" && !ideation.loaded) loadIdeation();
   if (name === "impact" && !impact.loaded) loadImpact();
   if (name === "speech" && !speech.loaded) loadSpeech();
