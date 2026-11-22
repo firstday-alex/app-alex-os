@@ -1731,3 +1731,15 @@ details.section:not([open]) > summary { margin-bottom: 10px; }
 
 .sp-drift-row .due-fix { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; padding: 0; border: 0; background: none; }
 .sp-drift-row .due-fix > .meta:not(.due-msg) { display: none; }
+
+/* No sideways page scroll on phones (Alex, 2026-11-22: "lock x scroll on mobile for overflow
+   for the whole page"). clip, not hidden, so the sticky nav keeps sticking; the sideways menus,
+   tables and code boxes still scroll inside themselves. Long words and links wrap. */
+html, body { max-width: 100%; overflow-x: clip; overscroll-behavior-x: none; }
+@supports not (overflow-x: clip) { html, body { overflow-x: hidden; } }
+main, #shell { max-width: 100vw; }
+main { overflow-wrap: anywhere; }
+main img, main video, main iframe { max-width: 100%; height: auto; }
+@media (max-width: 640px) {
+  .res-list { position: fixed; left: 10px; right: 10px; top: 52px; min-width: 0; max-width: none; }
+}
