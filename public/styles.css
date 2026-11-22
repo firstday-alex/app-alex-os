@@ -1743,3 +1743,17 @@ main img, main video, main iframe { max-width: 100%; height: auto; }
 @media (max-width: 640px) {
   .res-list { position: fixed; left: 10px; right: 10px; top: 52px; min-width: 0; max-width: none; }
 }
+
+/* Your queue's tiers: a coloured header per section so they no longer blend together. */
+.q-tier-sec { margin-top: 18px; padding-top: 4px; }
+.q-tier { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; margin: 0 0 8px !important; padding: 6px 12px; border-radius: 12px; font-size: 12px !important; }
+.q-tier .meta { margin-left: 0 !important; }
+.q-tier .link-btn { margin-left: auto; font-size: 12px; text-transform: none; letter-spacing: 0; }
+.q-tier-n { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.75); text-align: center; line-height: 18px; }
+.q-tier-high { background: var(--red-bg); color: var(--red); }
+.q-tier-due { background: var(--amber-bg); color: var(--amber-ink); }
+.q-tier-org { background: rgba(28, 43, 42, 0.06); color: var(--muted); }
+.q-tier-sec-org .q-list { opacity: .85; }
+.q-tier-note { margin: 0 0 8px; font-size: 13px; }
+.kindtab.due { color: var(--amber-ink); }
+.kindtab.org { color: var(--muted); }

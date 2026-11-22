@@ -382,7 +382,7 @@ function topFlags(flags, n = 3) {
 
 const QUEUE_ROWS = 10;
 const SEV_SHORT = { p1: "P1", attention: "P2", prompt: "Decision", info: "Tidy-up" };
-const queue = { all: false, open: new Set() };
+const queue = { all: false, open: new Set(), orgOpen: false };
 
 function rankedFlags(flags) {
   return flags
@@ -552,10 +552,10 @@ function inRockMoves(flags) {
    them so its easy to use and filter and only the highest priority things are done first").
    The filter row is what to do; every row says it; Do first is the top three by priority.
    Tidy-ups live on Cleaning › Tidy-ups, linked from the bottom. */
-const QUEUE_KINDS = [["", "All"], ["reply", "Reply"], ["decide", "Decide"], ["nudge", "Nudge"], ["other", "Rocks & other"]];
+const QUEUE_KINDS = [["", "All"], ["reply", "Reply"], ["decide", "Decide"], ["nudge", "Nudge"], ["due", "Due dates"], ["org", "Rock setup"], ["other", "Other"]];
 const ACTION_LABEL = { reply: "Reply", decide: "Decide", nudge: "Nudge" };
-/** What to do about a flag, as the filter row names it. */
-const actionKey = (f) => (ACTION_LABEL[nextActionOf(f)] ? nextActionOf(f) : "other");
+/** What a flag is, as the filter row names it: its tier when low (due dates, rock setup), else what to do. */
+const actionKey = (f) => (tierOf(f) !== "high" ? tierOf(f) : ACTION_LABEL[nextActionOf(f)] ? nextActionOf(f) : "other");
 const QUEUE_VIEWS = [["open", "Open"], ["waiting", "Waiting"], ["parked", "Handled"]];
 queue.f = { view: "open", kind: "", person: "", area: "", q: "" };
 const queueFiltered = () => Boolean(queue.f.kind || queue.f.person || queue.f.area || queue.f.q.trim());
@@ -579,6 +579,60 @@ function noRockPeople() {
     .filter((f) => f.rule === "crosslayer.no_big_swing")
     .map((f) => ({ flag: f, name: f.subject?.label ?? "Someone", tickets: ticketsWithoutRock(f) }))
     .filter((p) => p.tickets.length);
+}
+
+/* Tiers (Alex, 2026-11-22: "group them by type: due date related vs rock / tactic
+   organization (those are low priority) vs higher importance things"). Your queue's open
+   list is three sections in this order; Do first only takes from the first. */
+const TIER_DUE = new Set(["nextstep.overdue", "nextstep.due_not_started", "nextstep.no_due_date", "nextstep.rock_due_not_moving"]);
+const TIER_ORG = new Set([
+  "crosslayer.big_swing_without_rock", "crosslayer.linked_by_title", "crosslayer.unrelated_pile",
+  "clickup.big_swing_field_missing", "clickup.no_big_swing_set",
+  "leadership.dropdown_missing_option", "leadership.dropdown_orphan_option", "leadership.rock_not_linked",
+  "leadership.rock_without_kpi", "leadership.shipped_without_date", "leadership.should_be_backlogged",
+  "leadership.unassigned", "leadership.mini_readout_unknown", "leadership.mini_readout_overdue", "leadership.check_in_overdue",
+]);
+const TIERS = [
+  ["high", "Needs you", "Replies, sprint calls, nudges and rocks in trouble, highest first"],
+  ["due", "Due dates", "Dates slipping or missing"],
+  ["org", "Rock & tactic setup", "Low priority: linking, fields and check-ins to tidy when there is time"],
+];
+const tierOf = (f) => (TIER_DUE.has(f.rule) ? "due" : TIER_ORG.has(f.rule) ? "org" : "high");
+/** A row's tier: a person's folded group takes its most important flag's. */
+function itemTier(i) {
+  if (i.kind === "flag") return tierOf(i.flag);
+  if (i.kind === "group") {
+    const t = i.flags.map(tierOf);
+    return t.includes("high") ? "high" : t.includes("due") ? "due" : "org";
+  }
+  return "high";
+}
+/** Section header; Rock & tactic setup folds shut until opened. */
+function tierHead(tier, n, extra = "") {
+  const [, label, hint] = TIERS.find(([k]) => k === tier);
+  const fold = tier === "org" ? `<button type="button" class="link-btn" data-q-tier-fold>${queue.orgOpen ? "Hide" : "Show"}</button>` : "";
+  return `<p class="q-label q-tier q-tier-${tier}">${esc(label)} <span class="q-tier-n">${esc(n)}</span> <span class="meta">${esc(hint)}</span>${extra}${fold}</p>`;
+}
+/** The due-date line that points to Ticket Hygiene, where ticket due dates are set. */
+function dueHygieneLink() {
+  const n = typeof dueFlags === "function" ? dueFlags().length : 0;
+  return n ? `<a class="q-tier-link" href="#donehygiene" data-start-go="donehygiene" data-start-hyg="due">${esc(plural(n, "ticket due date", "ticket due dates"))} to set on Ticket Hygiene →</a>` : "";
+}
+/** The open list in tier sections. `limitHigh` caps the first section (Show all lifts it). */
+function tierSections(items, line, { limitHigh = Infinity, more = () => "" } = {}) {
+  const out = [];
+  for (const [tier] of TIERS) {
+    const list = items.filter((i) => itemTier(i) === tier);
+    const link = tier === "due" && (!queue.f.kind || queue.f.kind === "due") ? dueHygieneLink() : "";
+    if (!list.length && !link) continue;
+    if (tier === "org" && !queue.orgOpen) { out.push(`<div class="q-tier-sec q-tier-sec-org">${tierHead(tier, list.length)}</div>`); continue; }
+    const shown = tier === "high" && !queue.all ? list.slice(0, limitHigh) : list;
+    out.push(`<div class="q-tier-sec q-tier-sec-${tier}">${tierHead(tier, list.length + (link ? dueFlags().length : 0))}
+      ${link ? `<p class="q-tier-note">${link}</p>` : ""}
+      ${shown.length ? `<div class="q-list">${runs(shown, line)}</div>` : ""}
+      ${tier === "high" && list.length > limitHigh ? more(list.length) : ""}</div>`);
+  }
+  return out.join("");
 }
 
 function queuePool(flags, view, covered) {
@@ -797,7 +851,9 @@ function renderTopThree(flags) {
     const folded = clusterByKind(foldTests(shownFlags.map((x) => ({ kind: "flag", flag: x }))));
     const list = queue.all ? folded : folded.slice(0, 25);
     const line = (i) => (i.kind === "test" ? (queue.open.has(testKey(i)) ? testOpened(i, close(testKey(i))) : testRow(i)) : row(i.flag));
-    body.innerHTML = `${f.view === "waiting" ? scheduledList() : ""}<div class="q-list">${runs(list, line)}</div>${more(folded.length > 25 ? folded.length : 0)}`;
+    body.innerHTML = f.view === "open"
+      ? tierSections(folded, line, { limitHigh: 25, more })
+      : `${f.view === "waiting" ? scheduledList() : ""}<div class="q-list">${runs(list, line)}</div>${more(folded.length > 25 ? folded.length : 0)}`;
     return;
   }
 
@@ -806,9 +862,10 @@ function renderTopThree(flags) {
   const groups = grouped.groups;
   const items = foldTests(grouped.items);
   state.queueGroups = new Map(groups.map((g) => [g.person, g]));
-  const top = items.slice(0, 3);
-  const rest = clusterByKind(items.slice(3));
-  const shown = queue.all ? rest : rest.slice(0, QUEUE_ROWS);
+  // Do first is the top three that need you; due dates and rock setup never take a slot.
+  const high = items.filter((i) => itemTier(i) === "high");
+  const top = high.slice(0, 3);
+  const rest = clusterByKind(items.filter((i) => !top.includes(i)));
   const card = (i) => (i.kind === "group" ? groupCard(i) : i.kind === "test" ? testOpened(i, "") : flagCard(i.flag));
   const line = (i) => {
     if (i.kind === "group") return queue.open.has(groupId(i)) ? `<div class="q-opened">${groupCard(i)}${close(groupId(i))}</div>` : groupRow(i);
@@ -816,10 +873,8 @@ function renderTopThree(flags) {
     return row(i.flag);
   };
   body.innerHTML = `${tidyLink()}
-    ${top.length ? `<p class="q-label">Do first</p><div class="q-tops">${top.map((i, n) => `<div class="q-top"><span class="q-rank">${n + 1}</span>${card(i)}</div>`).join("")}</div>` : ""}
-    ${rest.length ? `<p class="q-label">Then <span class="meta">${rest.length} more, highest first</span></p>
-      <div class="q-list">${runs(shown, line)}</div>
-      ${rest.length > QUEUE_ROWS ? more(rest.length) : ""}` : ""}`;
+    ${top.length ? `<p class="q-label q-tier q-tier-high">Do first <span class="meta">the three that matter most right now</span></p><div class="q-tops">${top.map((i, n) => `<div class="q-top"><span class="q-rank">${n + 1}</span>${card(i)}</div>`).join("")}</div>` : ""}
+    ${tierSections(rest, line, { limitHigh: QUEUE_ROWS, more })}`;
 }
 
 $("start-here")?.addEventListener("click", (event) => {
@@ -837,6 +892,11 @@ $("start-here")?.addEventListener("click", (event) => {
     if ($("q-search")) $("q-search").value = "";
   }
   queue.all = false;
+  renderTopThree(state.report?.flags ?? []);
+});
+$("start-here")?.addEventListener("click", (event) => {
+  if (!event.target.closest("[data-q-tier-fold]")) return;
+  queue.orgOpen = !queue.orgOpen;
   renderTopThree(state.report?.flags ?? []);
 });
 $("kindtabs").addEventListener("click", (event) => {
