@@ -544,10 +544,14 @@ const queueFiltered = () => Boolean(queue.f.kind || queue.f.person || queue.f.ar
 /** Every flag in a pile, ranked: P1, P2 and decisions by priority, then tidy-ups by age. */
 function queuePool(flags, view, covered) {
   if (view !== "open") return flags.filter((f) => !isContextFlag(f) && viewOf(f) === view);
+  // Sprint actions (reply, decide, nudge, fix) live in Next steps below, one home each (Alex,
+  // 2026-11-22). Waiting and Handled still list them, so a handled one can be found and
+  // brought back.
+  const elsewhere = (f) => covered.has(f.id) || Boolean(nextActionOf(f));
   const tidy = flags
     .filter((f) => f.severity === "info" && viewOf(f) === "open")
     .sort((a, b) => (b.openDays ?? 0) - (a.openDays ?? 0));
-  return [...rankedFlags(flags), ...tidy].filter((f) => !covered.has(f.id));
+  return [...rankedFlags(flags), ...tidy].filter((f) => !elsewhere(f));
 }
 
 /* A test's alerts as one line: every metric that moved, every probability crossed and the
@@ -3189,7 +3193,7 @@ function startItems() {
   const noWork = people.filter((p) => p.attention.reasons.some((r) => /^(No open tickets|Nothing in progress|All waiting on QA\/deploy)$/.test(r.text)));
   if (noWork.length) add({ score: 85, group: "team", tone: "bad", text: `Not enough work: ${firstNames(noWork)}`, detail: noWork.map((p) => `${String(p.name).split(/\s+/)[0]}: ${p.attention.reasons.find((r) => /^(No open|Nothing in|All waiting)/.test(r.text)).text.replace(/^./, (c) => c.toLowerCase())}`).join(" · "), go: { view: "sprint" } });
 
-  const p1 = by((f) => f.severity === "p1" && !replies.includes(f) && !decide.includes(f));
+  const p1 = by((f) => f.severity === "p1" && !nextActionOf(f));
   if (p1.length) add({ score: 75, group: "team", tone: "bad", text: `${plural(p1.length, "P1 item", "P1 items")} open`, detail: p1.slice(0, 2).map((f) => f.message).join(" · "), go: { view: "readout" } });
 
   const offCourse = by((f) => f.rule === "leadership.rock_off_course");
@@ -3214,8 +3218,13 @@ function startItems() {
   const parts = [changed && `${plural(changed, "changed hands", "changed hands")}`, noRock && `${noRock} without a live ROCK`, noTactic && `${noTactic} without a TACTIC`].filter(Boolean);
   if (parts.length) add({ score: 30, group: "team", tone: "", text: `Done tickets to tidy: ${parts.join(", ")}`, detail: "Put back or keep, then set the missing fields from a dropdown.", go: { view: "donehygiene" } });
 
-  const rest = open.length - replies.length - decide.length - p1.length - offCourse.length;
-  if (rest > 0) add({ score: 20, group: "team", tone: "", text: `${plural(rest, "other item", "other items")} in What needs you`, detail: "Nudges, fixes and tidy-ups, ranked.", go: { view: "readout" } });
+  // The rest of Next steps, then the rest of Your queue.
+  const nudges = by((f) => nextActionOf(f) === "nudge");
+  if (nudges.length) add({ score: 45, group: "team", tone: "", text: `${plural(nudges.length, "nudge", "nudges")} to send`, detail: shortCalls(nudges), go: { view: "readout", ns: "nudge" } });
+  const fixes = by((f) => nextActionOf(f) === "fix");
+  if (fixes.length) add({ score: 25, group: "team", tone: "", text: `${plural(fixes.length, "ticket", "tickets")} to fix (missing fields)`, detail: "Tidy when there is time.", go: { view: "readout", ns: "fix" } });
+  const rest = by((f) => !nextActionOf(f) && f.severity !== "p1" && f.rule !== "leadership.rock_off_course").length;
+  if (rest > 0) add({ score: 20, group: "team", tone: "", text: `${plural(rest, "other item", "other items")} in Your queue`, detail: "Rocks, tests, Slack to-dos and tidy-ups, ranked.", go: { view: "readout" } });
 
   return items.sort((a, b) => b.score - a.score);
 }
