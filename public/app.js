@@ -1100,7 +1100,7 @@ function flagContext(flag) {
       links.push(String(flag.rule).startsWith("leadership.dropdown_") ? { label: "Rocks", href: "#rocks" } : { label: "Setup", href: "#setup" });
       break;
     case "list":
-      links.push({ label: "Sprint", href: "#sprint" });
+      links.push({ label: "Sprint Management", href: "#sprint" });
       break;
     case "queue":
     case "swingOption":
@@ -2592,6 +2592,9 @@ const LANES = [
 ];
 
 let sprintGroup = "person";
+// By person: titles only (Alex, 2026-11-22: "condense to just title so i can see more at a
+// glance"), or the full card with chips, waits and the last comment.
+let sprintDetail = false;
 // The Big Swing the board is narrowed to: "" for every ticket, NO_SWING for tickets without one.
 let sprintSwing = "";
 const NO_SWING = "__none__";
@@ -2714,6 +2717,14 @@ function agoText(ms) {
   return days <= 0 ? "today" : days === 1 ? "yesterday" : `${days}d ago`;
 }
 
+/** A ticket as just its title, for the compact board: red edge when it needs a question; the rest on hover. */
+function ticketTitle(task) {
+  const wait = waitingOn(task);
+  const tip = [task.status, wait.text, task.statusAge ? `${task.statusAge.exact ? "" : "at least "}${plural(task.statusAge.days, "day", "days")} in status` : "", task.bigSwing?.label].filter(Boolean).join(" · ");
+  const name = esc(task.name);
+  return `<div class="sp-title${wait.tone === "bad" ? " sp-title-bad" : wait.tone === "warn" ? " sp-title-warn" : ""}" title="${esc(tip)}">${task.url ? `<a href="${esc(task.url)}" target="_blank" rel="noreferrer">${name}</a>` : name}</div>`;
+}
+
 /** One ticket: name, where it is, what it waits on, and the last thing said on it. */
 function ticketRow(task, { lane = false } = {}) {
   const wait = waitingOn(task);
@@ -2764,6 +2775,59 @@ const stageRank = (task) => {
   const i = STAGES.findIndex((st) => st.id === stageOf(task).id);
   return i < 0 ? STAGES.length : i;
 };
+
+/** Weekdays from `ms` to now: Friday afternoon to Monday morning is 1, not 3. */
+function workingDaysSince(ms) {
+  if (!ms) return null;
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  const end = new Date();
+  end.setHours(0, 0, 0, 0);
+  let n = 0;
+  while (d < end) {
+    d.setDate(d.getDate() + 1);
+    if (d.getDay() !== 0 && d.getDay() !== 6) n++;
+  }
+  return n;
+}
+
+/**
+ * Why a person needs a look on the sprint board, most pressing first, and a score to order
+ * people by. Alex, 2026-11-22: "emphasis and priority ... on anyone with not enough work AND
+ * anyone that hasn't moved any tickets in the last day and things like that". A move is a
+ * ticket entering its status (the board's own snapshots) or being done this sprint; tickets
+ * still in To do have not moved.
+ */
+function personAttention(open, done) {
+  const reasons = [];
+  let score = 0;
+  const add = (pts, text, tone, why) => {
+    score += pts;
+    reasons.push({ text, tone, why });
+  };
+  const inStage = (id) => open.filter((t) => stageOf(t).id === id);
+  const working = inStage("work").length;
+  const waitingOnOthers = inStage("review").length + inStage("deploy").length;
+  const todo = inStage("start").length;
+  if (!open.length) add(100, "No open tickets", "bad", "Nothing open on the sprint: give them work.");
+  else if (!working && !todo && waitingOnOthers) add(60, "All waiting on QA/deploy", "bad", "Everything they have is with someone else, so they have nothing to work on.");
+  else if (!working) add(55, "Nothing in progress", "bad", `${plural(todo, "ticket", "tickets")} to do, none started.`);
+  else if (open.length === 1) add(35, "Only 1 ticket", "warn", "One open ticket: line up the next one.");
+  const moves = [
+    ...open.filter((t) => stageOf(t).id !== "start" && t.statusAge?.since).map((t) => t.statusAge.since),
+    ...done.map((t) => t.dateClosed ?? t.dateDone ?? t.statusAge?.since).filter(Boolean),
+  ];
+  const last = moves.length ? Math.max(...moves) : null;
+  const since = workingDaysSince(last);
+  if (open.length && (last == null || since >= 1)) {
+    add(50 + Math.min(since ?? 5, 10) * 5, last == null ? "Nothing moved this sprint" : `Nothing moved since ${new Date(last).toLocaleDateString(undefined, { weekday: "short" })}`, since == null || since >= 2 ? "bad" : "warn", last == null ? "None of their tickets has changed status this sprint." : `Last move ${new Date(last).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}.`);
+  }
+  const stuck = open.filter((t) => t.signal === "stalled" || stageOf(t).id === "blocked").length;
+  if (stuck) add(15 * stuck, `${stuck} stalled or blocked`, "bad", "Tickets stalled in progress or blocked.");
+  const overdue = open.filter((t) => t.dueDate && t.dueDate < Date.now()).length;
+  if (overdue) add(10 * overdue, `${overdue} overdue`, "warn", "Past their ClickUp due date.");
+  return { score, reasons };
+}
 
 function renderLayer2(report) {
   const section = report.sections.clickup;
@@ -2822,11 +2886,18 @@ function renderLayer2(report) {
         byId.get(p.id).tasks.push(t);
       }
     }
+    // Everyone who counts toward capacity gets a row, even with nothing open: that is the
+    // person who most needs work.
+    if (!sprintSwing) for (const p of roster.filter((p) => p.countsTowardCapacity !== false)) if (!byId.has(String(p.clickupUserId))) byId.set(String(p.clickupUserId), { title: p.name, tasks: [] });
     const order = (id) => {
       const i = roster.findIndex((p) => String(p.clickupUserId) === id);
       return id === "" ? 1e6 : i < 0 ? 1e5 : i;
     };
-    groups = [...byId.entries()].sort((a, b) => order(a[0]) - order(b[0])).map(([id, g]) => ({ ...g, personId: id }));
+    const doneBy = (id) => doneThisWeek.filter((t) => doing(t).some((u) => String(u.id) === id));
+    groups = [...byId.entries()]
+      .map(([id, g]) => ({ ...g, personId: id, attention: id === "" ? { score: 0, reasons: [] } : personAttention(g.tasks, doneBy(id)) }))
+      // Who needs a look first, then the roster order.
+      .sort((a, b) => b.attention.score - a.attention.score || order(a.personId) - order(b.personId));
   }
 
   const lanes = LANES.filter((l) => l.id !== "blocked" || open.some((t) => stageOf(t).id === "blocked"));
@@ -2839,38 +2910,41 @@ function renderLayer2(report) {
         const inLane = worstFirst(tasks.filter((t) => stageOf(t).id === l.id));
         return `<div class="sp-lane sp-lane-${l.id}">
           <p class="sp-lane-head">${esc(l.label)} <span class="meta">${esc(inLane.length)}</span></p>
-          ${inLane.map((t) => ticketRow(t, { lane: true })).join("")}
+          ${inLane.map((t) => (sprintDetail ? ticketRow(t, { lane: true }) : ticketTitle(t))).join("")}
         </div>`;
       })
       .join("")}</div>`;
 
   const groupHtml = groups
-    .filter((g) => g.tasks.length)
+    .filter((g) => g.tasks.length || g.attention?.reasons.length)
     .map((g) => {
       const urgent = g.tasks.filter((t) => waitingOn(t).tone === "bad").length;
-      return `<section class="sp-group">
-        <div class="sp-group-head"><h3>${esc(g.title)}</h3><span class="meta">${esc(plural(g.tasks.length, "ticket", "tickets"))}${urgent ? ` · <span class="bad">${esc(urgent)} need a question</span>` : ""}</span>
+      const reasons = (g.attention?.reasons ?? []).map((r) => `<span class="chip sp-att sp-att-${esc(r.tone)}" title="${esc(r.why)}">${esc(r.text)}</span>`).join("");
+      return `<section class="sp-group${sprintDetail ? "" : " sp-compact"}${g.attention?.score >= 50 ? " sp-group-flag" : ""}">
+        <div class="sp-group-head"><h3>${esc(g.title)}</h3><span class="meta">${esc(plural(g.tasks.length, "ticket", "tickets"))}${urgent ? ` · <span class="bad">${esc(urgent)} need a question</span>` : ""}</span>${reasons}
           ${g.personId ? `<span class="grow"></span><a class="meta" href="#people/${encodeURIComponent(g.personId)}">1:1 prep →</a>` : ""}</div>
         ${sprintGroup !== "stage" ? laneHtml(g.tasks) : g.tasks.map((t) => ticketRow(t)).join("")}
       </section>`;
     })
     .join("");
 
+  // The board first: by person, the people who need a look on top, titles only by default.
   $("layer2").innerHTML = `
     <p class="sp-stats">${tiles}</p>
+    <div class="bar sp-bar">
+      <div class="dod-windows" role="group" aria-label="Group by">
+        ${[["person", "By person"], ["stage", "By what it waits on"]].map(([id, label]) => `<button type="button" class="ghost dod-window${id === sprintGroup ? " on" : ""}" data-sprint-group="${id}" aria-pressed="${id === sprintGroup}">${esc(label)}</button>`).join("")}
+      </div>
+      ${sprintGroup === "person" ? `<div class="dod-windows" role="group" aria-label="Detail">${[[false, "Titles"], [true, "Full detail"]].map(([on, label]) => `<button type="button" class="ghost dod-window${on === sprintDetail ? " on" : ""}" data-sprint-detail="${on}" aria-pressed="${on === sprintDetail}">${esc(label)}</button>`).join("")}</div>` : ""}
+      ${swingSelect}
+      <span class="meta">${esc(plural(open.length, "open ticket", "open tickets"))}${sprintSwing ? ` on ${esc(sprintSwing === NO_SWING ? "no Big Swing" : sprintSwing)}` : ""}${sprintGroup === "person" ? ", who needs a look first" : ", worst first"}</span>
+    </div>
+    ${groupHtml || `<p class="sub">Nothing open on the sprint.</p>`}
     <details class="section ns" id="sec-next" open>
       <summary><h2>Next steps</h2><span class="sec-count" id="next-steps-count"></span></summary>
       <div id="next-steps"></div>
     </details>
     ${delta.hasBaseline ? "" : `<div class="note"><strong>First run.</strong> There is no previous snapshot, so there is no day over day comparison yet.</div>`}
-    <div class="bar sp-bar">
-      <div class="dod-windows" role="group" aria-label="Group by">
-        ${[["person", "By person"], ["stage", "By what it waits on"]].map(([id, label]) => `<button type="button" class="ghost dod-window${id === sprintGroup ? " on" : ""}" data-sprint-group="${id}" aria-pressed="${id === sprintGroup}">${esc(label)}</button>`).join("")}
-      </div>
-      ${swingSelect}
-      <span class="meta">${esc(plural(open.length, "open ticket", "open tickets"))}${sprintSwing ? ` on ${esc(sprintSwing === NO_SWING ? "no Big Swing" : sprintSwing)}` : ""}, worst first</span>
-    </div>
-    ${groupHtml || `<p class="sub">Nothing open on the sprint.</p>`}
     <details class="section">
       <summary><h2>Done this week</h2><span class="sec-count">${esc(doneThisWeek.length)}</span></summary>
       ${doneThisWeek.length ? doneThisWeek.map((t) => ticketRow(t)).join("") : `<p class="sub">Nothing in done (this sprint) yet.</p>`}
@@ -3015,6 +3089,12 @@ $("layer2")?.addEventListener("change", (event) => {
 });
 
 $("layer2")?.addEventListener("click", (event) => {
+  const detail = event.target.closest("[data-sprint-detail]");
+  if (detail) {
+    sprintDetail = detail.dataset.sprintDetail === "true";
+    if (state.report) renderLayer2(state.report);
+    return;
+  }
   const button = event.target.closest("[data-sprint-group]");
   if (!button) return;
   sprintGroup = button.dataset.sprintGroup;
@@ -6354,7 +6434,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 //                                                   daily wins, in progress and XF asks as talking points)
 // Setup is only in the menu, and names itself in the top bar when open.
 const NAV_GROUPS = [
-  { id: "team", pages: [["readout", "What needs you"], ["sprint", "Sprint"], ["standup", "Team stand-ups"], ["people", "1:1"]] },
+  { id: "team", pages: [["readout", "What needs you"], ["sprint", "Sprint Management"], ["standup", "Team stand-ups"], ["people", "1:1"]] },
   { id: "kudos", pages: [["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["kudospages", "Kudos pages"], ["starred", "Starred wins"], ["impact", "Overall impact"]] },
   { id: "cleaning", pages: [["cleaning", "Tidy-ups"]] },
   { id: "planning", pages: [["backlog", "Backlog"], ["workshop", "Workshop"], ["rocks", "Rocks"], ["ecomrocks", "Rock map"], ["plan", "Quarter"], ["ideation", "Ideation"]] },

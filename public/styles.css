@@ -676,6 +676,28 @@ ul.plain { margin: 0; padding-left: 18px; }
 .sp-card .sp-name { flex-basis: 100%; }
 .sp-card .sp-said { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
+/* Titles only (the default): one short line per ticket, so a person's whole sprint fits in a
+   glance. The red or amber edge is the only signal; the rest is in the hover title. */
+.sp-compact { margin-top: 10px; }
+.sp-compact .sp-group-head { margin-bottom: 4px; }
+.sp-compact .sp-lane { padding: 4px; }
+.sp-compact .sp-lane-head { margin-bottom: 3px; }
+.sp-title {
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line);
+  border-radius: 3px; padding: 2px 6px; margin-bottom: 3px; font-size: 13px; line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sp-title a { color: var(--ink); text-decoration: none; }
+.sp-title a:hover { text-decoration: underline; }
+.sp-title-bad { border-left-color: var(--red); }
+.sp-title-warn { border-left-color: var(--amber-ink); }
+.sp-lane-start .sp-title { opacity: .8; }
+/* Why a person is near the top: not enough work, nothing moved, stuck tickets. */
+.sp-att { font-size: 12px; padding: 1px 7px; font-weight: 600; }
+.sp-att-bad { color: var(--red); border-color: currentColor; }
+.sp-att-warn { color: var(--amber-ink); border-color: currentColor; }
+.sp-group-flag { border-left: 3px solid var(--red); padding-left: 8px; }
+
 /* ------------------------------- rocks plan ------------------------------- */
 .rk-month-group { margin-top: 22px; }
 .rk-item { margin-bottom: 10px; }
