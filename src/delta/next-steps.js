@@ -248,8 +248,11 @@ export function nextStepFlags({ tasks = [], statusLedger = null, leadership = nu
       rule: "nextstep.carried_over",
       severity: "attention",
       subject: personSubject(p, "carried"),
-      message: `${first(p.name)} carried ${p.tasks.length} ticket${p.tasks.length === 1 ? "" : "s"} over from before this sprint: ${listOf(p.tasks)}. Cut, split or re-scope ${p.tasks.length === 1 ? "it" : "them"}.`,
-      values: { action: "decide", who: first(p.name), tickets: p.tasks.map((t) => ({ id: t.id, name: t.name, url: t.url })) },
+      // A nudge, not a decision Alex makes alone: ask the owner whether to cut, split or
+      // re-scope (Alex, 2026-11-22: "make it a type of nudge where it drafts a message in
+      // slack asking them if they want to cut, split, or re-scope it").
+      message: `${first(p.name)} carried ${p.tasks.length} ticket${p.tasks.length === 1 ? "" : "s"} over from before this sprint: ${listOf(p.tasks)}. Ask whether to cut, split or re-scope ${p.tasks.length === 1 ? "it" : "them"}.`,
+      values: { action: "nudge", who: first(p.name), tickets: p.tasks.map((t) => ({ id: t.id, name: t.name, url: t.url })) },
     });
   }
 

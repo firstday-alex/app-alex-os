@@ -454,7 +454,7 @@ function queueRow(flag, { also = 0, who = null } = {}) {
   const back = backSince(flag);
   const meta = [back ? `↺ marked done ${back}, still true` : "", who ?? ctx.owners.join(", "), age, flag.escalated ? "escalated" : "", also ? `+${also} more on this ticket` : "", t ? triageShort(t) : ""].filter(Boolean).join(" · ");
   return `<div class="flag q-row sev-${esc(flag.severity)}"${t ? " data-triaged" : ""} data-flag="${esc(flag.id)}" data-key="${esc(keyOf(flag))}" data-layer="${esc(flag.layer)}">
-      <span class="q-sev">${esc(SEV_SHORT[flag.severity] ?? flag.severity)}</span>
+      <span class="q-sev${ACTION_LABEL[nextActionOf(flag)] ? ` q-act q-act-${esc(nextActionOf(flag))}` : ""}" title="${esc(SEV_SHORT[flag.severity] ?? flag.severity)}">${esc(ACTION_LABEL[nextActionOf(flag)] ?? SEV_SHORT[flag.severity] ?? flag.severity)}</span>
       <button type="button" class="q-msg" data-q-open="${esc(flag.id)}" title="Open the full card">${esc(flag.message)}</button>
       <span class="q-meta">${esc(meta)}</span>
       <span class="q-acts">
@@ -536,7 +536,15 @@ function inRockMoves(flags) {
 /* The queue's filters: which pile (open, waiting, handled), what kind (P1, P2, decision,
    tidy-up), whose, which area, and a search. With no filter the queue is ranked with the
    top three in full; with any filter it is a flat list to work down quickly. */
-const QUEUE_KINDS = [["", "All"], ["p1", "P1"], ["attention", "P2"], ["prompt", "Decisions"], ["info", "Tidy-ups"]];
+/* What needs you is one module (Alex, 2026-11-22: "next steps and your queue and today's
+   moves ... they are all the same ... clear design and filters in one module to house all of
+   them so its easy to use and filter and only the highest priority things are done first").
+   The filter row is what to do; every row says it; Do first is the top three by priority.
+   Tidy-ups live on Cleaning › Tidy-ups, linked from the bottom. */
+const QUEUE_KINDS = [["", "All"], ["reply", "Reply"], ["decide", "Decide"], ["nudge", "Nudge"], ["other", "Rocks & tests"]];
+const ACTION_LABEL = { reply: "Reply", decide: "Decide", nudge: "Nudge" };
+/** What to do about a flag, as the filter row names it. */
+const actionKey = (f) => (ACTION_LABEL[nextActionOf(f)] ? nextActionOf(f) : "other");
 const QUEUE_VIEWS = [["open", "Open"], ["waiting", "Waiting"], ["parked", "Handled"]];
 queue.f = { view: "open", kind: "", person: "", area: "", q: "" };
 const queueFiltered = () => Boolean(queue.f.kind || queue.f.person || queue.f.area || queue.f.q.trim());
@@ -544,14 +552,9 @@ const queueFiltered = () => Boolean(queue.f.kind || queue.f.person || queue.f.ar
 /** Every flag in a pile, ranked: P1, P2 and decisions by priority, then tidy-ups by age. */
 function queuePool(flags, view, covered) {
   if (view !== "open") return flags.filter((f) => !isContextFlag(f) && viewOf(f) === view);
-  // Sprint actions (reply, decide, nudge, fix) live in Next steps below, one home each (Alex,
-  // 2026-11-22). Waiting and Handled still list them, so a handled one can be found and
-  // brought back.
-  const elsewhere = (f) => covered.has(f.id) || Boolean(nextActionOf(f));
-  const tidy = flags
-    .filter((f) => f.severity === "info" && viewOf(f) === "open")
-    .sort((a, b) => (b.openDays ?? 0) - (a.openDays ?? 0));
-  return [...rankedFlags(flags), ...tidy].filter((f) => !elsewhere(f));
+  // Everything to act on, ranked; tidying (missing fields, tidy-ups) is on Cleaning.
+  const elsewhere = (f) => covered.has(f.id) || nextActionOf(f) === "fix";
+  return rankedFlags(flags).filter((f) => !elsewhere(f));
 }
 
 /* A test's alerts as one line: every metric that moved, every probability crossed and the
@@ -676,6 +679,12 @@ function queueMatches(f, { kind = true } = {}) {
   return true;
 }
 
+/** The tidy-ups count with a way there: tidying has its own home on Cleaning. */
+function tidyLink() {
+  const n = tidyFlags().length;
+  return n ? `<p class="q-tidy"><a href="#cleaning">${esc(plural(n, "tidy-up", "tidy-ups"))} (missing fields) are on Cleaning › Tidy-ups →</a></p>` : "";
+}
+
 function renderTopThree(flags) {
   const host = $("start-here");
   if (!host) return;
@@ -698,7 +707,7 @@ function renderTopThree(flags) {
   const f = queue.f;
   const pool = queuePool(flags, f.view, covered);
   const base = pool.filter((x) => queueMatches(x, { kind: false }));
-  const shownFlags = base.filter((x) => !f.kind || x.severity === f.kind);
+  const shownFlags = base.filter((x) => !f.kind || actionKey(x) === f.kind);
   const openPool = f.view === "open" ? pool : queuePool(flags, "open", covered);
   queue.lines = openPool.length;
   queue.p1 = openPool.filter((x) => x.severity === "p1").length;
@@ -730,7 +739,7 @@ function renderTopThree(flags) {
       .join("")}</div>
     <div class="q-kinds" role="group" aria-label="Kind">${QUEUE_KINDS
       .map(([k, l]) => {
-        const n = k ? base.filter((x) => x.severity === k).length : base.length;
+        const n = k ? base.filter((x) => actionKey(x) === k).length : base.length;
         if (k && !n && f.kind !== k) return "";
         return `<button type="button" class="q-kind ${k || "all"}${f.kind === k ? " on" : ""}" aria-pressed="${f.kind === k}" data-qf-kind="${k}">${esc(l)} <span>${esc(n)}</span></button>`;
       })
@@ -773,7 +782,7 @@ function renderTopThree(flags) {
     if (i.kind === "test") return queue.open.has(testKey(i)) ? testOpened(i, close(testKey(i))) : testRow(i);
     return row(i.flag);
   };
-  body.innerHTML = `
+  body.innerHTML = `${tidyLink()}
     ${top.length ? `<p class="q-label">Do first</p><div class="q-tops">${top.map((i, n) => `<div class="q-top"><span class="q-rank">${n + 1}</span>${card(i)}</div>`).join("")}</div>` : ""}
     ${rest.length ? `<p class="q-label">Then <span class="meta">${rest.length} more, highest first</span></p>
       <div class="q-list">${runs(shown, line)}</div>
@@ -2111,6 +2120,17 @@ function nudgeText(flag) {
   if (task) return ticketNudge(task, url, to);
   // A flag about several tickets (carried over, not started, ...): one bullet per ticket.
   const listed = (flag.values?.tickets ?? []).map((t) => state.flagCtx?.tasks.get(String(t.id)) ?? null).filter(Boolean);
+  // Carried over: ask the owner to cut, split or re-scope, one bullet per ticket.
+  if (flag.rule === "nextstep.carried_over") {
+    const items = listed.length ? listed : (flag.values?.tickets ?? []);
+    const one = items.length === 1;
+    return [
+      `${to ? `@${to} ` : ""}${one ? "This one" : "These"} carried over from last sprint:`,
+      items.map((t) => `• "${t.name}"${t.status ? ` (${t.status})` : ""}${t.url ? ` ${t.url}` : ""}`).join("\n"),
+      `Do you want to cut, split or re-scope ${one ? "it" : "them"} for this sprint? If ${one ? "it is" : "they are"} still the right size, what's left and when do you think ${one ? "it lands" : "they land"}?`,
+      NUDGE_CLOSE.replace("keep it moving", one ? "keep it moving" : "keep them moving"),
+    ].join("\n\n");
+  }
   if (listed.length) {
     return [
       nudgeEmojis(listed),
@@ -3330,16 +3350,8 @@ document.addEventListener("click", (event) => {
     if (state.report) renderLayer2(state.report);
   }
   location.hash = go.dataset.startGo;
-  // A reply or sprint call: open Next steps on that action and bring it into view.
-  if (go.dataset.startNs) {
-    ns.action = go.dataset.startNs;
-    renderNextSteps();
-    const sec = $("sec-next");
-    if (sec) {
-      sec.open = true;
-      setTimeout(() => sec.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-    }
-  }
+  // A reply, sprint call or nudge: open Your queue filtered to that action.
+  if (go.dataset.startNs !== undefined) showQueue({ kind: go.dataset.startNs });
 });
 
 // The prep strip counts down to 12:30; redraw it every minute while Start here is open.
@@ -3552,7 +3564,7 @@ function renderLayer2(report) {
       </div>`
         : ""
     }
-    <p class="meta sp-actions-note">What to do about these (reply, decide, nudge, fix) is in <a href="#readout" data-start-go="readout" data-start-ns="">What needs you → Next steps</a>.</p>
+    <p class="meta sp-actions-note">What to do about these (reply, decide, nudge) is in <a href="#readout" data-start-go="readout" data-start-ns="">What needs you</a>; click a person's chip to see just theirs.</p>
     ${groupHtml || `<p class="sub">${sprintFilter ? `Nobody right now: ${esc(SPRINT_FILTERS.find((f) => f.id === sprintFilter)?.why ?? "")}` : "Nothing open on the sprint."}</p>`}
     ${delta.hasBaseline ? "" : `<div class="note"><strong>First run.</strong> There is no previous snapshot, so there is no day over day comparison yet.</div>`}
     <details class="section">
@@ -3593,6 +3605,7 @@ const RULE_ACTION = {
 };
 
 function nextActionOf(flag) {
+  if (flag.rule === "nextstep.carried_over") return "nudge";
   const own = flag.values?.action ?? RULE_ACTION[flag.rule];
   if (!own) return null;
   if (own === "nudge" && subjectOf(flag).type === "task") {
@@ -3676,18 +3689,20 @@ function renderNextSteps() {
 document.addEventListener("click", (event) => {
   const chip = event.target.closest("[data-ns-person]");
   if (!chip) return;
-  ns.person = chip.dataset.nsPerson;
-  ns.action = "";
-  renderNextSteps();
-  if (!chip.closest("#next-steps")) {
-    location.hash = "readout";
-    const sec = $("sec-next");
-    if (sec) {
-      sec.open = true;
-      setTimeout(() => sec.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-    }
-  }
+  showQueue({ person: chip.dataset.nsPerson });
 });
+
+/** Open What needs you with Your queue filtered: by action ("reply", "nudge", ...) or person. */
+function showQueue({ kind = "", person = "" } = {}) {
+  const owners = new Set((state.report?.flags ?? []).flatMap((f) => flagContext(f).owners));
+  const match = person ? [...owners].find((o) => isPerson(o, { name: person })) ?? person : "";
+  Object.assign(queue.f, { view: "open", kind, person: match, area: "", q: "" });
+  if ($("q-search")) $("q-search").value = "";
+  queue.all = false;
+  location.hash = "readout";
+  renderTopThree(state.report?.flags ?? []);
+  setTimeout(() => $("start-here")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+}
 
 document.addEventListener("click", (event) => {
   if (!event.target.closest("#next-steps")) return;
@@ -8329,7 +8344,7 @@ let tocTargets = [];
    short names and a count where a count says something. Other pages list their headings. */
 const TOC_GROUPS = {
   readout: [
-    { label: "On this page", items: [["start-here", "Your queue", "Rocks, tests, Slack and the rest, with filters"], ["sec-next", "Next steps", "Reply, decide, nudge"]] },
+    { label: "On this page", items: [["start-here", "Your queue", "Reply, decide, nudge, rocks and tests, with filters"]] },
   ],
 };
 /** The badge beside a contents entry: a number and whether it is urgent, or null. */

@@ -1673,3 +1673,13 @@ details.section:not([open]) > summary { margin-bottom: 10px; }
 .sp-group [data-ns-person]:hover { filter: brightness(0.95); text-decoration: underline; }
 .ns-person { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
 .cl-done { margin: 4px 0 14px; max-width: 520px; }
+
+/* What needs you, one module: each row's label is what to do. */
+.q-sev.q-act { justify-self: start; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+.q-act-reply { background: var(--red-bg) !important; color: var(--red) !important; }
+.q-act-decide { background: var(--amber-bg) !important; color: var(--amber-ink) !important; }
+.q-act-nudge { background: var(--link-bg) !important; color: var(--link) !important; }
+.q-kind.reply.on, .q-kind.reply { color: var(--red); }
+.q-kind.decide { color: var(--amber-ink); }
+.q-kind.nudge { color: var(--link); }
+.q-tidy { margin: 0 0 10px; font-size: 13px; }
