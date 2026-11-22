@@ -62,9 +62,10 @@ test("a bare view hash and a deep link both parse", () => {
   const parse = parseHash();
   assert.deepEqual(parse("#tests"), { name: "tests", target: null });
   assert.deepEqual(parse("#tests/ea60bd2d-bbc3"), { name: "tests", target: "ea60bd2d-bbc3" });
-  // A bare address opens Today's "What needs you".
-  assert.deepEqual(parse(""), { name: "readout", target: null });
-  assert.deepEqual(parse("#"), { name: "readout", target: null });
+  // A bare address opens Start here (Alex, 2026-11-22: it sits in front of What needs you).
+  assert.deepEqual(parse(""), { name: "start", target: null });
+  assert.deepEqual(parse("#"), { name: "start", target: null });
+  assert.deepEqual(parse("#readout"), { name: "readout", target: null });
   // Staleness folded into Sprint; an old link still lands on it.
   assert.deepEqual(parse("#staleness"), { name: "sprint", target: null });
 });

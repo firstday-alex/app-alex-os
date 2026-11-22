@@ -243,6 +243,8 @@ function renderAllFlags({ rebuildTools = false } = {}) {
   renderNextSteps();
   renderRuleCheck();
   renderCleaning();
+  // Start here re-ranks as flags are handled; the tab badges follow it.
+  renderStart();
   renderMetrics();
 }
 
@@ -3073,6 +3075,159 @@ document.addEventListener("click", async (event) => {
   renderDoneHygiene();
 });
 
+/* --------------------------------- start here ---------------------------------
+   One ranked list across the app, in front of What needs you. Alex, 2026-11-22: "a lot of
+   great functionality ... the challenge is making it easier on the user (me) to understand
+   where i should look first and whats most important"; opened "throughout the day and first
+   thing before posting virtual standup and before marketing standup at 12:30". Nothing new
+   is computed: each item counts what its own page already shows, so the numbers agree.
+   Order: blocked on Alex, then people without enough work, P1s, rocks off course, the day's
+   own job (Friday wins, Monday roll-overs), no movement, then hygiene. */
+
+const START_MAX = 7;
+const MARKETING_STANDUP = { h: 12, m: 30 };
+
+/** Every person on the sprint board with their attention, as Sprint Management ranks them. */
+function sprintPeopleAttention() {
+  const tasks = state.report?.detail?.clickup?.tasks ?? [];
+  const open = tasks.filter((t) => t.bucket !== "done");
+  const done = doneThisSprint(tasks);
+  const roster = (state.people ?? []).filter((p) => p.clickupUserId && p.countsTowardCapacity !== false && String(p.clickupUserId) !== String(state.me ?? ""));
+  const byId = new Map(roster.map((p) => [String(p.clickupUserId), { id: String(p.clickupUserId), name: p.name, tasks: [] }]));
+  for (const t of open) for (const u of doing(t)) if (byId.has(String(u.id))) byId.get(String(u.id)).tasks.push(t);
+  return [...byId.values()].map((p) => ({ ...p, attention: personAttention(p.tasks, done.filter((t) => doing(t).some((u) => String(u.id) === p.id))) }));
+}
+
+const firstNames = (people) => listed(people.map((p) => String(p.name).split(/\s+/)[0]));
+function listed(xs) {
+  return xs.length <= 1 ? xs.join("") : xs.length <= 4 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : `${xs.slice(0, 3).join(", ")} and ${xs.length - 3} more`;
+}
+
+/** The ranked items: { score, group, tone, text, detail, go: { view, filter? } }. */
+function startItems() {
+  if (!state.report) return [];
+  const items = [];
+  const add = (x) => items.push(x);
+  const open = rankedFlags(state.report.flags ?? []);
+  const by = (fn) => open.filter(fn);
+  const now = new Date();
+
+  const replies = by((f) => nextActionOf(f) === "reply");
+  if (replies.length) add({ score: 100, group: "team", tone: "bad", text: `${plural(replies.length, "reply", "replies")} only you can give`, detail: replies.slice(0, 2).map((f) => f.message).join(" · "), go: { view: "readout" } });
+  const decide = by((f) => nextActionOf(f) === "decide");
+  if (decide.length) add({ score: 90, group: "team", tone: "bad", text: `${plural(decide.length, "sprint call", "sprint calls")} to make`, detail: decide.slice(0, 2).map((f) => f.message).join(" · "), go: { view: "readout" } });
+
+  const people = sprintPeopleAttention();
+  const noWork = people.filter((p) => p.attention.reasons.some((r) => /^(No open tickets|Nothing in progress|All waiting on QA\/deploy)$/.test(r.text)));
+  if (noWork.length) add({ score: 85, group: "team", tone: "bad", text: `Not enough work: ${firstNames(noWork)}`, detail: noWork.map((p) => `${String(p.name).split(/\s+/)[0]}: ${p.attention.reasons.find((r) => /^(No open|Nothing in|All waiting)/.test(r.text)).text.replace(/^./, (c) => c.toLowerCase())}`).join(" · "), go: { view: "sprint" } });
+
+  const p1 = by((f) => f.severity === "p1" && !replies.includes(f) && !decide.includes(f));
+  if (p1.length) add({ score: 75, group: "team", tone: "bad", text: `${plural(p1.length, "P1 item", "P1 items")} open`, detail: p1.slice(0, 2).map((f) => f.message).join(" · "), go: { view: "readout" } });
+
+  const offCourse = by((f) => f.rule === "leadership.rock_off_course");
+  if (offCourse.length) add({ score: 70, group: "planning", tone: "bad", text: `${plural(offCourse.length, "rock", "rocks")} off course`, detail: offCourse.map((f) => f.subject?.label).filter(Boolean).join(" · "), go: { view: "plan" } });
+
+  // The day's own job.
+  const weekday = now.getDay();
+  if (weekday === 5 || (weekday === 4 && now.getHours() >= 14)) {
+    add({ score: 65, group: "kudos", tone: "warn", text: "Wins week: make the Kudos page and the Report PDF", detail: "This week's wins: untick anything that should not go in, then Kudos page, Report PDF and Save version.", go: { view: "thisweek" } });
+  }
+  const rolled = by((f) => f.rule === "nextstep.carried_over");
+  if (rolled.length && weekday === 1) add({ score: 60, group: "team", tone: "warn", text: `Monday: ${plural(rolled.length, "person", "people")} carried tickets over`, detail: "Cut, split or re-scope them before the sprint gets going.", go: { view: "sprint", filter: "rolled" } });
+
+  const stale = people.filter((p) => p.attention.reasons.some((r) => /^Nothing moved/.test(r.text)) && !noWork.includes(p));
+  if (stale.length) add({ score: 55, group: "team", tone: "warn", text: `No ticket movement: ${firstNames(stale)}`, detail: stale.map((p) => `${String(p.name).split(/\s+/)[0]}: ${p.attention.reasons.find((r) => /^Nothing moved/.test(r.text)).text.replace(/^./, (c) => c.toLowerCase())}`).join(" · "), go: { view: "sprint", filter: "nomove" } });
+
+  // Hygiene: the Done Tickets Hygiene counts.
+  const kept = keptDrift();
+  const changed = (drift.tickets ?? []).filter((t) => !kept.has(driftKey(t))).length;
+  const noRock = needsRock().length;
+  const noTactic = needsTactic().length;
+  const parts = [changed && `${plural(changed, "changed hands", "changed hands")}`, noRock && `${noRock} without a live ROCK`, noTactic && `${noTactic} without a TACTIC`].filter(Boolean);
+  if (parts.length) add({ score: 30, group: "team", tone: "", text: `Done tickets to tidy: ${parts.join(", ")}`, detail: "Put back or keep, then set the missing fields from a dropdown.", go: { view: "donehygiene" } });
+
+  const rest = open.length - replies.length - decide.length - p1.length - offCourse.length;
+  if (rest > 0) add({ score: 20, group: "team", tone: "", text: `${plural(rest, "other item", "other items")} in What needs you`, detail: "Nudges, fixes and tidy-ups, ranked.", go: { view: "readout" } });
+
+  return items.sort((a, b) => b.score - a.score);
+}
+
+/** The stand-up prep strip: before the virtual stand-up post, and before marketing at 12:30. */
+function standupPrep(now = new Date()) {
+  const mins = now.getHours() * 60 + now.getMinutes();
+  const at = MARKETING_STANDUP.h * 60 + MARKETING_STANDUP.m;
+  const weekend = now.getDay() === 0 || now.getDay() === 6;
+  if (weekend || mins >= at + 30) return "";
+  const left = at - mins;
+  const until = left > 0 ? (left >= 60 ? `in ${Math.floor(left / 60)}h ${left % 60}m` : `in ${left} min`) : "now";
+  return `<div class="start-prep">
+    <a class="start-step" href="#mystandup"><b>Before your virtual stand-up post</b><span class="meta">1. My stand-up, then 3. Daily summary to copy</span></a>
+    <a class="start-step${left <= 45 ? " soon" : ""}" href="#speech"><b>Before marketing stand-up at 12:30</b><span class="meta">${esc(until)} · 4. Speak talking points</span></a>
+  </div>`;
+}
+
+function renderStart() {
+  const items = startItems();
+  renderTabBadges(items);
+  const box = $("start-here");
+  if (!box || $("view-start")?.classList.contains("hidden")) return;
+  if (!state.report) {
+    box.innerHTML = `<p class="meta">Loading the readout…</p>`;
+    return;
+  }
+  // The done-ticket check is the one count that needs the server; run it once per readout.
+  if (drift.for !== state.report.generatedAt) {
+    drift.for = state.report.generatedAt;
+    drift.tickets = null;
+    loadDrift(state.report.generatedAt).then(() => renderStart());
+  }
+  const top = items.slice(0, START_MAX);
+  const more = items.length - top.length;
+  box.innerHTML = `${standupPrep()}
+    ${
+      top.length
+        ? `<ol class="start-list">${top
+            .map(
+              (x, i) => `<li class="start-item${x.tone ? ` start-${esc(x.tone)}` : ""}">
+            <span class="start-rank">${i + 1}</span>
+            <div class="start-body"><p class="start-text">${esc(x.text)}</p>${x.detail ? `<p class="meta start-detail">${esc(x.detail)}</p>` : ""}</div>
+            <button type="button" class="sm" data-start-go="${esc(x.go.view)}"${x.go.filter ? ` data-start-filter="${esc(x.go.filter)}"` : ""}>Open →</button>
+          </li>`,
+            )
+            .join("")}</ol>${more ? `<p class="meta">${esc(plural(more, "more item", "more items"))} below these; they show here as the top ones clear.</p>` : ""}`
+        : `<div class="start-clear"><b>Nothing needs you right now.</b><span class="meta">Every page is clear. This updates as the day moves.</span></div>`
+    }
+    ${drift.tickets == null ? `<p class="meta">Still checking done tickets…</p>` : ""}`;
+}
+
+/** A count on each top tab that has something to act on; none means skip it. */
+function renderTabBadges(items) {
+  const counts = {};
+  for (const x of items) if (x.tone) counts[x.group] = (counts[x.group] ?? 0) + 1;
+  for (const tab of document.querySelectorAll("#tabs .tab[data-group]")) {
+    tab.querySelector(".tab-badge")?.remove();
+    const n = counts[tab.dataset.group];
+    if (n) tab.insertAdjacentHTML("beforeend", `<span class="tab-badge" title="${esc(plural(n, "thing", "things"))} to act on in Start here">${esc(n)}</span>`);
+  }
+}
+
+document.addEventListener("click", (event) => {
+  const go = event.target.closest("[data-start-go]");
+  if (!go) return;
+  if (go.dataset.startGo === "sprint") {
+    sprintGroup = "person";
+    sprintFilter = go.dataset.startFilter ?? "";
+    // The board was drawn with the old filter; draw it again with this one.
+    if (state.report) renderLayer2(state.report);
+  }
+  location.hash = go.dataset.startGo;
+});
+
+// The prep strip counts down to 12:30; redraw it every minute while Start here is open.
+setInterval(() => {
+  if (!$("view-start")?.classList.contains("hidden")) renderStart();
+}, 60_000);
+
 /** Midnight starting the working day before today: Friday on a Saturday, Sunday or Monday. */
 function prevWorkingDayStart(now = new Date()) {
   const d = new Date(now);
@@ -3276,7 +3431,7 @@ function renderLayer2(report) {
         : ""
     }
     ${groupHtml || `<p class="sub">${sprintFilter ? `Nobody right now: ${esc(SPRINT_FILTERS.find((f) => f.id === sprintFilter)?.why ?? "")}` : "Nothing open on the sprint."}</p>`}
-    <details class="section ns" id="sec-next" open>
+    <details class="section ns" id="sec-next">
       <summary><h2>Next steps</h2><span class="sec-count" id="next-steps-count"></span></summary>
       <div id="next-steps"></div>
     </details>
@@ -6776,7 +6931,7 @@ $("import-modal").addEventListener("click", (e) => { if (e.target.id === "import
 //                                                   daily wins, in progress and XF asks as talking points)
 // Setup is only in the menu, and names itself in the top bar when open.
 const NAV_GROUPS = [
-  { id: "team", pages: [["readout", "What needs you"], ["sprint", "Sprint Management"], ["donehygiene", "Done Tickets Hygiene"], ["standup", "Team stand-ups"], ["people", "1:1"]] },
+  { id: "team", pages: [["start", "Start here"], ["readout", "What needs you"], ["sprint", "Sprint Management"], ["donehygiene", "Done Tickets Hygiene"], ["standup", "Team stand-ups"], ["people", "1:1"]] },
   { id: "kudos", pages: [["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["kudospages", "Kudos pages"], ["starred", "Starred wins"], ["impact", "Overall impact"]] },
   { id: "cleaning", pages: [["cleaning", "Tidy-ups"]] },
   { id: "planning", pages: [["backlog", "Backlog"], ["workshop", "Workshop"], ["rocks", "Rocks"], ["ecomrocks", "Rock map"], ["plan", "Quarter"], ["ideation", "Ideation"]] },
@@ -7103,10 +7258,10 @@ $("settings-audit-wrap")?.addEventListener("toggle", async (event) => {
 /* ------------------------------ deep links ------------------------------ */
 
 function parseHash(hash) {
-  const [raw, ...rest] = (hash || "#readout").slice(1).split("/");
+  const [raw, ...rest] = (hash || "#start").slice(1).split("/");
   // Staleness folded into the Sprint view; an old link to it still lands somewhere useful.
-  // A bare address opens Today's "What needs you": what to act on, first.
-  const name = raw === "staleness" ? "sprint" : raw || "readout";
+  // A bare address opens Start here: the few things across the app that need Alex first.
+  const name = raw === "staleness" ? "sprint" : raw || "start";
   return { name, target: rest.join("/") ? decodeURIComponent(rest.join("/")) : null };
 }
 
@@ -7978,6 +8133,7 @@ function showView(name) {
   }
   if (name === "people") renderPeople();
   if (name === "donehygiene") renderDoneHygiene();
+  if (name === "start") renderStart();
   if (name === "ideation" && !ideation.loaded) loadIdeation();
   if (name === "impact" && !impact.loaded) loadImpact();
   if (name === "speech" && !speech.loaded) loadSpeech();
