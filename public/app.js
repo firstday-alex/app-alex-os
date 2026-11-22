@@ -153,6 +153,8 @@ function render() {
   part("the sprint", () => renderLayer2(report));
   part("the backlog", () => renderBacklog());
   part("the update", () => renderUpdate(report));
+  // Only when it is the page on screen: it calls the server, which other pages do not need.
+  if (!$("view-donehygiene")?.classList.contains("hidden")) part("Done Tickets Hygiene", () => renderDoneHygiene());
   $("report-text").textContent = report.text ?? "";
   if (failed.length) {
     $("banners").insertAdjacentHTML(
@@ -2820,7 +2822,8 @@ const stageRank = (task) => {
    Done this sprint, but not on the people it had when it came onto the sprint: put it back,
    or keep it (remembered in this browser). src/delta/assignee-drift.js does the comparing.
    Its own tab after Sprint Management (Alex, 2026-11-22: "Done Tickets Hygeine"). */
-const drift = { for: null, tickets: null, error: null, note: "" };
+// `for` is the readout the check ran against; undefined until it has run once.
+const drift = { for: undefined, tickets: null, error: null, note: "" };
 const DRIFT_KEEP = "mos.driftKeep";
 const keptDrift = () => {
   try {
@@ -2922,7 +2925,13 @@ function tacticsHtml() {
 function renderDoneHygiene() {
   const box = $("done-hygiene");
   if (!box) return;
-  const forReport = state.report?.generatedAt ?? null;
+  // Opened straight on this tab (a reload, a link): the readout is not in yet. render()
+  // calls this again once it is, so wait rather than check against nothing.
+  if (!state.report) {
+    box.innerHTML = `<p class="meta">Loading the readout…</p>`;
+    return;
+  }
+  const forReport = state.report.generatedAt ?? "unknown";
   if (drift.for !== forReport) {
     drift.for = forReport;
     drift.tickets = null;
