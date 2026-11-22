@@ -3103,7 +3103,27 @@ function listed(xs) {
   return xs.length <= 1 ? xs.join("") : xs.length <= 4 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : `${xs.slice(0, 3).join(", ")} and ${xs.length - 3} more`;
 }
 
-/** The ranked items: { score, group, tone, text, detail, go: { view, filter? } }. */
+/** Next-step flags as "Blake: carried 2 over · Dee: 3 in progress at once", one per call. */
+const CALL_SHORT = {
+  "nextstep.carried_over": (f) => `carried ${f.values?.tickets?.length ?? "some"} over`,
+  "nextstep.too_much_in_progress": (f) => `${f.values?.count ?? "too many"} in progress at once`,
+  "nextstep.idle": () => "nothing in progress",
+};
+function shortCalls(flags) {
+  const parts = flags.map((f) => {
+    const who = String(f.values?.who ?? f.subject?.label ?? "").split(/\s+/)[0];
+    let what = CALL_SHORT[f.rule]?.(f);
+    if (!what) {
+      what = String(f.message).split(/[:.]/)[0];
+      if (who && what.toLowerCase().startsWith(who.toLowerCase() + " ")) what = what.slice(who.length + 1);
+      what = what.slice(0, 60);
+    }
+    return who ? `${who}: ${what}` : what;
+  });
+  return parts.length > 4 ? `${parts.slice(0, 4).join(" · ")} · and ${parts.length - 4} more` : parts.join(" · ");
+}
+
+/** The ranked items: { score, group, tone, text, detail, go: { view, filter?, ns? } }. */
 function startItems() {
   if (!state.report) return [];
   const items = [];
@@ -3112,10 +3132,12 @@ function startItems() {
   const by = (fn) => open.filter(fn);
   const now = new Date();
 
+  // Replies and sprint calls are listed together under Next steps on Sprint Management, by
+  // action; What needs you spreads them over per-person cards. Open goes to that group.
   const replies = by((f) => nextActionOf(f) === "reply");
-  if (replies.length) add({ score: 100, group: "team", tone: "bad", text: `${plural(replies.length, "reply", "replies")} only you can give`, detail: replies.slice(0, 2).map((f) => f.message).join(" · "), go: { view: "readout" } });
+  if (replies.length) add({ score: 100, group: "team", tone: "bad", text: `${plural(replies.length, "reply", "replies")} only you can give`, detail: shortCalls(replies), go: { view: "sprint", ns: "reply" } });
   const decide = by((f) => nextActionOf(f) === "decide");
-  if (decide.length) add({ score: 90, group: "team", tone: "bad", text: `${plural(decide.length, "sprint call", "sprint calls")} to make`, detail: decide.slice(0, 2).map((f) => f.message).join(" · "), go: { view: "readout" } });
+  if (decide.length) add({ score: 90, group: "team", tone: "bad", text: `${plural(decide.length, "sprint call", "sprint calls")} to make`, detail: shortCalls(decide), go: { view: "sprint", ns: "decide" } });
 
   const people = sprintPeopleAttention();
   const noWork = people.filter((p) => p.attention.reasons.some((r) => /^(No open tickets|Nothing in progress|All waiting on QA\/deploy)$/.test(r.text)));
@@ -3171,7 +3193,7 @@ function standupPrep(now = new Date()) {
   const weekend = now.getDay() === 0 || now.getDay() === 6;
   if (weekend) return "";
   // Read Slack once for the page; Start here redraws when it is in.
-  if (!standup.data && !standup.loading && !standup.error) loadStandup().then(() => renderStart());
+  if (!standup.data && !standup.loading && !standup.error) loadStandup().catch(() => {}).finally(() => renderStart());
   const posted = myStandupPostedAt();
   const mins = now.getHours() * 60 + now.getMinutes();
   const at = MARKETING_STANDUP.h * 60 + MARKETING_STANDUP.m;
@@ -3214,7 +3236,7 @@ function renderStart() {
               (x, i) => `<li class="start-item${x.tone ? ` start-${esc(x.tone)}` : ""}">
             <span class="start-rank">${i + 1}</span>
             <div class="start-body"><p class="start-text">${esc(x.text)}</p>${x.detail ? `<p class="meta start-detail">${esc(x.detail)}</p>` : ""}</div>
-            <button type="button" class="sm" data-start-go="${esc(x.go.view)}"${x.go.filter ? ` data-start-filter="${esc(x.go.filter)}"` : ""}>Open →</button>
+            <button type="button" class="sm" data-start-go="${esc(x.go.view)}"${x.go.filter ? ` data-start-filter="${esc(x.go.filter)}"` : ""}${x.go.ns ? ` data-start-ns="${esc(x.go.ns)}"` : ""}>Open →</button>
           </li>`,
             )
             .join("")}</ol>${more ? `<p class="meta">${esc(plural(more, "more item", "more items"))} below these; they show here as the top ones clear.</p>` : ""}`
@@ -3244,6 +3266,16 @@ document.addEventListener("click", (event) => {
     if (state.report) renderLayer2(state.report);
   }
   location.hash = go.dataset.startGo;
+  // A reply or sprint call: open Next steps on that action and bring it into view.
+  if (go.dataset.startNs) {
+    ns.action = go.dataset.startNs;
+    renderNextSteps();
+    const sec = $("sec-next");
+    if (sec) {
+      sec.open = true;
+      setTimeout(() => sec.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    }
+  }
 });
 
 // The prep strip counts down to 12:30; redraw it every minute while Start here is open.
