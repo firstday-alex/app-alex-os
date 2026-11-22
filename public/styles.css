@@ -1785,3 +1785,24 @@ input, select, textarea, button { max-width: 100%; }
   .flag.q-row .q-acts { justify-content: flex-end; flex-wrap: wrap; }
   .flag.q-row .q-sev { align-self: start; margin-top: 6px; }
 }
+
+/* Safari / iPhone width safety (Alex, 2026-11-22: "something is still making the main area
+   scroll horizontally"). WebKit can size a wrapping row of buttons as if it were on one line,
+   so a grid column sized to its content ("auto") or an unnamed one could grow past the screen.
+   Lists of cards get one column that may shrink to the screen; on phones every row with
+   buttons puts them on their own line underneath instead of in a column beside the text. */
+.q-tops, .mv-list, .mt-list, .start-list, .qp-course, .rock-fix, .delegate-panel, .rb-tactics { grid-template-columns: minmax(0, 1fr); }
+.q-top > *, .q-list > *, .q-run-rows > *, .mt-list > *, .start-list > * { max-width: 100%; min-width: 0; }
+@media (max-width: 640px) {
+  .flag.q-row.sched-item { grid-template-columns: max-content minmax(0, 1fr); grid-template-areas: "sev msg" "meta meta" "acts acts"; }
+  .mt-line { grid-template-columns: max-content minmax(0, 1fr); grid-template-areas: "st name" "st meta" "acts acts"; }
+  .mt-line .mt-acts { justify-content: flex-start; flex-wrap: wrap; margin-top: 6px; }
+  .sl-row { grid-template-columns: max-content minmax(0, 1fr); grid-template-areas: "kind text" "kind meta" "acts acts"; }
+  .sl-row .q-acts { justify-content: flex-start; flex-wrap: wrap; margin-top: 6px; }
+  .tp-row, .tp-row:has(.st-badge) { grid-template-columns: max-content minmax(0, 1fr); }
+  .tp-row > :last-child { grid-column: 1 / -1; justify-self: start; }
+  .dw-win, .wk-item { grid-template-columns: 26px minmax(0, 1fr); }
+  .start-item { flex-wrap: wrap; }
+  .sp-drift-row > * { max-width: 100%; }
+  .su-grid { grid-template-columns: minmax(0, 1fr); }
+}
