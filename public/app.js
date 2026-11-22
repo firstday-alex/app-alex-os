@@ -3178,12 +3178,12 @@ function startItems() {
   const by = (fn) => open.filter(fn);
   const now = new Date();
 
-  // Replies and sprint calls are listed together under Next steps on Sprint Management, by
-  // action; What needs you spreads them over per-person cards. Open goes to that group.
+  // Replies and sprint calls are listed together under Next steps on What needs you, by
+  // action. Open goes to that group.
   const replies = by((f) => nextActionOf(f) === "reply");
-  if (replies.length) add({ score: 100, group: "team", tone: "bad", text: `${plural(replies.length, "reply", "replies")} only you can give`, detail: shortCalls(replies), go: { view: "sprint", ns: "reply" } });
+  if (replies.length) add({ score: 100, group: "team", tone: "bad", text: `${plural(replies.length, "reply", "replies")} only you can give`, detail: shortCalls(replies), go: { view: "readout", ns: "reply" } });
   const decide = by((f) => nextActionOf(f) === "decide");
-  if (decide.length) add({ score: 90, group: "team", tone: "bad", text: `${plural(decide.length, "sprint call", "sprint calls")} to make`, detail: shortCalls(decide), go: { view: "sprint", ns: "decide" } });
+  if (decide.length) add({ score: 90, group: "team", tone: "bad", text: `${plural(decide.length, "sprint call", "sprint calls")} to make`, detail: shortCalls(decide), go: { view: "readout", ns: "decide" } });
 
   const people = sprintPeopleAttention();
   const noWork = people.filter((p) => p.attention.reasons.some((r) => /^(No open tickets|Nothing in progress|All waiting on QA\/deploy)$/.test(r.text)));
@@ -3531,11 +3531,8 @@ function renderLayer2(report) {
       </div>`
         : ""
     }
+    <p class="meta sp-actions-note">What to do about these (reply, decide, nudge, fix) is in <a href="#readout" data-start-go="readout" data-start-ns="">What needs you → Next steps</a>.</p>
     ${groupHtml || `<p class="sub">${sprintFilter ? `Nobody right now: ${esc(SPRINT_FILTERS.find((f) => f.id === sprintFilter)?.why ?? "")}` : "Nothing open on the sprint."}</p>`}
-    <details class="section ns" id="sec-next">
-      <summary><h2>Next steps</h2><span class="sec-count" id="next-steps-count"></span></summary>
-      <div id="next-steps"></div>
-    </details>
     ${delta.hasBaseline ? "" : `<div class="note"><strong>First run.</strong> There is no previous snapshot, so there is no day over day comparison yet.</div>`}
     <details class="section">
       <summary><h2>Done this week</h2><span class="sec-count">${esc(doneThisWeek.length)}</span></summary>
@@ -3588,7 +3585,7 @@ function nextActionOf(flag) {
   return own;
 }
 
-/* Next steps on the Sprint page: the same compact rows as Your queue, grouped by what to
+/* Next steps on What needs you (moved from Sprint Management 2026-11-22): the same compact rows as Your queue, grouped by what to
    do (reply, decide, nudge, fix), with tabs to show one kind. A row opens to the full card. */
 const ns = { action: "", open: new Set(), all: new Set() };
 const NS_ROWS = 6;
