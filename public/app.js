@@ -713,7 +713,7 @@ function renderTopThree(flags) {
         const waiting = flags.filter((x) => covered.has(x.id) && UNBLOCK_RULES.has(x.rule) && viewOf(x) === "open").length;
         const rocks = flags.filter((x) => covered.has(x.id) && !UNBLOCK_RULES.has(x.rule) && viewOf(x) === "open").length;
         const bits = [waiting ? plural(waiting, "person waiting on you", "people waiting on you") : "", rocks ? plural(rocks, "rock decision", "rock decisions") : ""].filter(Boolean);
-        return bits.length ? `<button type="button" class="q-moved" data-q-focus>↑ ${esc(bits.join(" and "))} in Today's moves</button>` : "";
+        return bits.length ? `<button type="button" class="q-moved" data-q-focus>${esc(bits.join(" and "))} in Your own work on Start here →</button>` : "";
       })() : "";
 
   // Filters. People and areas come from the whole pile, so a choice never hides itself.
@@ -951,7 +951,10 @@ $("start-here").addEventListener("click", async (event) => {
 });
 
 $("start-here").addEventListener("click", (event) => {
-  if (event.target.closest("[data-q-focus]")) return $("focus")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (event.target.closest("[data-q-focus]")) {
+    location.hash = "start";
+    return setTimeout(() => $("focus")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+  }
   const more = event.target.closest("[data-q-more]");
   const open = event.target.closest("[data-q-open]");
   if (more) queue.all = !queue.all;
@@ -7896,7 +7899,8 @@ function renderMoves() {
   const reviews = myReviewTickets();
   // Unblocking others comes first; with nobody waiting, the rock work is shown.
   const mySlack = (slackTodo.data?.todos ?? []).length + (slackTodo.data?.reminders ?? []).length + (slackTodo.data?.saved ?? []).length + (slackTodo.data?.lists ?? []).length;
-  const tab = moves.tab ?? (unblock.length + reviews.length ? "unblock" : "rock");
+  // One view now: Unblock others is Next steps › Reply and Tidy-ups is Cleaning › Tidy-ups.
+  const tab = "rock";
   const tidy = tidyFlags();
   const waitingN = unblock.length + reviews.length;
   const mineOpen = myOpenTickets();
@@ -7925,15 +7929,12 @@ function renderMoves() {
   host.innerHTML = `
     <div class="glass mv-glass">
       <header class="mv-header">
-        <h2>Today's moves</h2>
+        <h2>Your own work</h2>
         ${tab === "rock" && d.picks.length ? `<div class="mv-meter" title="${esc(done.length)} of ${esc(d.picks.length)} rock moves done" aria-label="${esc(done.length)} of ${esc(d.picks.length)} done">${meter}</div>` : ""}
       </header>
-      <div class="mv-tabs" role="tablist" aria-label="Today's moves">
-        <button type="button" role="tab" class="mv-tab${tab === "unblock" ? " on" : ""}" aria-selected="${tab === "unblock"}" data-mv-tab="unblock">Unblock others${waitingN ? `<span class="mv-badge alert">${esc(waitingN)}</span>` : `<span class="mv-badge">0</span>`}</button>
-        <button type="button" role="tab" class="mv-tab${tab === "rock" ? " on" : ""}" aria-selected="${tab === "rock"}" data-mv-tab="rock">My work${rockCount ? `<span class="mv-badge">${esc(rockCount)}</span>` : ""}${d.picks.length ? `<span class="mv-tab-sub">${esc(done.length)}/${esc(d.picks.length)} done</span>` : ""}</button>
-        <button type="button" role="tab" class="mv-tab${tab === "tidy" ? " on" : ""}" aria-selected="${tab === "tidy"}" data-mv-tab="tidy">Tidy-ups<span class="mv-badge">${esc(tidy.length)}</span></button>
-      </div>
+      <p class="mv-sub">${esc([rockCount ? plural(rockCount, "thing", "things") : "", d.picks.length ? `${done.length}/${d.picks.length} rock moves done` : ""].filter(Boolean).join(" · ") || "Slack to-dos, your tickets and rock moves")}</p>
       ${moves.error ? `<p class="triage-error">${esc(moves.error)}</p>` : ""}
+      ${reviews.length ? `<div class="mv-sec"><span>Waiting on your review <span class="mt-n">${reviews.length}</span></span><span class="meta">Your QA, VQA or review tickets someone is waiting on: clear these first</span></div><div class="mt-list">${reviews.map(myTicketRow).join("")}</div>` : ""}
       ${tab === "tidy" ? tidyList(tidy) : tab === "unblock" ? unblockList(unblock, reviews) : `${slackSection(["todos", "reminders", "lists", "saved"], "From Slack", "Your to-dos, reminders, lists and saved messages")}${myTicketsHtml()}${myTicketsHtml() ? `<div class="mv-sec"><span>Rock moves</span><span class="meta">Decisions and plan items that move a rock</span></div>` : ""}
       ${open.length ? `<div class="mv-list">${open.map(moveCard).join("")}</div>` : ""}
       ${done.length ? `<div class="mv-list mv-done-list">${done.map(moveCard).join("")}</div>` : ""}
@@ -8290,7 +8291,7 @@ function showView(name) {
   if ((name === "rocks" || name === "backlog") && !state.rocks) loadRocks();
   if (name === "setup" && !state.settings) loadSettings();
   if (name === "plan") loadPlan();
-  if (name === "readout") loadMoves();
+  if (name === "start") loadMoves();
   if (name === "cleaning") renderCleaning();
   if (name === "metrics") renderMetrics();
   if (name === "summary") {
@@ -8328,7 +8329,7 @@ let tocTargets = [];
    short names and a count where a count says something. Other pages list their headings. */
 const TOC_GROUPS = {
   readout: [
-    { label: "Start here", items: [["focus", "Today's moves", "Unblock others, then your work"], ["start-here", "Your queue", "Everything else, with filters"]] },
+    { label: "On this page", items: [["start-here", "Your queue", "Rocks, tests, Slack and the rest, with filters"], ["sec-next", "Next steps", "Reply, decide, nudge"]] },
   ],
 };
 /** The badge beside a contents entry: a number and whether it is urgent, or null. */
