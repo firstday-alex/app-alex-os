@@ -133,7 +133,7 @@ export function clickupDelta(baseline, current, { config, now = Date.now(), comm
   }
 
   for (const [id, before] of beforeById) {
-    if (!currentById.has(id)) changes.disappeared.push(before);
+    if (!currentById.has(id)) changes.disappeared.push({ ...before, whereabouts: current?.whereabouts?.[id] ?? current?.whereabouts?.[String(id)] ?? null });
   }
 
   // Worst first, not-started excluded. A backlog is supposed to sit, so including it

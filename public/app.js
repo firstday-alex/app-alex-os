@@ -1267,6 +1267,10 @@ function flagContext(flag) {
       links.push(String(flag.rule).startsWith("leadership.dropdown_") ? { label: "Rocks", href: "#rocks" } : { label: "Setup", href: "#setup" });
       break;
     case "list":
+      // Tickets that left the list: a link to each, so they can be checked in ClickUp.
+      for (const t of (flag.values?.tasks ?? []).filter((x) => x.url).slice(0, 5)) {
+        links.push({ label: String(t.name).length > 40 ? `${String(t.name).slice(0, 38)}…` : t.name, href: t.url, external: true });
+      }
       links.push({ label: "Sprint Management", href: "#sprint" });
       break;
     case "queue":

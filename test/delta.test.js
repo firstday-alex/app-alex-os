@@ -63,6 +63,13 @@ test("a task that disappeared from the list is reported", () => {
   assert.equal(delta.changes.disappeared[0].id, "t2");
 });
 
+test("a disappeared task carries where it went, when the snapshot found it", () => {
+  const after = snapshot([task()]);
+  after.whereabouts = { t2: { where: "backlog", list: "Backlog" } };
+  const delta = clickupDelta(snapshot([task(), task({ id: "t2" })]), after, { config, now: NOW });
+  assert.deepEqual(delta.changes.disappeared[0].whereabouts, { where: "backlog", list: "Backlog" });
+});
+
 test("no changes produces an empty delta", () => {
   const delta = run([task(), task({ id: "t2" })], [task(), task({ id: "t2" })]);
   assert.equal(delta.counts.changed, 0);

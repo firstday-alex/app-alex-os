@@ -234,6 +234,45 @@ export async function fetchTaskPages({ config, token, logger, fetchImpl, sleep, 
   return result;
 }
 
+/**
+ * Where tickets that left the sprint list went (Alex, 2026-11-22: "I don't know what it's
+ * referring to"). The backlog is already read, so a ticket there costs nothing; the rest are
+ * looked up one by one (at most 10, and only on a day something left). Never throws.
+ * @returns {Promise<Record<string, {where: string, list?: string, status?: string}>>}
+ */
+export async function findWhereabouts({ config, token, logger, fetchImpl, sleep, ids, backlog = null }) {
+  const out = {};
+  const inBacklog = new Map((backlog ?? []).map((t) => [String(t.id), t]));
+  const http = config.system.http;
+  for (const id of ids.slice(0, 10)) {
+    const b = inBacklog.get(String(id));
+    if (b) {
+      out[id] = { where: "backlog", list: "Backlog", status: b.status ?? null };
+      continue;
+    }
+    try {
+      const { body } = await httpJson(`${config.clickup.apiBase}/task/${encodeURIComponent(id)}`, {
+        headers: authHeaders(token),
+        logger,
+        label: "clickup.task.whereabouts",
+        fetchImpl,
+        timeoutMs: http.timeoutMs,
+        maxAttempts: Math.min(http.maxAttempts ?? 2, 2),
+        backoffMsSchedule: http.backoffMsSchedule,
+        sleep,
+      });
+      out[id] = {
+        where: body?.archived ? "archived" : "list",
+        list: body?.list?.name ?? null,
+        status: body?.status?.status ?? null,
+      };
+    } catch (err) {
+      out[id] = { where: err?.status === 404 || err?.status === 401 ? "deleted" : "unknown" };
+    }
+  }
+  return out;
+}
+
 /** The finished tickets on the Last Sprint list (clickup.lastSprintListId), or [] when unset or unreadable. */
 export async function fetchLastSprint({ config, token, logger, fetchImpl, sleep }) {
   const listId = config.clickup?.lastSprintListId;
@@ -495,6 +534,11 @@ export async function collectClickUp({ config, token, store, logger, fetchImpl, 
     }
   }
 
+  // Tickets on yesterday's list that are not on today's: find where each went.
+  const nowIds = new Set(tasks.map((t) => String(t.id)));
+  const goneIds = (baseline?.items ?? []).map((t) => String(t.id)).filter((id) => !nowIds.has(id));
+  const whereabouts = goneIds.length ? await findWhereabouts({ config, token, logger, fetchImpl, sleep, ids: goneIds, backlog }) : {};
+
   const members = (config.people?.team ?? []).some((p) => p.clickupUserId != null)
     ? config.people.team.map((p) => ({ id: String(p.clickupUserId), username: p.name, fromConfig: true }))
     : await fetchTeamMembers({ config, token, logger, fetchImpl, sleep });
@@ -510,6 +554,7 @@ export async function collectClickUp({ config, token, store, logger, fetchImpl, 
     backlog,
     backlogReady,
     backlogReadyError,
+    whereabouts,
     meta: { pages, truncated, commentsFetched: fetched, taskCount: tasks.length },
   };
 }

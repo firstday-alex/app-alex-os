@@ -79,13 +79,40 @@ function clickupFlags(delta, { config, dateKey, fieldMap }) {
   }
 
   if (delta.changes?.disappeared?.length) {
+    // Name each ticket, who had it and where it went, so the card says what to check
+    // (Alex, 2026-11-22: "what am I supposed to do with this ... I don't know what it's
+    // referring to").
+    const gone = delta.changes.disappeared;
+    const whereText = (w) =>
+      !w ? "not found"
+        : w.where === "backlog" ? "moved to the Backlog"
+        : w.where === "archived" ? `archived${w.list ? ` in ${w.list}` : ""}`
+        : w.where === "deleted" ? "deleted (or no longer visible to this app)"
+        : w.where === "list" ? `moved to ${w.list ? `"${w.list}"` : "another list"}${w.status ? ` (${w.status})` : ""}`
+        : "not found";
+    const line = (t) => {
+      const who = (t.assignees ?? []).map((u) => String(u.username ?? "").split(/\s+/)[0]).filter(Boolean).join(", ");
+      return `"${t.name}"${who ? ` (${who})` : ""}: ${whereText(t.whereabouts)}`;
+    };
+    const shown = gone.slice(0, 5).map(line);
+    const n = gone.length;
     add({
       layer: 2,
       rule: "clickup.task_disappeared",
       severity: "attention",
       subject: { type: "list", id: "disappeared", label: "Sprint list" },
-      message: `${delta.changes.disappeared.length} task(s) present yesterday are missing from the list today. Moved, archived or deleted.`,
-      values: { tasks: delta.changes.disappeared.slice(0, 10).map((t) => ({ id: t.id, name: t.name, status: t.status })) },
+      message: `${n === 1 ? "A ticket" : `${n} tickets`} left the Current Sprint list since yesterday: ${shown.join("; ")}${n > 5 ? `; and ${n - 5} more` : ""}. If that was on purpose, press I fixed it. If not, move ${n === 1 ? "it" : "them"} back to Current Sprint in ClickUp.`,
+      values: {
+        tasks: gone.slice(0, 10).map((t) => ({
+          id: t.id,
+          name: t.name,
+          status: t.status,
+          url: t.url ?? null,
+          assignees: (t.assignees ?? []).map((u) => u.username).filter(Boolean),
+          where: t.whereabouts?.where ?? null,
+          list: t.whereabouts?.list ?? null,
+        })),
+      },
     });
   }
 
