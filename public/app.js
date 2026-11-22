@@ -2825,12 +2825,21 @@ const stageRank = (task) => {
 // `for` is the readout the check ran against; undefined until it has run once.
 const drift = { for: undefined, tickets: null, error: null, note: "" };
 const DRIFT_KEEP = "mos.driftKeep";
+// Kept tickets stay on the list, greyed and moved to the bottom, with when they were kept, so
+// the call can still be changed (Alex, 2026-11-22). Stored as { key: ISO date }; an older
+// list of keys still reads.
 const keptDrift = () => {
   try {
-    return new Set(JSON.parse(localStorage.getItem(DRIFT_KEEP) ?? "[]"));
+    const raw = JSON.parse(localStorage.getItem(DRIFT_KEEP) ?? "{}");
+    return new Map(Array.isArray(raw) ? raw.map((k) => [k, null]) : Object.entries(raw));
   } catch {
-    return new Set();
+    return new Map();
   }
+};
+const saveKept = (kept) => {
+  try {
+    localStorage.setItem(DRIFT_KEEP, JSON.stringify(Object.fromEntries([...kept].slice(-500))));
+  } catch {}
 };
 // Kept per ticket and per change, so a ticket that changes hands again is asked about again.
 const driftKey = (t) => `${t.id}:${t.now.map((u) => u.id).sort().join(",")}`;
@@ -2998,24 +3007,34 @@ document.addEventListener("click", async (event) => {
 });
 
 function driftHtml() {
-  const kept = keptDrift();
-  const list = (drift.tickets ?? []).filter((t) => !kept.has(driftKey(t)));
   if (drift.tickets == null) return "";
   if (drift.error) return `<div class="missing">The check could not run: ${esc(drift.error)}</div>`;
-  if (!list.length) return drift.note ? `<p class="meta">${esc(drift.note)}</p>` : "";
+  const kept = keptDrift();
+  const all = drift.tickets ?? [];
+  if (!all.length) return drift.note ? `<p class="meta">${esc(drift.note)}</p>` : "";
+  // Still to decide first, then the kept ones, greyed.
+  const open = all.filter((t) => !kept.has(driftKey(t)));
+  const list = [...open, ...all.filter((t) => kept.has(driftKey(t)))];
   const day = (key) => new Date(`${key}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  return `<div class="flag sev-attention sp-drift">
-    <p class="msg"><strong>${esc(plural(list.length, "done ticket", "done tickets"))} changed hands this sprint.</strong> Put each back on who it had when it came onto the sprint, or keep it as is.</p>
+  const keptOn = (iso) => (iso ? ` ${new Date(iso).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}` : "");
+  const head = open.length
+    ? `<strong>${esc(plural(open.length, "done ticket", "done tickets"))} changed hands this sprint.</strong> Put each back on who it had when it came onto the sprint, or keep it as is.${open.length < all.length ? ` ${esc(all.length - open.length)} kept, at the bottom.` : ""}`
+    : `<strong>All ${esc(plural(all.length, "done ticket that changed hands is", "done tickets that changed hands are"))} kept as is.</strong> You can still put any of them back.`;
+  return `<div class="flag ${open.length ? "sev-attention" : "sev-info"} sp-drift">
+    <p class="msg">${head}</p>
     ${list
-      .map(
-        (t) => `<div class="sp-drift-row" data-drift="${esc(t.id)}">
+      .map((t) => {
+        const key = driftKey(t);
+        const isKept = kept.has(key);
+        return `<div class="sp-drift-row${isKept ? " sp-drift-kept" : ""}" data-drift="${esc(t.id)}">
         <span class="sp-name">${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)}</span>
         <span class="meta">${esc(namesOf(t.was))} on ${esc(day(t.firstSeen))} → now ${esc(namesOf(t.now))}</span>
+        ${isKept ? `<span class="chip sp-kept-chip">Kept as is${esc(keptOn(kept.get(key)))}</span>` : ""}
         <span class="grow"></span>
-        <button type="button" class="sm" data-drift-restore="${esc(t.id)}">Put back to ${esc(namesOf(t.was))}</button>
-        <button type="button" class="sm ghost" data-drift-keep="${esc(driftKey(t))}">Keep as is</button>
-      </div>`,
-      )
+        <button type="button" class="sm${isKept ? " ghost" : ""}" data-drift-restore="${esc(t.id)}">Put back to ${esc(namesOf(t.was))}</button>
+        ${isKept ? `<button type="button" class="sm ghost" data-drift-unkeep="${esc(key)}">Undo keep</button>` : `<button type="button" class="sm ghost" data-drift-keep="${esc(key)}">Keep as is</button>`}
+      </div>`;
+      })
       .join("")}
     ${drift.note ? `<p class="meta">${esc(drift.note)}</p>` : ""}
   </div>`;
@@ -3025,10 +3044,16 @@ document.addEventListener("click", async (event) => {
   const keep = event.target.closest("[data-drift-keep]");
   if (keep) {
     const kept = keptDrift();
-    kept.add(keep.dataset.driftKeep);
-    try {
-      localStorage.setItem(DRIFT_KEEP, JSON.stringify([...kept].slice(-500)));
-    } catch {}
+    kept.set(keep.dataset.driftKeep, new Date().toISOString());
+    saveKept(kept);
+    renderDoneHygiene();
+    return;
+  }
+  const unkeep = event.target.closest("[data-drift-unkeep]");
+  if (unkeep) {
+    const kept = keptDrift();
+    kept.delete(unkeep.dataset.driftUnkeep);
+    saveKept(kept);
     renderDoneHygiene();
     return;
   }
