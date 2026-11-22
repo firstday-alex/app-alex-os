@@ -1714,3 +1714,17 @@ details.section:not([open]) > summary { margin-bottom: 10px; }
 .hyg-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
 .hyg-tabs::-webkit-scrollbar { display: none; }
 .hyg-tabs > button { flex: none; white-space: nowrap; }
+
+/* Every menu row scrolls sideways, at every width (Alex, 2026-11-22: "these menus should all
+   scroll horizontal so users can see everything"). A fade marks the edge with more to see. */
+#tabs, #subtabs, #kindtabs, .dod-windows, .q-seg {
+  flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; max-width: 100%;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
+}
+#tabs::-webkit-scrollbar, #subtabs::-webkit-scrollbar, #kindtabs::-webkit-scrollbar, .dod-windows::-webkit-scrollbar, .q-seg::-webkit-scrollbar { display: none; }
+#tabs > *, #subtabs > *, #kindtabs > *, .dod-windows > *, .q-seg > * { flex: none; white-space: nowrap; }
+#tabs { flex: 0 1 auto; min-width: 0; }
+.can-right { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
+.can-left { -webkit-mask-image: linear-gradient(to right, transparent, #000 32px); mask-image: linear-gradient(to right, transparent, #000 32px); }
+.can-left.can-right { -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
+@media (max-width: 640px) { #tabs { flex: 1 1 0; } }

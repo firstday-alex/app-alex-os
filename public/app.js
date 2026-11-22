@@ -8613,3 +8613,43 @@ document.addEventListener("visibilitychange", async () => {
 
 addEventListener("hashchange", routeFromHash);
 routeFromHash();
+
+/* Sideways menus: fade the edge with more to see, let a mouse wheel scroll them, and keep the
+   selected item in view. Rows are redrawn often, so they are found again after each change. */
+const HSCROLL = "#tabs, #subtabs, #kindtabs, .dod-windows, .q-seg";
+function markScroll(el) {
+  const more = el.scrollWidth - el.clientWidth > 2;
+  el.classList.toggle("can-left", more && el.scrollLeft > 2);
+  el.classList.toggle("can-right", more && el.scrollLeft < el.scrollWidth - el.clientWidth - 2);
+}
+const seenRows = new WeakSet();
+function refreshScrollRows() {
+  for (const el of document.querySelectorAll(HSCROLL)) {
+    if (!seenRows.has(el)) {
+      seenRows.add(el);
+      el.addEventListener("scroll", () => markScroll(el), { passive: true });
+      el.addEventListener("wheel", (e) => {
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY) || el.scrollWidth <= el.clientWidth) return;
+        el.scrollLeft += e.deltaY;
+        e.preventDefault();
+      }, { passive: false });
+    }
+    // Bring the selected item into view when the selection changes.
+    const on = el.querySelector(".active, .on, [aria-current='page'], [aria-pressed='true']");
+    const key = on?.textContent ?? "";
+    if (on && el.dataset.onKey !== key) {
+      el.dataset.onKey = key;
+      const left = on.offsetLeft - el.offsetLeft;
+      if (left < el.scrollLeft || left + on.offsetWidth > el.scrollLeft + el.clientWidth) el.scrollLeft = left - (el.clientWidth - on.offsetWidth) / 2;
+    }
+    markScroll(el);
+  }
+}
+let scrollRowsQueued = false;
+new MutationObserver(() => {
+  if (scrollRowsQueued) return;
+  scrollRowsQueued = true;
+  requestAnimationFrame(() => { scrollRowsQueued = false; refreshScrollRows(); });
+}).observe(document.body, { childList: true, subtree: true });
+addEventListener("resize", refreshScrollRows);
+refreshScrollRows();
