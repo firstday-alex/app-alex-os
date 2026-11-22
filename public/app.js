@@ -94,13 +94,23 @@ async function load() {
     $("banners").innerHTML = `<div class="note"><strong>Nothing yet.</strong> ${esc(body.message)}</div>`;
     return;
   }
-  state.report = body.report;
+  state.report = withoutTestActions(body.report);
   render();
   // Test owners live in the notes. Fetched alongside so the attention list can use them.
   if (!state.testNotes) loadTestNotes().then(() => state.report && renderAllFlags({ rebuildTools: true }));
 }
 
 /* --------------------------------- render --------------------------------- */
+
+/* Intelligems' metric-based actions are out of this app (Alex, 2026-11-22: "ab test tickets
+   can stay just want to take the metric based actions out from intelligems"): every
+   intelligems.* flag (verdict changed, ready for a call, probability crossed, metric moved,
+   ...) is dropped as the readout arrives. AB test tickets in ClickUp, and the test data on
+   rocks and 1:1s, stay. The readout still carries them for the Slack send. */
+function withoutTestActions(report) {
+  if (!report) return report;
+  return { ...report, flags: (report.flags ?? []).filter((f) => !String(f.rule ?? "").startsWith("intelligems.")) };
+}
 
 // Rules that no longer exist. Each run recomputes flags, so they only appear in a readout
 // saved before the rule went; hiding them here keeps an older readout from showing them.
@@ -542,7 +552,7 @@ function inRockMoves(flags) {
    them so its easy to use and filter and only the highest priority things are done first").
    The filter row is what to do; every row says it; Do first is the top three by priority.
    Tidy-ups live on Cleaning › Tidy-ups, linked from the bottom. */
-const QUEUE_KINDS = [["", "All"], ["reply", "Reply"], ["decide", "Decide"], ["nudge", "Nudge"], ["other", "Rocks & tests"]];
+const QUEUE_KINDS = [["", "All"], ["reply", "Reply"], ["decide", "Decide"], ["nudge", "Nudge"], ["other", "Rocks & other"]];
 const ACTION_LABEL = { reply: "Reply", decide: "Decide", nudge: "Nudge" };
 /** What to do about a flag, as the filter row names it. */
 const actionKey = (f) => (ACTION_LABEL[nextActionOf(f)] ? nextActionOf(f) : "other");
@@ -3345,7 +3355,7 @@ function startItems() {
   const fixes = by((f) => nextActionOf(f) === "fix");
   if (fixes.length) add({ score: 25, group: "team", tone: "", text: `${plural(fixes.length, "ticket", "tickets")} to fix (missing fields)`, detail: "Tidy when there is time.", go: { view: "cleaning" } });
   const rest = by((f) => !nextActionOf(f) && f.severity !== "p1" && f.rule !== "leadership.rock_off_course").length;
-  if (rest > 0) add({ score: 20, group: "team", tone: "", text: `${plural(rest, "other item", "other items")} in Your queue`, detail: "Rocks, tests, Slack to-dos and tidy-ups, ranked.", go: { view: "readout" } });
+  if (rest > 0) add({ score: 20, group: "team", tone: "", text: `${plural(rest, "other item", "other items")} in Your queue`, detail: "Rocks, Slack to-dos and the rest, ranked.", go: { view: "readout" } });
 
   return items.sort((a, b) => b.score - a.score);
 }
@@ -4590,7 +4600,7 @@ $("refresh").addEventListener("click", async () => {
       await new Promise((r) => setTimeout(r, 1500));
       const check = await fetch(`${FN}/report`).then((r) => r.json()).catch(() => null);
       if (check && !check.empty && check.report.runId !== before) {
-        state.report = check.report;
+        state.report = withoutTestActions(check.report);
         state.openItems = check.openItems ?? state.openItems;
         render();
         break;
@@ -4668,7 +4678,7 @@ $("test-readout")?.addEventListener("click", async () => {
       await new Promise((r) => setTimeout(r, 1500));
       const check = await fetch(`${FN}/report`).then((r) => r.json()).catch(() => null);
       if (check && !check.empty && check.report.runId !== before) {
-        state.report = check.report;
+        state.report = withoutTestActions(check.report);
         state.openItems = check.openItems ?? state.openItems;
         render();
         note.textContent = "Posted. Check the readout channel in Slack for the message marked TEST.";
@@ -7187,7 +7197,7 @@ const NAV_GROUPS = [
   { id: "kudos", pages: [["thisweek", "This week's wins"], ["lastweek", "Last week's wins"], ["kudospages", "Kudos pages"], ["starred", "Starred wins"], ["impact", "Overall impact"]] },
   { id: "cleaning", pages: [["cleaning", "Tidy-ups"]] },
   { id: "planning", pages: [["backlog", "Backlog"], ["workshop", "Workshop"], ["rocks", "Rocks"], ["ecomrocks", "Rock map"], ["plan", "Quarter"], ["ideation", "Ideation"]] },
-  { id: "metrics", pages: [["metrics", "Tests & metrics"]] },
+  { id: "metrics", pages: [["metrics", "Store metrics"]] },
   { id: "post", pages: [["mystandup", "1. My stand-up"], ["upsu", "2. Team update"], ["summary", "3. Daily summary"], ["speech", "4. Speak"]] },
 ];
 // On a wide screen the drawer stays open beside the page and is the nav.
@@ -8303,13 +8313,9 @@ function renderMetrics() {
   const root = $("metrics");
   if (!root || $("view-metrics")?.classList.contains("hidden")) return;
   if (!state.report) return void (root.innerHTML = `<p class="sub">Loading the readout…</p>`);
-  const flags = metricFlags();
-  const tests = flags.filter((f) => String(f.layer) === "3");
-  const store = flags.filter((f) => String(f.layer) === "0");
+  const store = metricFlags().filter((f) => String(f.layer) === "0");
   const links = `<div class="bar"><a class="ql" href="https://ecomreporting.netlify.app/" target="_blank" rel="noreferrer">Ecom Reporting Hub ↗</a><a class="ql" href="https://ecom-fd-roadmap.netlify.app/?view=tests" target="_blank" rel="noreferrer">AB Testing ↗</a></div>`;
   root.innerHTML = `${links}
-    <h3 class="lw-head">AB tests <span class="meta">${esc(tests.length)}</span></h3>
-    ${tests.length ? flagRows(tests) : `<p class="meta">No test updates in this readout.</p>`}
     <h3 class="lw-head">Store numbers <span class="meta">${esc(store.length)}</span></h3>
     ${store.length ? flagRows(store) : `<p class="meta">No store-number moves flagged in this readout.</p>`}
     <p class="meta">From the readout pulled ${esc(new Date(state.report.generatedAt).toLocaleString())}.</p>`;
