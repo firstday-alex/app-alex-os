@@ -61,3 +61,23 @@ test("put back: only a flagged ticket, adds who it had and removes who was not o
   await assert.rejects(restoreAssignees({ config: config(), store, token: "tok", taskId: "b", fetchImpl, now }), /not flagged/);
   assert.equal(calls.length, 1);
 });
+
+test("TACTIC write: only a live option, only tickets on the latest readout, recorded", async () => {
+  const { setTactic } = await import("../src/send/clickup-tactic.js");
+  const store = await Store.open({ config: config(), mode: "memory" });
+  await store.backend.set("reports/latest.json", { key: "r", detail: { clickup: { tasks: [{ id: "a" }] } } });
+  store.getLatestReport = async () => ({ detail: { clickup: { tasks: [{ id: "a" }] } } });
+  const options = { fieldId: "field-1", options: [{ id: "opt-1", label: "Loyalty offer" }] };
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const out = await setTactic({ config: config(), store, token: "tok", taskIds: ["a", "zz"], optionId: "opt-1", fetchImpl, options });
+  assert.deepEqual(calls, [{ url: "https://api.clickup.com/api/v2/task/a/field/field-1", body: { value: "opt-1" } }]);
+  assert.deepEqual(out.set, ["a"]);
+  assert.match(out.failed[0].error, /not on the latest readout/);
+  await assert.rejects(setTactic({ config: config(), store, token: "tok", taskIds: ["a"], optionId: "made-up", fetchImpl, options }), /Pick one of the TACTIC options/);
+  await assert.rejects(setTactic({ config: config(), store, token: "tok", taskIds: ["zz"], optionId: "opt-1", fetchImpl, options }), /None of those tickets/);
+  assert.equal(calls.length, 1);
+});

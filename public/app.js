@@ -2841,18 +2841,152 @@ async function loadDrift(forReport) {
   renderDoneHygiene();
 }
 
+/* Done Tickets Hygiene has three tabs (Alex, 2026-11-22: "update any not set rock fields or
+   tactic fields with dropdowns and tab between assignees, rocks, and tactics"): who it is on,
+   ROCK not on a live rock, TACTIC not set. Each sets the field in ClickUp from a dropdown. */
+let hygieneTab = "assignees";
+const tactics = { options: null, error: null, loading: false };
+const hygieneNote = { rocks: "", tactics: "" };
+
+async function loadTacticOptions() {
+  tactics.loading = true;
+  const res = await fetch(`${FN}/ticket-tactic`).then((r) => r.json()).catch(() => null);
+  tactics.options = res?.options ?? [];
+  tactics.error = res?.error ?? (res ? null : "could not reach the server");
+  tactics.loading = false;
+  renderDoneHygiene();
+}
+
+/** Done this sprint (the open tickets' report entries), with a link and who did it. */
+const doneTickets = () => doneThisSprint(state.report?.detail?.clickup?.tasks ?? []);
+const liveRockOption = (t) => {
+  const live = new Set(rockChoices().flatMap((r) => r.optionIds.map(String)));
+  return t.bigSwing?.optionId && live.has(String(t.bigSwing.optionId));
+};
+const needsRock = () => doneTickets().filter((t) => !liveRockOption(t));
+const needsTactic = () => doneTickets().filter((t) => !t.leadershipPriority?.optionId);
+
+function hygieneRow(t, control, extra = "") {
+  const who = doing(t).map((u) => handleFor(u)).join(", ") || "nobody";
+  return `<div class="sp-drift-row" data-hyg-row="${esc(t.id)}">
+    <span class="sp-name">${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)}</span>
+    <span class="meta">${esc(who)}${extra}</span>
+    <span class="grow"></span>
+    ${control}
+  </div>`;
+}
+
+function rocksHtml() {
+  const list = needsRock();
+  const rocks = rockChoices();
+  if (!list.length) return `<p class="sub">Every ticket done this sprint has its ROCK set to a live rock.</p>${hygieneNote.rocks ? `<p class="meta">${esc(hygieneNote.rocks)}</p>` : ""}`;
+  if (!rocks.length) return `<div class="missing">No live rocks with a ClickUp ROCK option to choose from.</div>`;
+  const options = `<option value="">ROCK…</option>${rocks.map((r) => `<option value="${esc(r.id)}">${esc(r.title)}</option>`).join("")}`;
+  return `<div class="flag sev-attention sp-drift">
+    <p class="msg"><strong>${esc(plural(list.length, "done ticket has", "done tickets have"))} no live ROCK.</strong> Pick one and press Set; it saves to ClickUp.</p>
+    ${list
+      .map((t) => hygieneRow(t, `<select class="sm" data-hyg-rock="${esc(t.id)}" aria-label="ROCK for ${esc(t.name)}">${options}</select><button type="button" class="sm" data-hyg-set="rock" data-id="${esc(t.id)}">Set</button>`, t.bigSwing?.label ? ` · now "${esc(t.bigSwing.label)}", not a live rock` : ""))
+      .join("")}
+    ${hygieneNote.rocks ? `<p class="meta">${esc(hygieneNote.rocks)}</p>` : ""}
+  </div>`;
+}
+
+function tacticsHtml() {
+  const list = needsTactic();
+  if (!list.length) return `<p class="sub">Every ticket done this sprint has its TACTIC set.</p>${hygieneNote.tactics ? `<p class="meta">${esc(hygieneNote.tactics)}</p>` : ""}`;
+  if (!tactics.options && !tactics.error) {
+    if (!tactics.loading) loadTacticOptions();
+    return `<p class="meta">Reading the TACTIC options from ClickUp…</p>`;
+  }
+  if (tactics.error) return `<div class="missing">The TACTIC options could not be read: ${esc(tactics.error)}</div>`;
+  const queue = state.report?.detail?.leadership?.queue ?? [];
+  const label = new Map(tactics.options.map((o) => [o.id, o.label]));
+  // The ticket's own rock's tactics first, then every option.
+  const select = (t) => {
+    const rock = queue.find((r) => (r.clickupBigSwingOptionIds ?? [r.clickupBigSwingOptionId]).map(String).includes(String(t.bigSwing?.optionId ?? "")));
+    const mine = (rock?.clickupTacticOptionIds ?? []).map(String).filter((id) => label.has(id));
+    const all = tactics.options.map((o) => `<option value="${esc(o.id)}">${esc(o.label)}</option>`).join("");
+    const groups = mine.length
+      ? `<optgroup label="${esc(`On ${rock.title}`)}">${mine.map((id) => `<option value="${esc(id)}">${esc(label.get(id))}</option>`).join("")}</optgroup><optgroup label="All tactics">${all}</optgroup>`
+      : all;
+    return `<select class="sm" data-hyg-tactic="${esc(t.id)}" aria-label="TACTIC for ${esc(t.name)}"><option value="">TACTIC…</option>${groups}</select><button type="button" class="sm" data-hyg-set="tactic" data-id="${esc(t.id)}">Set</button>`;
+  };
+  return `<div class="flag sev-attention sp-drift">
+    <p class="msg"><strong>${esc(plural(list.length, "done ticket has", "done tickets have"))} no TACTIC.</strong> Pick one and press Set; it saves to ClickUp.</p>
+    ${list.map((t) => hygieneRow(t, select(t), t.bigSwing?.label ? ` · ROCK ${esc(t.bigSwing.label)}` : "")).join("")}
+    ${hygieneNote.tactics ? `<p class="meta">${esc(hygieneNote.tactics)}</p>` : ""}
+  </div>`;
+}
+
 /** The Done Tickets Hygiene tab: checks once per readout, then renders what it found. */
 function renderDoneHygiene() {
   const box = $("done-hygiene");
   if (!box) return;
   const forReport = state.report?.generatedAt ?? null;
   if (drift.for !== forReport) {
-    box.innerHTML = `<p class="meta">Checking this sprint's done tickets…</p>`;
+    drift.for = forReport;
+    drift.tickets = null;
     loadDrift(forReport);
+  }
+  const kept = keptDrift();
+  const counts = {
+    assignees: drift.tickets == null ? "…" : drift.tickets.filter((t) => !kept.has(driftKey(t))).length,
+    rocks: needsRock().length,
+    tactics: needsTactic().length,
+  };
+  const tabs = [["assignees", "Assignees"], ["rocks", "Rocks"], ["tactics", "Tactics"]]
+    .map(([id, label]) => `<button type="button" role="tab" class="ghost dod-window${id === hygieneTab ? " on" : ""}" aria-selected="${id === hygieneTab}" data-hyg-tab="${id}">${esc(label)} <span class="meta">${esc(counts[id])}</span></button>`)
+    .join("");
+  const body =
+    hygieneTab === "rocks"
+      ? rocksHtml()
+      : hygieneTab === "tactics"
+        ? tacticsHtml()
+        : drift.tickets == null
+          ? `<p class="meta">Checking this sprint's done tickets…</p>`
+          : driftHtml() || `<p class="sub">Every ticket done this sprint is on the people it had when it came onto the sprint.</p>`;
+  box.innerHTML = `<div class="dod-windows hyg-tabs" role="tablist" aria-label="Done ticket checks">${tabs}</div>${body}`;
+}
+
+document.addEventListener("click", async (event) => {
+  const tab = event.target.closest("[data-hyg-tab]");
+  if (tab) {
+    hygieneTab = tab.dataset.hygTab;
+    renderDoneHygiene();
     return;
   }
-  box.innerHTML = driftHtml() || `<p class="sub">Every ticket done this sprint is on the people it had when it came onto the sprint.</p>`;
-}
+  const btn = event.target.closest("[data-hyg-set]");
+  if (!btn) return;
+  const which = btn.dataset.hygSet;
+  const id = btn.dataset.id;
+  const sel = document.querySelector(which === "rock" ? `[data-hyg-rock="${CSS.escape(id)}"]` : `[data-hyg-tactic="${CSS.escape(id)}"]`);
+  const key = which === "rock" ? "rocks" : "tactics";
+  if (!sel?.value) {
+    hygieneNote[key] = `Choose a ${which === "rock" ? "ROCK" : "TACTIC"} first.`;
+    return renderDoneHygiene();
+  }
+  btn.disabled = true;
+  const t = state.flagCtx?.tasks?.get(String(id)) ?? (state.report?.detail?.clickup?.tasks ?? []).find((x) => String(x.id) === String(id));
+  try {
+    const res = await fetch(`${FN}/${which === "rock" ? "ticket-rock" : "ticket-tactic"}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(which === "rock" ? { taskIds: [id], rockId: sel.value } : { taskIds: [id], optionId: sel.value }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok || !out.set?.length) throw new Error(out.error ?? out.failed?.[0]?.error ?? `HTTP ${res.status}`);
+    // Update the ticket here too, so it leaves the list without waiting for a refresh.
+    const tasksList = state.report?.detail?.clickup?.tasks ?? [];
+    for (const x of [t, tasksList.find((y) => String(y.id) === String(id))].filter(Boolean)) {
+      if (which === "rock") x.bigSwing = { optionId: out.rock.optionId, label: out.rock.title };
+      else x.leadershipPriority = { optionId: out.tactic.id, label: out.tactic.label };
+    }
+    hygieneNote[key] = `"${t?.name ?? "The ticket"}" now has ${which === "rock" ? `ROCK ${out.rock.title}` : `TACTIC ${out.tactic.label}`} in ClickUp.`;
+  } catch (err) {
+    hygieneNote[key] = `Not set: ${err.message}`;
+  }
+  renderDoneHygiene();
+});
 
 function driftHtml() {
   const kept = keptDrift();

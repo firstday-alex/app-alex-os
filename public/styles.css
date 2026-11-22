@@ -1539,3 +1539,4 @@ main:has(#view-speech:not(.hidden)) { max-width: 1500px; }
 .sp-drift { margin: 8px 0 10px; }
 .sp-drift-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; padding: 6px 0; border-top: 1px solid var(--line); }
 .sp-drift-row .sp-name { flex: 0 1 auto; }
+.hyg-tabs { margin: 4px 0 10px; }
