@@ -8776,3 +8776,41 @@ new MutationObserver(() => {
 }).observe(document.body, { childList: true, subtree: true });
 addEventListener("resize", refreshScrollRows);
 refreshScrollRows();
+
+/* Width debugger (Alex, 2026-11-22: "still something where width of child elements somewhere
+   is more than 100% of the width"). Open the app with ?wide on the address: every element
+   reaching past the right edge of the screen, outside a box that scrolls sideways on purpose,
+   gets a red outline and is listed at the bottom, re-checked every 2 seconds. */
+if (/[?&]wide\b/.test(location.search)) {
+  const scrolls = (el) => {
+    for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+      const o = getComputedStyle(a).overflowX;
+      if ((o === "auto" || o === "scroll") && a.scrollWidth > a.clientWidth) return true;
+    }
+    return false;
+  };
+  const label = (e) => {
+    const cls = [...e.classList].filter((c) => c !== "wide-dbg").slice(0, 3).join(".");
+    const box = e.getBoundingClientRect();
+    return `${e.tagName.toLowerCase()}${e.id ? `#${e.id}` : ""}${cls ? `.${cls}` : ""} · w ${Math.round(box.width)} · right ${Math.round(box.right)}`;
+  };
+  const panel = document.createElement("pre");
+  panel.id = "wide-dbg-panel";
+  panel.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:9999;max-height:40vh;overflow:auto;margin:0;padding:8px;background:#111;color:#0f0;font:11px/1.35 ui-monospace,monospace;white-space:pre-wrap";
+  document.body.appendChild(panel);
+  const check = () => {
+    const W = document.documentElement.clientWidth;
+    document.querySelectorAll(".wide-dbg").forEach((e) => { e.classList.remove("wide-dbg"); e.style.outline = ""; });
+    const wide = [...document.querySelectorAll("body *")].filter((e) => {
+      if (e === panel || panel.contains(e) || !e.getClientRects().length) return false;
+      const b = e.getBoundingClientRect();
+      return b.width > 0 && b.right > W + 1 && !scrolls(e);
+    });
+    // The outermost ones are the cause; their children just come along.
+    const roots = wide.filter((e) => !wide.some((o) => o !== e && o.contains(e)));
+    roots.forEach((e) => { e.classList.add("wide-dbg"); e.style.outline = "2px solid red"; });
+    panel.textContent = `screen ${W}px · page ${document.documentElement.scrollWidth}px · ${location.hash || "#"}\n` + (roots.length ? roots.slice(0, 15).map(label).join("\n") : "nothing wider than the screen");
+  };
+  setInterval(check, 2000);
+  setTimeout(check, 800);
+}
