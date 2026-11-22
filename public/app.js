@@ -552,10 +552,33 @@ function inRockMoves(flags) {
    them so its easy to use and filter and only the highest priority things are done first").
    The filter row is what to do; every row says it; Do first is the top three by priority.
    Tidy-ups live on Cleaning › Tidy-ups, linked from the bottom. */
-const QUEUE_KINDS = [["", "All"], ["reply", "Reply"], ["decide", "Decide"], ["nudge", "Nudge"], ["due", "Due dates"], ["org", "Rock setup"], ["other", "Other"]];
+/* Nudges are split by what the nudge is about, not one Nudge tab (Alex, 2026-11-22: "I'd
+   rather break it into its sub categories in the nav like rock setup"). "nudge" still works
+   as a filter for every nudge at once (Start here's "nudges to send" opens on it). */
+const NUDGE_KINDS = {
+  "nextstep.carried_over": "carried",
+  "clickup.stalled": "stalled",
+  "clickup.stale_in_status": "stalled",
+  "nextstep.idle": "idle",
+  "nextstep.question_unanswered": "unanswered",
+  "nextstep.bounced_back": "bounced",
+};
+const QUEUE_KINDS = [
+  ["", "All"], ["reply", "Reply"], ["decide", "Decide"],
+  ["carried", "Carried over"], ["stalled", "No movement"], ["idle", "Nothing started"], ["unanswered", "Unanswered"], ["bounced", "Bounced back"], ["nudge-other", "Other nudges"],
+  ["due", "Due dates"], ["org", "Rock setup"], ["other", "Other"],
+];
+const NUDGE_TABS = new Set(["carried", "stalled", "idle", "unanswered", "bounced", "nudge-other"]);
 const ACTION_LABEL = { reply: "Reply", decide: "Decide", nudge: "Nudge" };
 /** What a flag is, as the filter row names it: its tier when low (due dates, rock setup), else what to do. */
-const actionKey = (f) => (tierOf(f) !== "high" ? tierOf(f) : ACTION_LABEL[nextActionOf(f)] ? nextActionOf(f) : "other");
+const actionKey = (f) => {
+  if (tierOf(f) !== "high") return tierOf(f);
+  const act = nextActionOf(f);
+  if (act === "nudge") return NUDGE_KINDS[f.rule] ?? "nudge-other";
+  return ACTION_LABEL[act] ? act : "other";
+};
+/** Whether a flag is in a kind filter; "nudge" means any nudge. */
+const kindMatches = (f, k) => !k || (k === "nudge" ? NUDGE_TABS.has(actionKey(f)) : actionKey(f) === k);
 const QUEUE_VIEWS = [["open", "Open"], ["waiting", "Waiting"], ["parked", "Handled"]];
 queue.f = { view: "open", kind: "", person: "", area: "", q: "" };
 const queueFiltered = () => Boolean(queue.f.kind || queue.f.person || queue.f.area || queue.f.q.trim());
@@ -792,7 +815,7 @@ function renderTopThree(flags) {
   const f = queue.f;
   const pool = queuePool(flags, f.view, covered);
   const base = pool.filter((x) => queueMatches(x, { kind: false }));
-  const shownFlags = base.filter((x) => !f.kind || actionKey(x) === f.kind);
+  const shownFlags = base.filter((x) => kindMatches(x, f.kind));
   const openPool = f.view === "open" ? pool : queuePool(flags, "open", covered);
   queue.lines = openPool.length;
   queue.p1 = openPool.filter((x) => x.severity === "p1").length;
@@ -827,11 +850,14 @@ function renderTopThree(flags) {
     ${queueFiltered() ? `<button type="button" class="link-btn" data-qf-clear>Clear</button>` : ""}`;
 
   // The kinds are the third row of the nav, so they stay in reach while scrolling.
-  $("kindtabs").innerHTML = QUEUE_KINDS
+  // Opened on every nudge at once (from Start here): that shows as its own tab until changed.
+  const kinds = f.kind === "nudge" ? [...QUEUE_KINDS.slice(0, 3), ["nudge", "All nudges"], ...QUEUE_KINDS.slice(3)] : QUEUE_KINDS;
+  $("kindtabs").innerHTML = kinds
     .map(([k, l]) => {
-      const n = k ? base.filter((x) => actionKey(x) === k).length : base.length;
+      const n = base.filter((x) => kindMatches(x, k)).length;
       if (k && !n && f.kind !== k) return "";
-      return `<button type="button" class="kindtab ${k || "all"}${f.kind === k ? " on" : ""}" aria-pressed="${f.kind === k}" data-qf-kind="${k}">${esc(l)} <span>${esc(n)}</span></button>`;
+      const tone = NUDGE_TABS.has(k) || k === "nudge" ? " nudge" : "";
+      return `<button type="button" class="kindtab ${k || "all"}${tone}${f.kind === k ? " on" : ""}" aria-pressed="${f.kind === k}" data-qf-kind="${k}">${esc(l)} <span>${esc(n)}</span></button>`;
     })
     .join("");
 

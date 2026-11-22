@@ -1768,3 +1768,4 @@ input, select, textarea, button { max-width: 100%; }
   input, select, textarea { font-size: 16px !important; }
   main { overflow-x: clip; }
 }
+.kindtab.nudge { color: var(--link); }
