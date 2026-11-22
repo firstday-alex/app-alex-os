@@ -246,6 +246,7 @@ function renderAllFlags({ rebuildTools = false } = {}) {
   // Start here re-ranks as flags are handled; the tab badges follow it.
   renderStart();
   renderMetrics();
+  if (!$("view-donehygiene")?.classList.contains("hidden")) renderDoneHygiene();
 }
 
 /* -------------------------------- rule check --------------------------------
@@ -552,11 +553,20 @@ const queueFiltered = () => Boolean(queue.f.kind || queue.f.person || queue.f.ar
 /** Every flag in a pile, ranked: P1, P2 and decisions by priority, then tidy-ups by age. */
 /* Flags whose fix is a field on a ticket live on Ticket Hygiene, not in Your queue (Alex,
    2026-11-22: "let's put no rock under hygiene"). */
-const HYGIENE_RULES = new Set(["crosslayer.no_big_swing"]);
+/* Due dates too (Alex, 2026-11-22: "due dates should go under ticket hygiene"): overdue, due
+   and not started, and in progress with no date, each set from a date picker there. */
+const HYGIENE_RULES = new Set(["crosslayer.no_big_swing", "nextstep.no_due_date", "nextstep.overdue", "nextstep.due_not_started"]);
+const DUE_GROUPS = [["nextstep.overdue", "Overdue"], ["nextstep.due_not_started", "Due soon, not started"], ["nextstep.no_due_date", "In progress, no due date"]];
+/** Open due-date flags about an open ticket, most overdue first. */
+function dueFlags() {
+  return (state.report?.flags ?? [])
+    .filter((f) => DUE_GROUPS.some(([r]) => r === f.rule) && viewOf(f) === "open" && flagTask(f))
+    .sort((a, b) => (b.values?.daysOver ?? 0) - (a.values?.daysOver ?? 0) || (a.values?.daysLeft ?? 99) - (b.values?.daysLeft ?? 99));
+}
 /** Open "no ROCK" flags, one per person, with the tickets still to place. */
 function noRockPeople() {
   return rankedFlags(state.report?.flags ?? [])
-    .filter((f) => HYGIENE_RULES.has(f.rule))
+    .filter((f) => f.rule === "crosslayer.no_big_swing")
     .map((f) => ({ flag: f, name: f.subject?.label ?? "Someone", tickets: ticketsWithoutRock(f) }))
     .filter((p) => p.tickets.length);
 }
@@ -2984,6 +2994,33 @@ function hygieneRow(t, control, extra = "") {
   </div>`;
 }
 
+/** Due dates: overdue, due and not started, no date; set a date or open the card to nudge. */
+const hygOpen = new Set();
+function dueHtml() {
+  const list = dueFlags();
+  if (!list.length) return `<p class="sub">No open ticket is overdue, due soon without being started, or in progress without a due date.</p>`;
+  const extra = (f) => {
+    const v = f.values ?? {};
+    if (f.rule === "nextstep.overdue") return ` · ${esc(plural(v.daysOver ?? 0, "day", "days"))} overdue · ${esc(v.status ?? "")}`;
+    if (f.rule === "nextstep.due_not_started") return ` · due ${v.daysLeft === 0 ? "today" : v.daysLeft === 1 ? "tomorrow" : `in ${esc(v.daysLeft)} days`}, not started`;
+    return " · in progress";
+  };
+  return DUE_GROUPS.map(([rule, label]) => {
+    const group = list.filter((f) => f.rule === rule);
+    if (!group.length) return "";
+    return `<div class="flag ${rule === "nextstep.overdue" ? "sev-p1" : rule === "nextstep.due_not_started" ? "sev-attention" : "sev-info"} sp-drift">
+      <p class="msg"><strong>${esc(label)}</strong> <span class="meta">${esc(group.length)}</span></p>
+      ${group
+        .map((f) => {
+          const t = flagTask(f);
+          const more = `<button type="button" class="ghost sm" data-hyg-card="${esc(f.id)}">${hygOpen.has(f.id) ? "Close" : canNudge(f) ? "Nudge…" : "More"}</button>`;
+          return hygieneRow(t, `${dueFix(f)}${more}`, extra(f)) + (hygOpen.has(f.id) ? `<div class="q-opened">${flagCard(f)}</div>` : "");
+        })
+        .join("")}
+    </div>`;
+  }).join("");
+}
+
 /** Open sprint work with no ROCK, per person: pick a rock for a ticket and Set. */
 function noRockHtml() {
   const people = noRockPeople();
@@ -3063,17 +3100,20 @@ function renderDoneHygiene() {
   const kept = keptDrift();
   const counts = {
     norock: noRockPeople().length,
+    due: dueFlags().length,
     assignees: drift.tickets == null ? "…" : drift.tickets.filter((t) => !kept.has(driftKey(t))).length,
     rocks: needsRock().length,
     tactics: needsTactic().length,
   };
-  if (!hygieneTab) hygieneTab = counts.norock ? "norock" : "assignees";
-  const tabs = [["norock", "No ROCK (open)"], ["assignees", "Done: assignees"], ["rocks", "Done: ROCK"], ["tactics", "Done: TACTIC"]]
+  if (!hygieneTab) hygieneTab = counts.norock ? "norock" : counts.due ? "due" : "assignees";
+  const tabs = [["norock", "No ROCK (open)"], ["due", "Due dates"], ["assignees", "Done: assignees"], ["rocks", "Done: ROCK"], ["tactics", "Done: TACTIC"]]
     .map(([id, label]) => `<button type="button" role="tab" class="ghost dod-window${id === hygieneTab ? " on" : ""}" aria-selected="${id === hygieneTab}" data-hyg-tab="${id}">${esc(label)} <span class="meta">${esc(counts[id])}</span></button>`)
     .join("");
   const body =
     hygieneTab === "norock"
       ? noRockHtml()
+      : hygieneTab === "due"
+      ? dueHtml()
       : hygieneTab === "rocks"
       ? rocksHtml()
       : hygieneTab === "tactics"
@@ -3085,6 +3125,13 @@ function renderDoneHygiene() {
 }
 
 document.addEventListener("click", async (event) => {
+  const card = event.target.closest("[data-hyg-card]");
+  if (card) {
+    const id = card.dataset.hygCard;
+    hygOpen.has(id) ? hygOpen.delete(id) : hygOpen.add(id);
+    renderDoneHygiene();
+    return;
+  }
   const tab = event.target.closest("[data-hyg-tab]");
   if (tab) {
     hygieneTab = tab.dataset.hygTab;
@@ -3244,7 +3291,7 @@ function startItems() {
   if (!state.report) return [];
   const items = [];
   const add = (x) => items.push(x);
-  const open = rankedFlags(state.report.flags ?? []);
+  const open = rankedFlags(state.report.flags ?? []).filter((f) => !HYGIENE_RULES.has(f.rule));
   const by = (fn) => open.filter(fn);
   const now = new Date();
 
@@ -3281,6 +3328,12 @@ function startItems() {
   const changed = (drift.tickets ?? []).filter((t) => !kept.has(driftKey(t))).length;
   const noRock = needsRock().length;
   const noTactic = needsTactic().length;
+  const dues = dueFlags();
+  if (dues.length) {
+    const n = (r) => dues.filter((f) => f.rule === r).length;
+    const bits = DUE_GROUPS.map(([r, l]) => (n(r) ? `${n(r)} ${l.toLowerCase()}` : "")).filter(Boolean);
+    add({ score: n("nextstep.overdue") ? 62 : 28, group: "team", tone: n("nextstep.overdue") ? "warn" : "", text: `Due dates: ${bits.join(", ")}`, detail: "Set a new date in ClickUp, or nudge the owner, on Ticket Hygiene › Due dates.", go: { view: "donehygiene", hyg: "due" } });
+  }
   const openNoRock = noRockPeople();
   if (openNoRock.length) add({ score: 72, group: "team", tone: "bad", text: `No ROCK on any open ticket: ${openNoRock.map((p) => String(p.name).split(/\s+/)[0]).join(", ")}`, detail: "Pick a rock for their main ticket on Ticket Hygiene › No ROCK.", go: { view: "donehygiene", hyg: "norock" } });
   const parts = [changed && `${plural(changed, "changed hands", "changed hands")}`, noRock && `${noRock} without a live ROCK`, noTactic && `${noTactic} without a TACTIC`].filter(Boolean);
@@ -7170,7 +7223,7 @@ function pageCounts(items) {
   const open = rankedFlags(state.report.flags ?? []);
   const kept = keptDrift();
   const openNoRock = noRockPeople().length;
-  const hygiene = (drift.tickets ?? []).filter((t) => !kept.has(driftKey(t))).length + needsRock().length + needsTactic().length + openNoRock;
+  const hygiene = (drift.tickets ?? []).filter((t) => !kept.has(driftKey(t))).length + needsRock().length + needsTactic().length + openNoRock + dueFlags().length;
   const people = sprintPeopleAttention().filter((p) => p.attention.score >= 50).length;
   const offCourse = open.filter((f) => f.rule === "leadership.rock_off_course").length;
   const wins = items.some((x) => x.go.view === "thisweek");
@@ -7515,7 +7568,7 @@ function unblockFlags() {
    ones the queue's Tidy-ups filter shows, oldest first. */
 function tidyFlags() {
   return (state.report?.flags ?? [])
-    .filter((f) => viewOf(f) === "open" && !isContextFlag(f) && !UNBLOCK_RULES.has(f.rule) && (f.severity === "info" || nextActionOf(f) === "fix"))
+    .filter((f) => viewOf(f) === "open" && !isContextFlag(f) && !UNBLOCK_RULES.has(f.rule) && !HYGIENE_RULES.has(f.rule) && (f.severity === "info" || nextActionOf(f) === "fix"))
     .sort((a, b) => (b.openDays ?? 0) - (a.openDays ?? 0));
 }
 function tidyList(list) {

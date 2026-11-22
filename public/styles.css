@@ -1728,3 +1728,6 @@ details.section:not([open]) > summary { margin-bottom: 10px; }
 .can-left { -webkit-mask-image: linear-gradient(to right, transparent, #000 32px); mask-image: linear-gradient(to right, transparent, #000 32px); }
 .can-left.can-right { -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
 @media (max-width: 640px) { #tabs { flex: 1 1 0; } }
+
+.sp-drift-row .due-fix { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; padding: 0; border: 0; background: none; }
+.sp-drift-row .due-fix > .meta:not(.due-msg) { display: none; }
