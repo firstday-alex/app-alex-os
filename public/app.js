@@ -3222,7 +3222,7 @@ function startItems() {
   const nudges = by((f) => nextActionOf(f) === "nudge");
   if (nudges.length) add({ score: 45, group: "team", tone: "", text: `${plural(nudges.length, "nudge", "nudges")} to send`, detail: shortCalls(nudges), go: { view: "readout", ns: "nudge" } });
   const fixes = by((f) => nextActionOf(f) === "fix");
-  if (fixes.length) add({ score: 25, group: "team", tone: "", text: `${plural(fixes.length, "ticket", "tickets")} to fix (missing fields)`, detail: "Tidy when there is time.", go: { view: "readout", ns: "fix" } });
+  if (fixes.length) add({ score: 25, group: "team", tone: "", text: `${plural(fixes.length, "ticket", "tickets")} to fix (missing fields)`, detail: "Tidy when there is time.", go: { view: "cleaning" } });
   const rest = by((f) => !nextActionOf(f) && f.severity !== "p1" && f.rule !== "leadership.rock_off_course").length;
   if (rest > 0) add({ score: 20, group: "team", tone: "", text: `${plural(rest, "other item", "other items")} in Your queue`, detail: "Rocks, tests, Slack to-dos and tidy-ups, ranked.", go: { view: "readout" } });
 
@@ -3517,8 +3517,11 @@ function renderLayer2(report) {
         const w = waitingOn(t);
         if (w.tone === "bad") acts.set(w.act ?? "Ask what it needs", [...(acts.get(w.act ?? "Ask what it needs") ?? []), t.name]);
       }
-      const actChips = [...acts].map(([act, names]) => `<span class="chip sp-act" title="${esc(names.join("\n"))}">${esc(act)}${names.length > 1 ? ` ×${names.length}` : ""}</span>`).join("");
-      const reasons = (g.attention?.reasons ?? []).map((r) => `<span class="chip sp-att sp-att-${esc(r.tone)}" title="${esc(r.why)}">${esc(r.text)}</span>`).join("");
+      // Each chip opens What needs you › Next steps for this person: the signal here, the
+      // action there (Alex, 2026-11-22: one home per thing).
+      const toNs = g.personId ? ` data-ns-person="${esc(g.title)}" role="link" tabindex="0"` : "";
+      const actChips = [...acts].map(([act, names]) => `<span class="chip sp-act"${toNs} title="${esc(`${names.join("\n")}\n\nOpen ${g.title}'s next steps`)}">${esc(act)}${names.length > 1 ? ` ×${names.length}` : ""}</span>`).join("");
+      const reasons = (g.attention?.reasons ?? []).map((r) => `<span class="chip sp-att sp-att-${esc(r.tone)}"${toNs} title="${esc(`${r.why} Open ${g.title}'s next steps.`)}">${esc(r.text)}</span>`).join("");
       return `<section class="sp-group${sprintDetail ? "" : " sp-compact"}${g.attention?.score >= 50 ? " sp-group-flag" : ""}">
         <div class="sp-group-head"><h3>${esc(g.title)}</h3><span class="meta">${esc(plural(g.tasks.length, "ticket", "tickets"))}</span>${actChips}${reasons}
           ${g.personId ? `<span class="grow"></span><a class="meta" href="#people/${encodeURIComponent(g.personId)}">1:1 prep →</a>` : ""}</div>
@@ -3532,7 +3535,7 @@ function renderLayer2(report) {
     <p class="sp-stats">${tiles}</p>
     <div class="bar sp-bar">
       <div class="dod-windows" role="group" aria-label="Group by">
-        ${[["person", "By person"], ["stage", "By what it waits on"]].map(([id, label]) => `<button type="button" class="ghost dod-window${id === sprintGroup ? " on" : ""}" data-sprint-group="${id}" aria-pressed="${id === sprintGroup}">${esc(label)}</button>`).join("")}
+        ${[["person", "By person"], ["stage", "By status"]].map(([id, label]) => `<button type="button" class="ghost dod-window${id === sprintGroup ? " on" : ""}" data-sprint-group="${id}" aria-pressed="${id === sprintGroup}">${esc(label)}</button>`).join("")}
       </div>
       ${sprintGroup === "person" ? `<div class="dod-windows" role="group" aria-label="Detail">${[[false, "Titles"], [true, "Full detail"]].map(([on, label]) => `<button type="button" class="ghost dod-window${on === sprintDetail ? " on" : ""}" data-sprint-detail="${on}" aria-pressed="${on === sprintDetail}">${esc(label)}</button>`).join("")}</div>` : ""}
       ${swingSelect}
@@ -3549,10 +3552,6 @@ function renderLayer2(report) {
     <p class="meta sp-actions-note">What to do about these (reply, decide, nudge, fix) is in <a href="#readout" data-start-go="readout" data-start-ns="">What needs you → Next steps</a>.</p>
     ${groupHtml || `<p class="sub">${sprintFilter ? `Nobody right now: ${esc(SPRINT_FILTERS.find((f) => f.id === sprintFilter)?.why ?? "")}` : "Nothing open on the sprint."}</p>`}
     ${delta.hasBaseline ? "" : `<div class="note"><strong>First run.</strong> There is no previous snapshot, so there is no day over day comparison yet.</div>`}
-    <details class="section">
-      <summary><h2>Done this week</h2><span class="sec-count">${esc(doneThisWeek.length)}</span></summary>
-      ${doneThisWeek.length ? doneThisWeek.map((t) => ticketRow(t)).join("") : `<p class="sub">Nothing in done (this sprint) yet.</p>`}
-    </details>
     <details class="section">
       <summary><h2>What changed</h2><span class="sec-count">${esc(delta.counts?.changed ?? 0)}</span></summary>
       <div class="dod-windows" role="group" aria-label="Compare against">
@@ -3580,8 +3579,10 @@ const NEXT_ACTIONS = [
   { id: "reply", label: "Reply", sub: "Waiting on you. Start here.", show: 5 },
   { id: "decide", label: "Decide", sub: "A call on the sprint.", show: 3 },
   { id: "nudge", label: "Nudge", sub: "Ask whoever is doing it.", show: 3 },
-  { id: "fix", label: "Fix the ticket", sub: "Missing fields. Tidy when there is time.", show: 0 },
 ];
+// Fix (missing fields) is not a Next steps tab: it lives on Cleaning › Tidy-ups, the one home
+// for tidying (Alex, 2026-11-22).
+const NS_IDS = new Set(NEXT_ACTIONS.map((a) => a.id));
 const RULE_ACTION = {
   "clickup.stalled": "nudge",
   "clickup.stale_in_status": "nudge",
@@ -3602,14 +3603,16 @@ function nextActionOf(flag) {
 
 /* Next steps on What needs you (moved from Sprint Management 2026-11-22): the same compact rows as Your queue, grouped by what to
    do (reply, decide, nudge, fix), with tabs to show one kind. A row opens to the full card. */
-const ns = { action: "", open: new Set(), all: new Set() };
+const ns = { action: "", person: "", open: new Set(), all: new Set() };
 const NS_ROWS = 6;
 
 function renderNextSteps() {
   const root = $("next-steps");
   if (!root) return;
-  const all = (state.report?.flags ?? []).filter((f) => nextActionOf(f));
-  const open = all.filter((f) => viewOf(f) === "open");
+  const all = (state.report?.flags ?? []).filter((f) => NS_IDS.has(nextActionOf(f)));
+  // One person's actions, from a chip on Sprint Management.
+  const forPerson = (f) => !ns.person || [...flagContext(f).owners, f.values?.who, f.subject?.label].some((n) => n && isPerson(String(n), { name: ns.person }));
+  const open = all.filter((f) => viewOf(f) === "open" && forPerson(f));
   const handled = all.length - open.length;
   const sev = { p1: 0, attention: 1, prompt: 2, info: 3 };
 
@@ -3635,8 +3638,11 @@ function renderNextSteps() {
   $("next-steps-count").textContent = total ? `${total} open` : "nothing open";
   if (ns.action && !groups.some((g) => g.a.id === ns.action)) ns.action = "";
 
+  const personBar = ns.person
+    ? `<p class="ns-person">Showing <strong>${esc(ns.person)}</strong>'s sprint actions <button type="button" class="ghost sm" data-ns-person="">Show everyone</button></p>`
+    : "";
   if (!total) {
-    root.innerHTML = `<div class="glass ns-glass"><p class="sub">Nothing to do on the sprint right now.${handled ? ` ${esc(plural(handled, "handled item is", "handled items are"))} under Handled in Your queue (Today).` : ""}</p></div>`;
+    root.innerHTML = `<div class="glass ns-glass">${personBar}<p class="sub">${ns.person ? `Nothing to do for ${esc(ns.person)} right now.` : "Nothing to do on the sprint right now."}${handled ? ` ${esc(plural(handled, "handled item is", "handled items are"))} under Handled in Your queue (Today).` : ""}</p></div>`;
     return;
   }
   const tabs = `<div class="q-kinds ns-tabs" role="group" aria-label="Show">
@@ -3661,8 +3667,24 @@ function renderNextSteps() {
       </section>`;
     })
     .join("");
-  root.innerHTML = `<div class="glass ns-glass">${tabs}${sections}${handled ? `<p class="meta ns-handled">${esc(plural(handled, "handled item is", "handled items are"))} under Handled in Your queue (Today).</p>` : ""}</div>`;
+  root.innerHTML = `<div class="glass ns-glass">${personBar}${tabs}${sections}${handled ? `<p class="meta ns-handled">${esc(plural(handled, "handled item is", "handled items are"))} under Handled in Your queue (Today).</p>` : ""}</div>`;
 }
+
+document.addEventListener("click", (event) => {
+  const chip = event.target.closest("[data-ns-person]");
+  if (!chip) return;
+  ns.person = chip.dataset.nsPerson;
+  ns.action = "";
+  renderNextSteps();
+  if (!chip.closest("#next-steps")) {
+    location.hash = "readout";
+    const sec = $("sec-next");
+    if (sec) {
+      sec.open = true;
+      setTimeout(() => sec.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    }
+  }
+});
 
 document.addEventListener("click", (event) => {
   if (!event.target.closest("#next-steps")) return;
@@ -8147,7 +8169,11 @@ function renderCleaning() {
   if (!root || $("view-cleaning")?.classList.contains("hidden")) return;
   if (!state.report) return void (root.innerHTML = `<p class="sub">Loading the readout…</p>`);
   const list = tidyFlags();
-  root.innerHTML = list.length ? `<p class="meta">${esc(plural(list.length, "tidy-up", "tidy-ups"))} open.</p>${flagRows(list)}` : `<p class="sub mv-clear">✓ Nothing to tidy. Tickets have their fields filled in.</p>`;
+  // Done tickets have their own tidying page under Team; one button gets there from here.
+  const kept = keptDrift();
+  const done = (drift.tickets ?? []).filter((t) => !kept.has(driftKey(t))).length + needsRock().length + needsTactic().length;
+  const toDone = `<a class="start-step cl-done" href="#donehygiene"><b>Done tickets: assignees, rocks and tactics →</b><span class="meta">${done ? `${esc(plural(done, "done ticket", "done tickets"))} to tidy on Done Tickets Hygiene` : "Done Tickets Hygiene: nothing to tidy"}</span></a>`;
+  root.innerHTML = toDone + (list.length ? `<p class="meta">${esc(plural(list.length, "tidy-up", "tidy-ups"))} open on open tickets.</p>${flagRows(list)}` : `<p class="sub mv-clear">✓ Nothing to tidy on open tickets. They have their fields filled in.</p>`);
 }
 
 /** Test and store flags: open ones, plus the store moves shown for context. Calls first. */

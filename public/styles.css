@@ -1667,3 +1667,9 @@ details.section:not([open]) > summary { margin-bottom: 10px; }
 .tab-badge.quiet { background: rgba(28, 43, 42, 0.18); color: var(--ink); box-shadow: none; }
 .subtab.active .tab-badge.quiet { background: rgba(255, 255, 255, 0.85); }
 .subtab .tab-badge { margin-left: 4px; }
+
+/* Sprint Management chips open that person's Next steps. */
+.sp-group [data-ns-person] { cursor: pointer; }
+.sp-group [data-ns-person]:hover { filter: brightness(0.95); text-decoration: underline; }
+.ns-person { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+.cl-done { margin: 4px 0 14px; max-width: 520px; }
