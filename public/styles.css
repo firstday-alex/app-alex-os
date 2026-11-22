@@ -1662,3 +1662,8 @@ details.section:not([open]) > summary { margin-bottom: 10px; }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   details.section, .sp-group, .start-item, .start-step, .start-clear, .dod-windows { background: rgba(250, 251, 252, 0.96); }
 }
+
+/* Page tab badges: grey when nothing in them is urgent. */
+.tab-badge.quiet { background: rgba(28, 43, 42, 0.18); color: var(--ink); box-shadow: none; }
+.subtab.active .tab-badge.quiet { background: rgba(255, 255, 255, 0.85); }
+.subtab .tab-badge { margin-left: 4px; }

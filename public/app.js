@@ -3267,6 +3267,13 @@ function standupPrep(now = new Date()) {
 }
 
 function renderStart() {
+  // The done-ticket check is the one count that needs the server; run it once per readout,
+  // whichever page is open, so the Start here list and the tab badges both have it.
+  if (state.report && drift.for !== state.report.generatedAt) {
+    drift.for = state.report.generatedAt;
+    drift.tickets = null;
+    loadDrift(state.report.generatedAt).then(() => renderStart());
+  }
   const items = startItems();
   renderTabBadges(items);
   const box = $("start-page");
@@ -3274,12 +3281,6 @@ function renderStart() {
   if (!state.report) {
     box.innerHTML = `<p class="meta">Loading the readout…</p>`;
     return;
-  }
-  // The done-ticket check is the one count that needs the server; run it once per readout.
-  if (drift.for !== state.report.generatedAt) {
-    drift.for = state.report.generatedAt;
-    drift.tickets = null;
-    loadDrift(state.report.generatedAt).then(() => renderStart());
   }
   const top = items.slice(0, START_MAX);
   const more = items.length - top.length;
@@ -3300,8 +3301,13 @@ function renderStart() {
     ${drift.tickets == null ? `<p class="meta">Still checking done tickets…</p>` : ""}`;
 }
 
-/** A count on each top tab that has something to act on; none means skip it. */
+/** A count on each top tab that has something to act on; none means skip it. Page tabs too. */
 function renderTabBadges(items) {
+  pageBadges = pageCounts(items);
+  for (const b of document.querySelectorAll("#subtabs .subtab[data-view]")) {
+    b.querySelector(".tab-badge")?.remove();
+    b.insertAdjacentHTML("beforeend", subtabBadge(b.dataset.view));
+  }
   const counts = {};
   for (const x of items) if (x.tone) counts[x.group] = (counts[x.group] ?? 0) + 1;
   for (const tab of document.querySelectorAll("#tabs .tab[data-group]")) {
@@ -7056,10 +7062,38 @@ function renderSubtabs(name) {
   const group = groupOf(name);
   $("subtabs").innerHTML = group
     ? group.pages
-        .map(([v, label]) => `<button type="button" class="subtab${v === name ? " active" : ""}" data-view="${v}" aria-current="${v === name ? "page" : "false"}">${esc(label)}</button>`)
+        .map(([v, label]) => `<button type="button" class="subtab${v === name ? " active" : ""}" data-view="${v}" aria-current="${v === name ? "page" : "false"}">${esc(label)}${subtabBadge(v)}</button>`)
         .join("")
     : "";
   $("subtabs").hidden = !group;
+}
+
+/* Page tab badges (Alex, 2026-11-22: "can we badge each submenu with alerts as well?"): how
+   many things each page has to act on, red when one of them is urgent on Start here, grey
+   otherwise; no badge when the page is clear. Worked out with Start here's items. */
+let pageBadges = {};
+function subtabBadge(view) {
+  const b = pageBadges[view];
+  if (!b?.n) return "";
+  return ` <span class="tab-badge${b.urgent ? "" : " quiet"}" title="${esc(plural(b.n, "thing", "things"))} to act on${b.urgent ? ", some urgent" : ""}">${esc(b.n)}</span>`;
+}
+
+function pageCounts(items) {
+  if (!state.report) return {};
+  const urgent = (view) => items.some((x) => x.go.view === view && x.tone === "bad");
+  const open = rankedFlags(state.report.flags ?? []);
+  const kept = keptDrift();
+  const hygiene = (drift.tickets ?? []).filter((t) => !kept.has(driftKey(t))).length + needsRock().length + needsTactic().length;
+  const people = sprintPeopleAttention().filter((p) => p.attention.score >= 50).length;
+  const offCourse = open.filter((f) => f.rule === "leadership.rock_off_course").length;
+  const wins = items.some((x) => x.go.view === "thisweek");
+  return {
+    readout: { n: open.length, urgent: urgent("readout") },
+    sprint: { n: people, urgent: urgent("sprint") },
+    donehygiene: { n: hygiene, urgent: false },
+    plan: { n: offCourse, urgent: offCourse > 0 },
+    thisweek: { n: wins ? 1 : 0, urgent: false },
+  };
 }
 
 /* --------------------------------- 1:1 prep ---------------------------------
