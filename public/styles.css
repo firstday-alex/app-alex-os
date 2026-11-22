@@ -1757,3 +1757,14 @@ main img, main video, main iframe { max-width: 100%; height: auto; }
 .q-tier-note { margin: 0 0 8px; font-size: 13px; }
 .kindtab.due { color: var(--amber-ink); }
 .kindtab.org { color: var(--muted); }
+
+/* iPhone: Safari zooms in on any text box or dropdown under 16px when tapped and stays
+   zoomed, which leaves the page wider than the screen (Alex, 2026-11-22: "the whole thing is
+   still wider than the mobile screen"). 16px stops the zoom; pinch zoom still works. No
+   control or pop-up can be wider than its space, and main clips anything that still is. */
+input, select, textarea, button { max-width: 100%; }
+#undo-toast { max-width: calc(100vw - 24px); }
+@media (max-width: 640px) {
+  input, select, textarea { font-size: 16px !important; }
+  main { overflow-x: clip; }
+}
