@@ -3260,7 +3260,7 @@ function standupPrep(now = new Date()) {
 function renderStart() {
   const items = startItems();
   renderTabBadges(items);
-  const box = $("start-here");
+  const box = $("start-page");
   if (!box || $("view-start")?.classList.contains("hidden")) return;
   if (!state.report) {
     box.innerHTML = `<p class="meta">Loading the readout…</p>`;
