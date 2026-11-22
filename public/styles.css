@@ -1528,3 +1528,7 @@ main:has(#view-speech:not(.hidden)) { max-width: 1500px; }
 .kp-photo img { width: 34px; height: 34px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
 .kp-row .dw-rank { background: transparent; font-size: 18px; }
 .kp-item .kp-photo, .kp-item .kp-photo span { flex: none; }
+
+/* Sprint Management's stale-work filters: show only the people (and tickets) each finds. */
+.sp-filters { margin: 4px 0 8px; flex-wrap: wrap; }
+.sp-filters .zero { opacity: .55; }

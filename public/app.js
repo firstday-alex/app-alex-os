@@ -2595,6 +2595,46 @@ let sprintGroup = "person";
 // By person: titles only (Alex, 2026-11-22: "condense to just title so i can see more at a
 // glance"), or the full card with chips, waits and the last comment.
 let sprintDetail = false;
+// By person, narrowed to the people (and tickets) a stale-work check finds: "" for everyone.
+let sprintFilter = "";
+
+/**
+ * The stale-work filters on the by-person board. Alex, 2026-11-22: "add filters for stale
+ * tickets instead to just auto-show only applicable people ... no ticket movement, no ticket
+ * movement + no comments + no assignee change, too much work in-progress flag, ticket rolled
+ * over flag". "Since the last working day" means before the previous working day: on Monday a
+ * ticket moved on Friday is fine, one last moved on Thursday is not. Tickets still in To do
+ * have not started, so they are not counted as stale here; the person chips say that.
+ */
+const SPRINT_FILTERS = [
+  { id: "nomove", label: "No movement", why: "In flight, and its status has not changed since before the previous working day." },
+  { id: "quiet", label: "No movement, comments or reassignment", why: "As No movement, and nobody has commented, edited it or changed who is on it since then either." },
+  { id: "wip", label: "Too much in progress", why: "The Too much in progress next step: more tickets in progress at once than the limit." },
+  { id: "rolled", label: "Rolled over", why: "The Carried over next step: open since before this sprint began." },
+];
+
+/** The ticket ids each next-step flag names, by rule, from the report's flags. */
+function flaggedTickets(rule) {
+  const ids = new Set();
+  for (const f of state.report?.flags ?? []) if (f.rule === rule) for (const t of f.values?.tickets ?? []) ids.add(String(t.id));
+  return ids;
+}
+
+/** Which open tickets each filter keeps. */
+function staleChecks(open, delta) {
+  const reassigned = new Set((delta?.changes?.assigneeChanges ?? []).map((c) => String(c.id)));
+  const inFlight = (t) => stageOf(t).id !== "start";
+  const old = staleSince;
+  const nomove = (t) => inFlight(t) && old(t.statusAge?.since ?? t.dateUpdated);
+  const wip = flaggedTickets("nextstep.too_much_in_progress");
+  const rolled = flaggedTickets("nextstep.carried_over");
+  return {
+    nomove,
+    quiet: (t) => nomove(t) && old(t.lastComment?.date ?? null) && old(t.dateUpdated) && !reassigned.has(String(t.id)),
+    wip: (t) => wip.has(String(t.id)),
+    rolled: (t) => rolled.has(String(t.id)),
+  };
+}
 // The Big Swing the board is narrowed to: "" for every ticket, NO_SWING for tickets without one.
 let sprintSwing = "";
 const NO_SWING = "__none__";
@@ -2776,6 +2816,18 @@ const stageRank = (task) => {
   return i < 0 ? STAGES.length : i;
 };
 
+/** Midnight starting the working day before today: Friday on a Saturday, Sunday or Monday. */
+function prevWorkingDayStart(now = new Date()) {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  do d.setDate(d.getDate() - 1);
+  while (d.getDay() === 0 || d.getDay() === 6);
+  return d.getTime();
+}
+
+/** Nothing since before the previous working day began (or never): stale. */
+const staleSince = (ms) => ms == null || ms < prevWorkingDayStart();
+
 /** Weekdays from `ms` to now: Friday afternoon to Monday morning is 1, not 3. */
 function workingDaysSince(ms) {
   if (!ms) return null;
@@ -2819,11 +2871,16 @@ function personAttention(open, done) {
   ];
   const last = moves.length ? Math.max(...moves) : null;
   const since = workingDaysSince(last);
-  if (open.length && (last == null || since >= 1)) {
-    add(50 + Math.min(since ?? 5, 10) * 5, last == null ? "Nothing moved this sprint" : `Nothing moved since ${new Date(last).toLocaleDateString(undefined, { weekday: "short" })}`, since == null || since >= 2 ? "bad" : "warn", last == null ? "None of their tickets has changed status this sprint." : `Last move ${new Date(last).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}.`);
+  if (open.length && staleSince(last)) {
+    add(50 + Math.min(since ?? 5, 10) * 5, last == null ? "Nothing moved this sprint" : `Nothing moved since ${new Date(last).toLocaleDateString(undefined, { weekday: "short" })}`, since == null || since >= 3 ? "bad" : "warn", last == null ? "None of their tickets has changed status this sprint." : `Last move ${new Date(last).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}.`);
   }
   const stuck = open.filter((t) => t.signal === "stalled" || stageOf(t).id === "blocked").length;
   if (stuck) add(15 * stuck, `${stuck} stalled or blocked`, "bad", "Tickets stalled in progress or blocked.");
+  const wip = flaggedTickets("nextstep.too_much_in_progress");
+  if (open.some((t) => wip.has(String(t.id)))) add(20, "Too much in progress", "warn", "More tickets in progress at once than the limit: ask which gets finished first.");
+  const rolled = flaggedTickets("nextstep.carried_over");
+  const carried = open.filter((t) => rolled.has(String(t.id))).length;
+  if (carried) add(10 * carried, `${carried} rolled over`, "warn", "Open since before this sprint began.");
   const overdue = open.filter((t) => t.dueDate && t.dueDate < Date.now()).length;
   if (overdue) add(10 * overdue, `${overdue} overdue`, "warn", "Past their ClickUp due date.");
   return { score, reasons };
@@ -2868,6 +2925,7 @@ function renderLayer2(report) {
   ].join("");
 
   let groups;
+  let filterCounts = null;
   if (sprintGroup === "stage") {
     const stalled = open.filter((t) => t.signal === "stalled" && stageOf(t).id === "work");
     groups = [
@@ -2888,16 +2946,22 @@ function renderLayer2(report) {
     }
     // Everyone who counts toward capacity gets a row, even with nothing open: that is the
     // person who most needs work.
-    if (!sprintSwing) for (const p of roster.filter((p) => p.countsTowardCapacity !== false)) if (!byId.has(String(p.clickupUserId))) byId.set(String(p.clickupUserId), { title: p.name, tasks: [] });
+    if (!sprintSwing) for (const p of roster.filter((p) => p.countsTowardCapacity !== false && String(p.clickupUserId) !== String(state.me ?? ""))) if (!byId.has(String(p.clickupUserId))) byId.set(String(p.clickupUserId), { title: p.name, tasks: [] });
     const order = (id) => {
       const i = roster.findIndex((p) => String(p.clickupUserId) === id);
       return id === "" ? 1e6 : i < 0 ? 1e5 : i;
     };
     const doneBy = (id) => doneThisWeek.filter((t) => doing(t).some((u) => String(u.id) === id));
+    // Pinned to the bottom whatever their sprint looks like (config/people.json sprintBoardLast).
+    const last = new Set(roster.filter((p) => p.sprintBoardLast).map((p) => String(p.clickupUserId)));
     groups = [...byId.entries()]
       .map(([id, g]) => ({ ...g, personId: id, attention: id === "" ? { score: 0, reasons: [] } : personAttention(g.tasks, doneBy(id)) }))
       // Who needs a look first, then the roster order.
-      .sort((a, b) => b.attention.score - a.attention.score || order(a.personId) - order(b.personId));
+      .sort((a, b) => last.has(a.personId) - last.has(b.personId) || b.attention.score - a.attention.score || order(a.personId) - order(b.personId));
+    // A stale-work filter: only the people it finds, with only the tickets it finds.
+    const checks = staleChecks(open, delta);
+    filterCounts = Object.fromEntries(SPRINT_FILTERS.map((f) => [f.id, groups.filter((g) => g.personId !== "" && g.tasks.some(checks[f.id])).length]));
+    if (sprintFilter) groups = groups.map((g) => ({ ...g, tasks: g.tasks.filter(checks[sprintFilter]) })).filter((g) => g.tasks.length);
   }
 
   const lanes = LANES.filter((l) => l.id !== "blocked" || open.some((t) => stageOf(t).id === "blocked"));
@@ -2916,7 +2980,7 @@ function renderLayer2(report) {
       .join("")}</div>`;
 
   const groupHtml = groups
-    .filter((g) => g.tasks.length || g.attention?.reasons.length)
+    .filter((g) => g.tasks.length || (!sprintFilter && g.attention?.reasons.length))
     .map((g) => {
       const urgent = g.tasks.filter((t) => waitingOn(t).tone === "bad").length;
       const reasons = (g.attention?.reasons ?? []).map((r) => `<span class="chip sp-att sp-att-${esc(r.tone)}" title="${esc(r.why)}">${esc(r.text)}</span>`).join("");
@@ -2939,7 +3003,15 @@ function renderLayer2(report) {
       ${swingSelect}
       <span class="meta">${esc(plural(open.length, "open ticket", "open tickets"))}${sprintSwing ? ` on ${esc(sprintSwing === NO_SWING ? "no Big Swing" : sprintSwing)}` : ""}${sprintGroup === "person" ? ", who needs a look first" : ", worst first"}</span>
     </div>
-    ${groupHtml || `<p class="sub">Nothing open on the sprint.</p>`}
+    ${
+      filterCounts
+        ? `<div class="dod-windows sp-filters" role="group" aria-label="Show only">
+        <button type="button" class="ghost dod-window${sprintFilter ? "" : " on"}" data-sprint-filter="" aria-pressed="${!sprintFilter}">Everyone</button>
+        ${SPRINT_FILTERS.map((f) => `<button type="button" class="ghost dod-window${f.id === sprintFilter ? " on" : ""}${filterCounts[f.id] ? "" : " zero"}" data-sprint-filter="${f.id}" aria-pressed="${f.id === sprintFilter}" title="${esc(f.why)}">${esc(f.label)} <span class="meta">${esc(filterCounts[f.id])}</span></button>`).join("")}
+      </div>`
+        : ""
+    }
+    ${groupHtml || `<p class="sub">${sprintFilter ? `Nobody right now: ${esc(SPRINT_FILTERS.find((f) => f.id === sprintFilter)?.why ?? "")}` : "Nothing open on the sprint."}</p>`}
     <details class="section ns" id="sec-next" open>
       <summary><h2>Next steps</h2><span class="sec-count" id="next-steps-count"></span></summary>
       <div id="next-steps"></div>
@@ -3089,6 +3161,12 @@ $("layer2")?.addEventListener("change", (event) => {
 });
 
 $("layer2")?.addEventListener("click", (event) => {
+  const filter = event.target.closest("[data-sprint-filter]");
+  if (filter) {
+    sprintFilter = filter.dataset.sprintFilter;
+    if (state.report) renderLayer2(state.report);
+    return;
+  }
   const detail = event.target.closest("[data-sprint-detail]");
   if (detail) {
     sprintDetail = detail.dataset.sprintDetail === "true";

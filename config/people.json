@@ -37,7 +37,8 @@
       "clickupUserId": "4378173",
       "name": "Kate Chernenko",
       "countsTowardCapacity": true,
-      "_comment": "Added 2026-10-22: Alex confirmed she is on the team."
+      "sprintBoardLast": true,
+      "_comment": "Added 2026-10-22: Alex confirmed she is on the team. sprintBoardLast: Alex, 2026-11-22: 'move Kate to the bottom always' on Sprint Management's by-person board."
     },
     {
       "clickupUserId": "87365453",
