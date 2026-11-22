@@ -3152,18 +3152,41 @@ function startItems() {
   return items.sort((a, b) => b.score - a.score);
 }
 
-/** The stand-up prep strip: before the virtual stand-up post, and before marketing at 12:30. */
+/**
+ * Alex's own stand-up post today in #ecomm-team, from the Team stand-ups read (live from
+ * Slack): its time, or null when there is none yet. There is no set time to post (Alex,
+ * 2026-11-22: "its just when i start working around 7-9am"), so the first step stays until
+ * the post is there instead of counting down to a time.
+ */
+function myStandupPostedAt() {
+  const data = standup.data;
+  if (!data || !state.alexName) return null;
+  const today = (data.days ?? []).find((d) => d.dateKey === data.today);
+  const mine = (today?.posts ?? []).find((p) => isPerson(p.name, { name: state.alexName }));
+  return mine?.postedAt ?? null;
+}
+
+/** The stand-up prep strip: the virtual stand-up post until it is posted, and marketing at 12:30. */
 function standupPrep(now = new Date()) {
+  const weekend = now.getDay() === 0 || now.getDay() === 6;
+  if (weekend) return "";
+  // Read Slack once for the page; Start here redraws when it is in.
+  if (!standup.data && !standup.loading && !standup.error) loadStandup().then(() => renderStart());
+  const posted = myStandupPostedAt();
   const mins = now.getHours() * 60 + now.getMinutes();
   const at = MARKETING_STANDUP.h * 60 + MARKETING_STANDUP.m;
-  const weekend = now.getDay() === 0 || now.getDay() === 6;
-  if (weekend || mins >= at + 30) return "";
+  const marketingOver = mins >= at + 30;
+  if (posted && marketingOver) return "";
   const left = at - mins;
   const until = left > 0 ? (left >= 60 ? `in ${Math.floor(left / 60)}h ${left % 60}m` : `in ${left} min`) : "now";
-  return `<div class="start-prep">
-    <a class="start-step" href="#mystandup"><b>Before your virtual stand-up post</b><span class="meta">1. My stand-up, then 3. Daily summary to copy</span></a>
-    <a class="start-step${left <= 45 ? " soon" : ""}" href="#speech"><b>Before marketing stand-up at 12:30</b><span class="meta">${esc(until)} · 4. Speak talking points</span></a>
-  </div>`;
+  const time = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const first = posted
+    ? `<a class="start-step done" href="#standup"><b>✓ Virtual stand-up posted</b><span class="meta">at ${esc(time(posted))} · Team stand-ups</span></a>`
+    : `<a class="start-step${standup.data ? " soon" : ""}" href="#mystandup"><b>Post your virtual stand-up</b><span class="meta">${standup.loading ? "Checking Slack… · " : standup.error ? "Could not check Slack · " : "Not posted yet today · "}1. My stand-up, then 3. Daily summary to copy</span></a>`;
+  const second = marketingOver
+    ? ""
+    : `<a class="start-step${left <= 45 ? " soon" : ""}" href="#speech"><b>Before marketing stand-up at 12:30</b><span class="meta">${esc(until)} · 4. Speak talking points</span></a>`;
+  return `<div class="start-prep">${first}${second}</div>`;
 }
 
 function renderStart() {

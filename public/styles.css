@@ -1561,3 +1561,4 @@ main:has(#view-speech:not(.hidden)) { max-width: 1500px; }
 .start-clear { display: flex; flex-direction: column; gap: 2px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .tab-badge { display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--red); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; vertical-align: 2px; }
 @media (max-width: 640px) { .start-detail { white-space: normal; } }
+.start-step.done { opacity: .65; border-style: dashed; }
