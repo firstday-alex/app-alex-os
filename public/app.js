@@ -857,8 +857,9 @@ function renderTopThree(flags) {
     ? (() => {
         const waiting = flags.filter((x) => covered.has(x.id) && UNBLOCK_RULES.has(x.rule) && viewOf(x) === "open").length;
         const rocks = flags.filter((x) => covered.has(x.id) && !UNBLOCK_RULES.has(x.rule) && viewOf(x) === "open").length;
-        const bits = [waiting ? plural(waiting, "person waiting on you", "people waiting on you") : "", rocks ? plural(rocks, "rock decision", "rock decisions") : ""].filter(Boolean);
-        return bits.length ? `<button type="button" class="q-moved" data-q-focus>${esc(bits.join(" and "))} in Your own work on Start here →</button>` : "";
+        // One short line (Alex, 2026-11-22: "condense the line ... wrapping to two lines").
+        const bits = [waiting ? `${waiting} waiting on you` : "", rocks ? plural(rocks, "rock decision", "rock decisions") : ""].filter(Boolean);
+        return bits.length ? `<button type="button" class="q-moved" data-q-focus title="In Your own work on Start here">${esc(bits.join(" · "))} → Start here</button>` : "";
       })() : "";
 
   // Filters. People and areas come from the whole pile, so a choice never hides itself.

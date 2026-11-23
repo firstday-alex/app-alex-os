@@ -1863,3 +1863,9 @@ input, select, textarea, button { max-width: 100%; }
 .q-tools .q-search-toggle { position: absolute; top: 10px; right: 0; margin: 0; }
 .q-tools .q-seg { max-width: calc(100% - 46px); }
 @media (min-width: 641px) { .q-tools .q-search-toggle + .q-search { margin-left: auto; margin-right: 44px; } }
+
+/* Your queue's header, tighter: the Start here pointer on one line, less air above the filters. */
+.q-moved { margin-top: 4px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.q-header { margin-bottom: 2px; }
+#q-moved:empty { display: none; }
+.q-tools { margin: 6px 0 4px; padding: 8px 0; }
