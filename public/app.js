@@ -8884,6 +8884,40 @@ document.addEventListener("visibilitychange", async () => {
 addEventListener("hashchange", routeFromHash);
 routeFromHash();
 
+/* Back, a floating action button bottom left (Alex, 2026-11-23: "add a back button as a
+   floating action button in bottom left per material design guidelines"). Each page visit
+   in this tab is numbered in history.state, so the button shows only when there is a page
+   here to go back to, and the browser's own back keeps the count right. On What needs you
+   with a kind open, back first returns to the chooser. */
+const backFab = $("back-fab");
+let navIdx = 0;
+function stampHistory() {
+  const idx = history.state?.navIdx;
+  if (Number.isInteger(idx)) navIdx = idx;
+  else {
+    navIdx = navIdx + (stampHistory.started ? 1 : 0);
+    try { history.replaceState({ ...(history.state ?? {}), navIdx }, ""); } catch { /* ignore */ }
+  }
+  stampHistory.started = true;
+  setTimeout(updateBackFab, 0);
+}
+const kindOpen = () => state.currentView === "readout" && queue.f.kind != null;
+function updateBackFab() {
+  if (backFab) backFab.hidden = !(navIdx > 0 || kindOpen());
+}
+stampHistory();
+addEventListener("hashchange", stampHistory);
+backFab?.addEventListener("click", () => {
+  if (kindOpen()) {
+    Object.assign(queue.f, { kind: null, person: "", area: "", q: "" });
+    renderTopThree(state.report?.flags ?? []);
+    scrollTo({ top: 0, behavior: "smooth" });
+    return updateBackFab();
+  }
+  if (navIdx > 0) history.back();
+});
+document.addEventListener("click", () => setTimeout(updateBackFab, 0));
+
 /* Sideways menus: fade the edge with more to see, let a mouse wheel scroll them, and keep the
    selected item in view. Rows are redrawn often, so they are found again after each change. */
 const HSCROLL = "#tabs, #subtabs, #kindtabs, .dod-windows, .q-seg, .flag.q-row > .q-acts";

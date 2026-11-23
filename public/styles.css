@@ -1923,3 +1923,24 @@ abbr.initials { text-decoration: none; font-weight: 600; cursor: help; }
   .dn-res > summary::after { content: " ▾"; }
   .dn-res-list { position: static !important; display: grid; gap: 2px; min-width: 0; box-shadow: none; border: 0; background: none; padding: 0 4px; }
 }
+
+/* Back FAB, Material 3 standard FAB: 56px, 16px corners, level 3 shadow, 16px from the
+   edges (plus the phone's safe area), state layer on hover and press. */
+.back-fab {
+  position: fixed; z-index: 30;
+  left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: 56px; height: 56px; padding: 0; border: 0; border-radius: 16px;
+  display: grid; place-items: center; cursor: pointer;
+  background: var(--green); color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .3), 0 4px 8px 3px rgba(0, 0, 0, .15);
+  transition: box-shadow .2s, transform .2s;
+}
+.back-fab[hidden] { display: none; }
+.back-fab::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: #fff; opacity: 0; transition: opacity .15s; }
+.back-fab:hover::after { opacity: .08; }
+.back-fab:active::after, .back-fab:focus-visible::after { opacity: .12; }
+.back-fab:hover { box-shadow: 0 2px 3px rgba(0, 0, 0, .3), 0 6px 10px 4px rgba(0, 0, 0, .15); }
+.back-fab:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.back-fab svg { position: relative; z-index: 1; }
+/* Room at the foot of the page so the button never sits over the last row. */
+main { padding-bottom: 88px; }
