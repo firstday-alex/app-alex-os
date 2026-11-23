@@ -603,7 +603,7 @@ function kindChooser(base) {
   const tone = (k) => (["reply"].includes(k) ? "high" : k === "decide" ? "decide" : NUDGE_TABS.has(k) ? "nudge" : k === "due" ? "due" : k === "org" ? "org" : "other");
   const cards = QUEUE_KINDS
     .map(([k, l]) => [k, l, base.filter((x) => kindMatches(x, k)).length])
-    .filter(([k, , n]) => k === "" || n)
+    .filter(([k, , n]) => k !== "" && n)
     .map(([k, l, n]) => `<button type="button" class="kc kc-${k === "" ? "all" : tone(k)}" data-qf-kind="${k}">
         <span class="kc-top"><b>${esc(l)}</b><span class="kc-n">${esc(n)}</span></span>
         <span class="kc-hint">${esc(KIND_HINT[k] ?? "")}</span>
@@ -846,6 +846,7 @@ function renderTopThree(flags) {
   const pool = queuePool(flags, f.view, covered);
   const base = pool.filter((x) => queueMatches(x, { kind: false }));
   const shownFlags = base.filter((x) => kindMatches(x, f.kind));
+  if (f.kind === "") f.kind = null;
   const choosing = f.view === "open" && f.kind === null && !f.person && !f.area && !f.q.trim();
   const openPool = f.view === "open" ? pool : queuePool(flags, "open", covered);
   queue.lines = openPool.length;
@@ -888,7 +889,9 @@ function renderTopThree(flags) {
       const n = base.filter((x) => kindMatches(x, k)).length;
       if (k && !n && f.kind !== k) return "";
       const tone = NUDGE_TABS.has(k) || k === "nudge" ? " nudge" : "";
-      return `<button type="button" class="kindtab ${k || "all"}${tone}${f.kind === k ? " on" : ""}" aria-pressed="${f.kind === k}" data-qf-kind="${k}">${esc(l)} <span>${esc(n)}</span></button>`;
+      // All is the chooser now (Alex, 2026-11-22: "just replace the all state with that new state").
+      const on = k === "" ? f.kind === null || f.kind === "" : f.kind === k;
+      return `<button type="button" class="kindtab ${k || "all"}${tone}${on ? " on" : ""}" aria-pressed="${on}" data-qf-kind="${k === "" ? "choose" : k}">${esc(l)} <span>${esc(n)}</span></button>`;
     })
     .join("");
 
@@ -948,7 +951,7 @@ $("start-here")?.addEventListener("click", (event) => {
     queue.f.view = v.dataset.qfView;
     if (queue.f.view === "waiting") { sched.data = null; loadScheduled(); }
   }
-  if (k) queue.f.kind = k.dataset.qfKind;
+  if (k) queue.f.kind = k.dataset.qfKind === "choose" ? null : k.dataset.qfKind;
   if (clear) {
     Object.assign(queue.f, { kind: "", person: "", area: "", q: "" });
     if ($("q-search")) $("q-search").value = "";
@@ -964,7 +967,7 @@ $("start-here")?.addEventListener("click", (event) => {
 $("kindtabs").addEventListener("click", (event) => {
   const k = event.target.closest("[data-qf-kind]");
   if (!k) return;
-  queue.f.kind = k.dataset.qfKind;
+  queue.f.kind = k.dataset.qfKind === "choose" ? null : k.dataset.qfKind;
   queue.all = false;
   renderTopThree(state.report?.flags ?? []);
   if (window.scrollY > ($("start-here")?.offsetTop ?? 0)) $("start-here")?.scrollIntoView({ block: "start" });

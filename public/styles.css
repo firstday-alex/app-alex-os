@@ -1827,3 +1827,9 @@ input, select, textarea, button { max-width: 100%; }
 .kc-nudge { border-left-color: var(--link); } .kc-nudge .kc-n { color: var(--link); }
 .kc-due { border-left-color: var(--amber-ink); } .kc-due .kc-n { color: var(--amber-ink); }
 .kc-org, .kc-other { border-left-color: rgba(28, 43, 42, 0.25); } .kc-org .kc-n, .kc-other .kc-n { color: var(--muted); }
+/* overflow-x: clip needs iOS 16+; on older iPhones it is ignored and anything too wide widens
+   the whole layout. hidden works everywhere. It goes on main, not the shell, so the sticky
+   top bar (outside main) keeps sticking. */
+@media (max-width: 640px) {
+  main { overflow-x: hidden; }
+}
