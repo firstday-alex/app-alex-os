@@ -1876,3 +1876,11 @@ input, select, textarea, button { max-width: 100%; }
 /* The Start here pointer sits under the heading, level with the big open count. */
 .q-header > div:first-child { min-width: 0; }
 .q-header .q-moved { margin-top: 6px; }
+
+/* All stays pinned at the left of the kinds row while the rest scroll under it (Alex,
+   2026-11-22: "keep the all button in the nav fixed to the left"). It needs a solid fill so
+   the other buttons do not show through, and the row only fades on the right. */
+#kindtabs > .kindtab.all { position: sticky; left: 0; z-index: 2; background: #e9eeed; box-shadow: 8px 0 10px -6px rgba(28, 43, 42, 0.25); }
+#kindtabs > .kindtab.all.on { background: var(--ink); }
+#kindtabs.can-left { -webkit-mask-image: none; mask-image: none; }
+#kindtabs.can-left.can-right { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
