@@ -1857,3 +1857,9 @@ input, select, textarea, button { max-width: 100%; }
 .q-tools:not(.searching) .q-search:placeholder-shown { display: none; }
 @media (max-width: 640px) { .q-tools.searching .q-search { flex-basis: 100%; } }
 .q-search-toggle + .q-search { margin-left: 0; }
+/* The search icon rides at the right end of the Open / Waiting / Handled row instead of
+   wrapping onto a line of its own (Alex, 2026-11-22). */
+.q-tools { position: relative; }
+.q-tools .q-search-toggle { position: absolute; top: 10px; right: 0; margin: 0; }
+.q-tools .q-seg { max-width: calc(100% - 46px); }
+@media (min-width: 641px) { .q-tools .q-search-toggle + .q-search { margin-left: auto; margin-right: 44px; } }
