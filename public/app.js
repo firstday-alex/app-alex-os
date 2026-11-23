@@ -3206,14 +3206,20 @@ function tacticsHtml() {
   if (tactics.error) return `<div class="missing">The TACTIC options could not be read: ${esc(tactics.error)}</div>`;
   const queue = state.report?.detail?.leadership?.queue ?? [];
   const label = new Map(tactics.options.map((o) => [o.id, o.label]));
-  // The ticket's own rock's tactics first, then every option.
+  /* Every tactic grouped under its rock (Alex, 2026-11-23: "more of these tactics should be
+     groupable"): the ticket's own rock first, then the other rocks in order, then any
+     tactic on no rock. A tactic shows under each rock it belongs to. */
+  const tacticIds = (r) => (r.clickupTacticOptionIds ?? []).map(String).filter((id) => label.has(id));
+  const rocksWithTactics = queue.filter((r) => tacticIds(r).length);
+  const onARock = new Set(rocksWithTactics.flatMap(tacticIds));
+  const loose = tactics.options.filter((o) => !onARock.has(String(o.id)));
+  const opt = (id) => `<option value="${esc(id)}">${esc(label.get(id))}</option>`;
   const select = (t) => {
     const rock = queue.find((r) => (r.clickupBigSwingOptionIds ?? [r.clickupBigSwingOptionId]).map(String).includes(String(t.bigSwing?.optionId ?? "")));
-    const mine = (rock?.clickupTacticOptionIds ?? []).map(String).filter((id) => label.has(id));
-    const all = tactics.options.map((o) => `<option value="${esc(o.id)}">${esc(o.label)}</option>`).join("");
-    const groups = mine.length
-      ? `<optgroup label="${esc(`On ${rock.title}`)}">${mine.map((id) => `<option value="${esc(id)}">${esc(label.get(id))}</option>`).join("")}</optgroup><optgroup label="All tactics">${all}</optgroup>`
-      : all;
+    const ordered = rock && tacticIds(rock).length ? [rock, ...rocksWithTactics.filter((r) => r !== rock)] : rocksWithTactics;
+    const groups = `${ordered
+      .map((r) => `<optgroup label="${esc(r === rock ? `${r.title} (this ticket's rock)` : r.title)}">${tacticIds(r).map(opt).join("")}</optgroup>`)
+      .join("")}${loose.length ? `<optgroup label="${ordered.length ? "Not on a rock" : "All tactics"}">${loose.map((o) => opt(String(o.id))).join("")}</optgroup>` : ""}`;
     return `<select class="sm" data-hyg-tactic="${esc(t.id)}" aria-label="TACTIC for ${esc(t.name)}"><option value="">TACTIC…</option>${groups}</select><button type="button" class="sm" data-hyg-set="tactic" data-id="${esc(t.id)}">Set</button>`;
   };
   return `<div class="flag sev-attention sp-drift">
