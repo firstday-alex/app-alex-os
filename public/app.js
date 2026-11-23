@@ -3565,6 +3565,7 @@ function renderStart() {
 /** A count on each top tab that has something to act on; none means skip it. Page tabs too. */
 function renderTabBadges(items) {
   pageBadges = pageCounts(items);
+  if (typeof phoneTitle === "function") setTimeout(phoneTitle, 0);
   for (const b of document.querySelectorAll("#subtabs .subtab[data-view]")) {
     b.querySelector(".tab-badge")?.remove();
     b.insertAdjacentHTML("beforeend", subtabBadge(b.dataset.view));
@@ -8532,6 +8533,7 @@ function showView(name) {
     queue.keepKind = false;
   }
   state.currentView = name;
+  setTimeout(phoneTitle, 0);
   for (const section of document.querySelectorAll(".view")) {
     section.classList.toggle("hidden", section.id !== `view-${name}`);
   }
@@ -8702,7 +8704,48 @@ $("drawer").addEventListener("click", (event) => {
   target.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
+/* Phones: the whole top nav is in the menu (Alex, 2026-11-22: "let's put the whole top nav
+   in hamburger menu on mobile"): each area with its badge, its pages with theirs, the open
+   page highlighted, then Resources. The top bar keeps the menu, the page's name and Refresh. */
+const phoneNav = matchMedia("(max-width: 640px)");
+function buildDrawerNav() {
+  const box = $("drawer-nav");
+  if (!box) return;
+  if (!phoneNav.matches) return void (box.innerHTML = "");
+  const current = state.currentView;
+  const groups = NAV_GROUPS.map((g) => {
+    const tab = document.querySelector(`#tabs .tab[data-group="${g.id}"]`);
+    const label = tab ? [...tab.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").trim() : g.id;
+    const badge = tab?.querySelector(".tab-badge")?.outerHTML ?? "";
+    const pages = g.pages
+      .map(([v, l]) => `<button type="button" class="nav dn-page${v === current ? " active" : ""}" data-dn-view="${esc(v)}">${esc(l)}${subtabBadge(v)}</button>`)
+      .join("");
+    return `<div class="dn-group${g.pages.some(([v]) => v === current) ? " open" : ""}"><p class="dn-label">${esc(label)}${badge}</p>${pages}</div>`;
+  }).join("");
+  const res = document.querySelector("#resources .res-list")?.innerHTML ?? "";
+  box.innerHTML = `${groups}${res ? `<details class="dn-res"><summary class="dn-label">Resources</summary><div class="res-list dn-res-list">${res}</div></details>` : ""}`;
+}
+function phoneTitle() {
+  const el = $("m-title");
+  if (!el) return;
+  const v = state.currentView;
+  const page = NAV_GROUPS.flatMap((g) => g.pages).find(([id]) => id === v)?.[1] ?? VIEW_TITLES[v] ?? v ?? "";
+  el.innerHTML = `${esc(page)}${v ? subtabBadge(v) : ""}<span class="m-title-caret" aria-hidden="true">▾</span>`;
+}
+$("m-title")?.addEventListener("click", () => openDrawer());
+$("drawer-nav")?.addEventListener("click", (event) => {
+  const b = event.target.closest("[data-dn-view]");
+  if (b) {
+    closeDrawer();
+    location.hash = b.dataset.dnView;
+    return;
+  }
+  if (event.target.closest(".dn-res-list a")) closeDrawer();
+});
+phoneNav.addEventListener("change", () => { buildDrawerNav(); phoneTitle(); });
+
 function openDrawer() {
+  buildDrawerNav();
   buildToc();
   $("drawer").classList.add("open");
   $("drawer").setAttribute("aria-hidden", "false");
