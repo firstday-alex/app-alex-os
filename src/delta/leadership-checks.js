@@ -222,7 +222,7 @@ export function leadershipChecks({ leadership, clickup = null, config, dateKey, 
         rule: "leadership.dropdown_missing_option",
         severity: "attention",
         subject: { type: "field", id: "big-swing-field", label: "Big Swing dropdown" },
-        message: `${named} ${missing.length === 1 ? "is" : "are"} linked to a ROCK option that is no longer in the ClickUp dropdown, so no ticket can ladder up to ${missing.length === 1 ? "it" : "them"}. Relink ${missing.length === 1 ? "it" : "each"} to a current Big Swing.`,
+        message: `${named} ${missing.length === 1 ? "is" : "are"} linked to a ROCK option that is no longer in the ClickUp dropdown, so no ticket can ladder up to ${missing.length === 1 ? "it" : "them"}. Relink ${missing.length === 1 ? "it" : "each"} to a current ROCK option on Planning › Rocks.`,
         values: { missing: missing.map((i) => ({ id: i.id, title: i.title, optionId: goneIds(i)[0] })) },
       });
     }

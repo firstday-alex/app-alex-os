@@ -33,7 +33,13 @@ export function linkByName(rocks, { rockOptions = [], tacticOptions = [] } = {})
       if (match) usedTactic.add(match.id);
       return { ...t, clickupTacticOptionId: match?.id ?? null, tacticMatch: match ?? null };
     });
-    const swingIds = ids([...(rockMatch ? [rockMatch.id] : []), ...(rock.clickupBigSwingOptionIds ?? [])]);
+    // A hand-set link to an option that is no longer in the dropdown is dropped: the rock is
+    // already linked by name to the current one, and the dead id would raise "linked to a
+    // ROCK option that is no longer in the dropdown" though the names match (Alex,
+    // 2026-11-22). With no options read there is nothing to check against, so all are kept.
+    const live = new Set(rockOptions.map((o) => String(o.id)));
+    const alive = (id) => !rockOptions.length || live.has(String(id));
+    const swingIds = ids([...(rockMatch ? [rockMatch.id] : []), ...(rock.clickupBigSwingOptionIds ?? [])]).filter(alive);
     return {
       ...rock,
       tactics,

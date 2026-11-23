@@ -7,7 +7,7 @@ import { linkByName, ownsTactic } from "../src/collectors/clickup-names.js";
 import { classifyTicketLink } from "../src/delta/crosslayer.js";
 
 const rocks = [
-  { id: "r1", title: "Family Bundle Builder", bau: false, clickupBigSwingOptionIds: ["old-manual"], tactics: [
+  { id: "r1", title: "Family Bundle Builder", bau: false, clickupBigSwingOptionIds: ["o-quiz", "old-manual"], tactics: [
     { id: "t1", title: "Builder V4 launch", status: "in_progress" },
     { id: "t2", title: "Old finished thing", status: "done" },
   ] },
@@ -27,12 +27,12 @@ const tacticOptions = [
 test("rocks and open tactics link to the ClickUp values that name them; the rest is listed as stale", () => {
   const { rocks: out, names } = linkByName(rocks, { rockOptions, tacticOptions });
   const fbb = out.find((r) => r.id === "r1");
-  assert.deepEqual(fbb.clickupBigSwingOptionIds, ["o-fbb", "old-manual"], "the name match first, a hand-set link kept");
+  assert.deepEqual(fbb.clickupBigSwingOptionIds, ["o-fbb", "o-quiz"], "the name match first, a live hand-set link kept, a dead one dropped");
   assert.deepEqual(fbb.clickupTacticOptionIds, ["x-v4"]);
   assert.equal(fbb.tactics.find((t) => t.id === "t2").clickupTacticOptionId, undefined, "a done tactic is not linked");
   assert.deepEqual(names.rocksUnmatched, ["Mobile App"], "a BAU rock is not expected to have a ROCK value");
   assert.deepEqual(names.tacticsUnmatched, [{ rock: "Mobile App", title: "App store listing" }]);
-  assert.deepEqual(names.staleRockOptions.map((o) => o.label), ["Quiz"], "BAU is expected work, not stale");
+  assert.deepEqual(names.staleRockOptions.map((o) => o.label), ["Quiz"], "BAU is expected work, not stale; Quiz is only hand-linked, not named");
   assert.deepEqual(names.staleTacticOptions.map((o) => o.label), ["CVR"]);
 });
 
@@ -45,4 +45,16 @@ test("a ticket with only a TACTIC set reaches its rock", () => {
   assert.equal(link.link, "bigSwing");
   assert.equal(link.linkedBy, "tactic");
   assert.equal(link.untethered, false);
+});
+
+test("a rock's dead hand-set ROCK link is dropped when its name matches a live option", () => {
+  const { rocks: out } = linkByName([{ id: "r9", title: "Upsells / Bundles 2.0", clickupBigSwingOptionIds: ["deleted-option"], tactics: [] }], {
+    rockOptions: [{ id: "o-up", label: "Upsells / Bundles 2.0" }],
+  });
+  assert.deepEqual(out[0].clickupBigSwingOptionIds, ["o-up"]);
+});
+
+test("with no ROCK options read, hand-set links are kept", () => {
+  const { rocks: out } = linkByName([{ id: "r9", title: "X", clickupBigSwingOptionIds: ["kept"], tactics: [] }], { rockOptions: [] });
+  assert.deepEqual(out[0].clickupBigSwingOptionIds, ["kept"]);
 });

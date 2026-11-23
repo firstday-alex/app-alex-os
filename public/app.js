@@ -1697,7 +1697,7 @@ function quickFix(flag) {
   // Reports from before the flag carried rock ids name rocks by title only.
   if (flag.rule === "leadership.dropdown_missing_option") {
     // A Supabase rock can hold several Big Swings through its tactics; relink in the editor.
-    if (fromSupabase()) return `<div class="quick-fix"><span class="meta">Open the rock on the Rocks tab and relink the rock or tactic whose Big Swing is gone.</span></div>`;
+    if (fromSupabase()) return `<div class="quick-fix"><span class="meta">Open the rock on Planning › Rocks and relink the rock or tactic whose ROCK option is gone.</span></div>`;
     const swings = state.rocks.bigSwingOptions ?? { available: false, options: [] };
     const current = new Set((swings.options ?? []).map((o) => String(o.id)));
     const rocks = (flag.values?.missing ?? [])
