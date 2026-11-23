@@ -3426,6 +3426,29 @@ function shortCalls(flags) {
   return parts.length > 4 ? `${parts.slice(0, 4).join(" · ")} · and ${parts.length - 4} more` : parts.join(" · ");
 }
 
+/* Replies, counted by ticket (Alex, 2026-11-22: "why does this say 2 replies only you can
+   give?"). One ticket can raise several: someone @mentioned you, it waits on your review, or
+   it is your own ticket and has stalled. Each ticket is listed once, with its reasons. */
+function replyReason(f) {
+  if (f.rule === "nextstep.reply_owed") return `${f.values?.who ?? "someone"} @mentioned you`;
+  if (f.rule === "nextstep.awaiting_you") return `waiting on you in ${f.values?.status ?? "review"}`;
+  if (f.rule === "clickup.stalled") return `yours, untouched ${f.values?.idleDays ?? "for"} days`;
+  if (f.rule === "clickup.stale_in_status") return "yours, stuck in its status";
+  return String(f.message).split(/[:.]/)[0].slice(0, 50);
+}
+function replyTickets(flags) {
+  const byTicket = new Map();
+  for (const f of flags) {
+    const s = subjectOf(f);
+    const key = s.type === "task" ? baseId(s.id) : f.id;
+    if (!byTicket.has(key)) byTicket.set(key, { name: String(s.label ?? f.values?.who ?? "").replace(/^\[[^\]]*\]\s*/, ""), why: [] });
+    const why = replyReason(f);
+    if (!byTicket.get(key).why.includes(why)) byTicket.get(key).why.push(why);
+  }
+  const parts = [...byTicket.values()].map((t) => `${t.name}: ${t.why.join(" and ")}`);
+  return { count: byTicket.size, detail: parts.length > 3 ? `${parts.slice(0, 3).join(" · ")} · and ${parts.length - 3} more` : parts.join(" · ") };
+}
+
 /** The ranked items: { score, group, tone, text, detail, go: { view, filter?, ns? } }. */
 function startItems() {
   if (!state.report) return [];
@@ -3438,7 +3461,10 @@ function startItems() {
   // Replies and sprint calls are listed together under Next steps on What needs you, by
   // action. Open goes to that group.
   const replies = by((f) => nextActionOf(f) === "reply");
-  if (replies.length) add({ score: 100, group: "team", tone: "bad", text: `${plural(replies.length, "reply", "replies")} only you can give`, detail: shortCalls(replies), go: { view: "readout", ns: "reply" } });
+  if (replies.length) {
+    const r = replyTickets(replies);
+    add({ score: 100, group: "team", tone: "bad", text: `${plural(r.count, "ticket needs", "tickets need")} you`, detail: r.detail, go: { view: "readout", ns: "reply" } });
+  }
   const decide = by((f) => nextActionOf(f) === "decide");
   if (decide.length) add({ score: 90, group: "team", tone: "bad", text: `${plural(decide.length, "sprint call", "sprint calls")} to make`, detail: shortCalls(decide), go: { view: "readout", ns: "decide" } });
 
