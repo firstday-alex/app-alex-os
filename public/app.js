@@ -580,7 +580,37 @@ const actionKey = (f) => {
 /** Whether a flag is in a kind filter; "nudge" means any nudge. */
 const kindMatches = (f, k) => !k || (k === "nudge" ? NUDGE_TABS.has(actionKey(f)) : actionKey(f) === k);
 const QUEUE_VIEWS = [["open", "Open"], ["waiting", "Waiting"], ["parked", "Handled"]];
-queue.f = { view: "open", kind: "", person: "", area: "", q: "" };
+/* kind null = not chosen yet: What needs you opens on a chooser of the kinds, each with its
+   count, rather than straight on All (Alex, 2026-11-22: "instead of opening to all I'd
+   rather show all the filter buttons on the main screen for user to choose one first"). */
+queue.f = { view: "open", kind: null, person: "", area: "", q: "" };
+const KIND_HINT = {
+  "": "Everything, ranked, with Do first on top",
+  reply: "Questions only you can answer",
+  decide: "Sprint calls to make",
+  carried: "Tickets carried over from last sprint: cut, split or re-scope",
+  stalled: "Tickets stalled or stuck in one status",
+  idle: "People with nothing in progress but work waiting",
+  unanswered: "Questions on tickets nobody has answered",
+  bounced: "Sent back from QA or deploy",
+  "nudge-other": "Other things to nudge someone about",
+  due: "Dates slipping or missing",
+  org: "Rock & tactic setup, low priority",
+  other: "Everything else",
+};
+/** The opening screen: one big button per kind that has something in it. */
+function kindChooser(base) {
+  const tone = (k) => (["reply"].includes(k) ? "high" : k === "decide" ? "decide" : NUDGE_TABS.has(k) ? "nudge" : k === "due" ? "due" : k === "org" ? "org" : "other");
+  const cards = QUEUE_KINDS
+    .map(([k, l]) => [k, l, base.filter((x) => kindMatches(x, k)).length])
+    .filter(([k, , n]) => k === "" || n)
+    .map(([k, l, n]) => `<button type="button" class="kc kc-${k === "" ? "all" : tone(k)}" data-qf-kind="${k}">
+        <span class="kc-top"><b>${esc(l)}</b><span class="kc-n">${esc(n)}</span></span>
+        <span class="kc-hint">${esc(KIND_HINT[k] ?? "")}</span>
+      </button>`)
+    .join("");
+  return `<p class="q-label">Pick what to work on</p><div class="kc-grid">${cards}</div>`;
+}
 const queueFiltered = () => Boolean(queue.f.kind || queue.f.person || queue.f.area || queue.f.q.trim());
 
 /** Every flag in a pile, ranked: P1, P2 and decisions by priority, then tidy-ups by age. */
@@ -816,6 +846,7 @@ function renderTopThree(flags) {
   const pool = queuePool(flags, f.view, covered);
   const base = pool.filter((x) => queueMatches(x, { kind: false }));
   const shownFlags = base.filter((x) => kindMatches(x, f.kind));
+  const choosing = f.view === "open" && f.kind === null && !f.person && !f.area && !f.q.trim();
   const openPool = f.view === "open" ? pool : queuePool(flags, "open", covered);
   queue.lines = openPool.length;
   queue.p1 = openPool.filter((x) => x.severity === "p1").length;
@@ -860,6 +891,11 @@ function renderTopThree(flags) {
       return `<button type="button" class="kindtab ${k || "all"}${tone}${f.kind === k ? " on" : ""}" aria-pressed="${f.kind === k}" data-qf-kind="${k}">${esc(l)} <span>${esc(n)}</span></button>`;
     })
     .join("");
+
+  if (choosing && base.length) {
+    $("q-body").innerHTML = kindChooser(base);
+    return;
+  }
 
   const close = (id) => `<button type="button" class="link-btn" data-q-open="${esc(id)}">Close</button>`;
   const row = (x) => (queue.open.has(x.id) ? `<div class="q-opened">${flagCard(x)}${close(x.id)}</div>` : queueRow(x));
@@ -3893,6 +3929,7 @@ document.addEventListener("click", (event) => {
 
 /** Open What needs you with Your queue filtered: by action ("reply", "nudge", ...) or person. */
 function showQueue({ kind = "", person = "" } = {}) {
+  queue.keepKind = true;
   const owners = new Set((state.report?.flags ?? []).flatMap((f) => flagContext(f).owners));
   const match = person ? [...owners].find((o) => isPerson(o, { name: person })) ?? person : "";
   Object.assign(queue.f, { view: "open", kind, person: match, area: "", q: "" });
@@ -8482,6 +8519,15 @@ const MOVED_VIEWS = { update: "upsu", wins: "impact", tests: "metrics" };
 
 function showView(name) {
   name = MOVED_VIEWS[name] ?? name;
+  if (name === "readout" && state.currentView !== "readout") {
+    if (!queue.keepKind) {
+      Object.assign(queue.f, { view: "open", kind: null, person: "", area: "", q: "" });
+      if ($("q-search")) $("q-search").value = "";
+      if (state.report) renderTopThree(state.report.flags ?? []);
+    }
+    queue.keepKind = false;
+  }
+  state.currentView = name;
   for (const section of document.querySelectorAll(".view")) {
     section.classList.toggle("hidden", section.id !== `view-${name}`);
   }
@@ -8824,8 +8870,13 @@ if (/[?&]wide\b/.test(location.search)) {
   panel.id = "wide-dbg-panel";
   panel.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:9999;max-height:40vh;overflow:auto;margin:0;padding:8px;background:#111;color:#0f0;font:11px/1.35 ui-monospace,monospace;white-space:pre-wrap";
   document.body.appendChild(panel);
+  // An iPhone widens the whole layout to fit anything too wide, so measuring against the
+  // page would find nothing: pin the page to the real screen width while debugging.
+  const W0 = Math.round(Math.min(screen.width, window.visualViewport?.width ?? screen.width));
+  document.documentElement.style.width = `${W0}px`;
+  document.body.style.width = `${W0}px`;
   const check = () => {
-    const W = document.documentElement.clientWidth;
+    const W = W0;
     document.querySelectorAll(".wide-dbg").forEach((e) => { e.classList.remove("wide-dbg"); e.style.outline = ""; });
     const wide = [...document.querySelectorAll("body *")].filter((e) => {
       if (e === panel || panel.contains(e) || !e.getClientRects().length) return false;
@@ -8835,7 +8886,7 @@ if (/[?&]wide\b/.test(location.search)) {
     // The outermost ones are the cause; their children just come along.
     const roots = wide.filter((e) => !wide.some((o) => o !== e && o.contains(e)));
     roots.forEach((e) => { e.classList.add("wide-dbg"); e.style.outline = "2px solid red"; });
-    panel.textContent = `screen ${W}px · page ${document.documentElement.scrollWidth}px · ${location.hash || "#"}\n` + (roots.length ? roots.slice(0, 15).map(label).join("\n") : "nothing wider than the screen");
+    panel.textContent = `screen ${W}px · layout ${document.documentElement.clientWidth}px · page ${document.documentElement.scrollWidth}px · ${location.hash || "#"}\n` + (roots.length ? roots.slice(0, 15).map(label).join("\n") : "nothing wider than the screen");
   };
   setInterval(check, 2000);
   setTimeout(check, 800);

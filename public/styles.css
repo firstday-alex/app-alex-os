@@ -1806,3 +1806,24 @@ input, select, textarea, button { max-width: 100%; }
   .sp-drift-row > * { max-width: 100%; }
   .su-grid { grid-template-columns: minmax(0, 1fr); }
 }
+/* The band behind What needs you spans the page by stretching to main's edges on phones,
+   not by a 100vw box shifted half its width, which iPhone browsers can measure wider than
+   the page and then widen the whole layout to fit. */
+@media (max-width: 1000px) {
+  .hero::before { left: -18px; right: -18px; width: auto; transform: none; }
+}
+
+/* What needs you's opening chooser: a big button per kind, coloured by tier. */
+.kc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 10px; }
+.kc { display: grid; gap: 4px; text-align: left; padding: 14px 16px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.85); background: rgba(255, 255, 255, 0.8); box-shadow: 0 2px 10px rgba(28, 43, 42, 0.06); cursor: pointer; font: inherit; color: var(--ink); border-left: 5px solid var(--line); }
+.kc:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(28, 43, 42, 0.10); }
+.kc-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.kc-top b { font-size: 16px; }
+.kc-n { font-size: 22px; font-weight: 800; line-height: 1; }
+.kc-hint { font-size: 13px; color: var(--muted); }
+.kc-all { border-left-color: var(--ink); }
+.kc-high { border-left-color: var(--red); } .kc-high .kc-n { color: var(--red); }
+.kc-decide { border-left-color: var(--amber-ink); } .kc-decide .kc-n { color: var(--amber-ink); }
+.kc-nudge { border-left-color: var(--link); } .kc-nudge .kc-n { color: var(--link); }
+.kc-due { border-left-color: var(--amber-ink); } .kc-due .kc-n { color: var(--amber-ink); }
+.kc-org, .kc-other { border-left-color: rgba(28, 43, 42, 0.25); } .kc-org .kc-n, .kc-other .kc-n { color: var(--muted); }
