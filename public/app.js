@@ -825,10 +825,9 @@ function renderTopThree(flags) {
   if (!$("q-body")) {
     host.innerHTML = `<div class="glass q-glass">
       <header class="q-header">
-        <div><h2>Your queue</h2><p class="mv-sub" id="q-sub"></p></div>
+        <div><h2>Your queue</h2><p class="mv-sub" id="q-sub"></p><div id="q-moved"></div></div>
         <div class="q-score" id="q-score"></div>
       </header>
-      <div id="q-moved"></div>
       <div class="q-tools">
         <div id="q-filters"></div>
         <button type="button" id="q-search-toggle" class="q-search-toggle" aria-label="Search the queue" title="Search the queue"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>

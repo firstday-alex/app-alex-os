@@ -1872,3 +1872,7 @@ input, select, textarea, button { max-width: 100%; }
 /* "12 items open · 2 P1" under Your queue is gone: the big open count beside it says it. */
 #q-sub { display: none; }
 .q-header h2 { margin-bottom: 0; }
+
+/* The Start here pointer sits under the heading, level with the big open count. */
+.q-header > div:first-child { min-width: 0; }
+.q-header .q-moved { margin-top: 6px; }
