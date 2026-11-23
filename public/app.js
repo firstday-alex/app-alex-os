@@ -2692,8 +2692,8 @@ function primaryAssignee(task) {
 
 /** One backlog ticket as a list line: Ready chip, link, its primary assignee. */
 function backlogLine(t) {
-  const who = primaryAssignee(t).map((p) => p.name).join(", ");
-  return `<li>${t.ready ? '<span class="chip good">Ready</span> ' : ""}${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)} <span class="meta">${esc(who || "nobody assigned")}</span></li>`;
+  const names = primaryAssignee(t).map((p) => p.name);
+  return `<li>${t.ready ? '<span class="chip good">Ready</span> ' : ""}${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)} <span class="meta">${names.length ? initialsHtml(names) : "nobody assigned"}</span></li>`;
 }
 
 /* ---------------------------------- backlog ----------------------------------
@@ -2752,17 +2752,20 @@ const QUEUED_PRIORITIES = ["urgent", "high"];
  * or high ticket queued. A zero is information for planning, not a fault, so it is
  * shown plainly rather than flagged.
  */
+/** People as initials, full name on hover (Alex, 2026-11-22: "shorten names to initials"). */
+const initialsHtml = (names) => names.map((n) => `<abbr class="initials" title="${esc(n)}">${esc(initials(n))}</abbr>`).join(", ");
+
 function coverageHtml(open) {
   const queued = open
     .filter((t) => QUEUED_PRIORITIES.includes(String(t.priority ?? "").toLowerCase()))
     .sort((a, b) => QUEUED_PRIORITIES.indexOf(a.priority) - QUEUED_PRIORITIES.indexOf(b.priority));
   const line = (t, { showRock = true, showWho = true } = {}) => {
     const rock = rockForTask(t);
-    const who = primaryAssignee(t).map((p) => p.name).join(", ");
-    const bits = [showRock ? rock?.title ?? t.bigSwing?.label ?? "no Big Swing" : null, showWho ? who || "nobody assigned" : null].filter(Boolean);
+    const names = primaryAssignee(t).map((p) => p.name);
+    const bits = [showRock ? esc(rock?.title ?? t.bigSwing?.label ?? "no ROCK") : null, showWho ? (names.length ? initialsHtml(names) : "nobody assigned") : null].filter(Boolean);
     return `<li><span class="chip${t.priority === "urgent" ? " bad" : " warn"}">${esc(t.priority)}</span> ${
       t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noreferrer">${esc(t.name)}</a>` : esc(t.name)
-    }${bits.length ? ` <span class="meta">${esc(bits.join(" · "))}</span>` : ""}</li>`;
+    }${bits.length ? ` <span class="meta">${bits.join(" · ")}</span>` : ""}</li>`;
   };
   const cell = (list, opts) => (list.length ? `<ul class="plain">${list.map((t) => line(t, opts)).join("")}</ul>` : `<span class="meta">none queued</span>`);
 
@@ -2777,14 +2780,14 @@ function coverageHtml(open) {
     }
   }
   const personRows = [...people.values()]
-    .map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(p.tasks.length)}</td><td class="wrap">${cell(p.tasks, { showWho: false })}</td></tr>`)
+    .map((p) => `<tr><td>${initialsHtml([p.name])}</td><td class="wrap">${cell(p.tasks, { showWho: false })}</td></tr>`)
     .join("");
 
   const rocks = (state.rocks?.rocks ?? []).filter((r) => r.state === "active");
   const rockRows = rocks
     .map((r) => {
       const list = queued.filter((t) => rockForTask(t)?.id === r.id);
-      return `<tr><td><a href="#rocks/${encodeURIComponent(r.id)}">${esc(r.title)}</a></td><td>${esc(list.length)}</td><td class="wrap">${cell(list, { showRock: false })}</td></tr>`;
+      return `<tr><td><a href="#rocks/${encodeURIComponent(r.id)}">${esc(r.title)}</a></td><td class="wrap">${cell(list, { showRock: false })}</td></tr>`;
     })
     .join("");
   const onNoRock = queued.filter((t) => !rockForTask(t));
@@ -2796,11 +2799,11 @@ function coverageHtml(open) {
       plural(emptyPeople, "person has", "people have"),
     )} nothing queued and ${esc(plural(emptyRocks, "rock has", "rocks have"))} nothing queued. That can be fine; it is here to plan against.</p>
     <h3>By person</h3>
-    <div class="scroll"><table><thead><tr><th>Person</th><th>Queued</th><th>Urgent and high tickets</th></tr></thead><tbody>${personRows}</tbody></table></div>
+    <div class="scroll"><table><thead><tr><th>Who</th><th>Urgent and high tickets</th></tr></thead><tbody>${personRows}</tbody></table></div>
     <h3>By rock</h3>
     ${state.rocks
-      ? `<div class="scroll"><table><thead><tr><th>Rock</th><th>Queued</th><th>Urgent and high tickets</th></tr></thead><tbody>${rockRows}${
-          onNoRock.length ? `<tr><td class="meta">On no rock</td><td>${esc(onNoRock.length)}</td><td class="wrap">${cell(onNoRock)}</td></tr>` : ""
+      ? `<div class="scroll"><table><thead><tr><th>Rock</th><th>Urgent and high tickets</th></tr></thead><tbody>${rockRows}${
+          onNoRock.length ? `<tr><td class="meta">On no rock</td><td class="wrap">${cell(onNoRock)}</td></tr>` : ""
         }</tbody></table></div>`
       : `<p class="sub">Loading the rocks…</p>`}
   </details>`;
