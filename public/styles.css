@@ -1884,3 +1884,10 @@ input, select, textarea, button { max-width: 100%; }
 #kindtabs > .kindtab.all.on { background: var(--ink); }
 #kindtabs.can-left { -webkit-mask-image: none; mask-image: none; }
 #kindtabs.can-left.can-right { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
+
+/* Header: Your queue on the left, the Start here pointer top right; no open count (Alex,
+   2026-11-22: "remove 12 open and move the 1 waiting on you to the top right"). */
+#q-score { display: none; }
+.q-header { align-items: center; }
+.q-header #q-moved { min-width: 0; max-width: 60%; }
+.q-header .q-moved { margin: 0; text-align: right; }

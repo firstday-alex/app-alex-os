@@ -825,7 +825,8 @@ function renderTopThree(flags) {
   if (!$("q-body")) {
     host.innerHTML = `<div class="glass q-glass">
       <header class="q-header">
-        <div><h2>Your queue</h2><p class="mv-sub" id="q-sub"></p><div id="q-moved"></div></div>
+        <div><h2>Your queue</h2><p class="mv-sub" id="q-sub"></p></div>
+        <div id="q-moved"></div>
         <div class="q-score" id="q-score"></div>
       </header>
       <div class="q-tools">
