@@ -534,10 +534,12 @@ function groupRow(g) {
  */
 function inRockMoves(flags) {
   const d = moves.data;
-  const unblock = new Set(flags.filter((f) => UNBLOCK_RULES.has(f.rule)).map((f) => f.id));
-  if (!d) return unblock;
+  /* Replies and reviews owed (UNBLOCK_RULES) used to be left out here for Today's moves'
+     Unblock tab. That tab is gone, so they stay in the queue under Reply, with I fixed it
+     (Alex, 2026-11-23: marked fixed, "but it still shows in start here"). */
+  if (!d) return new Set();
   const rocks = new Set([...d.picks, ...d.suggestions].filter((m) => m.source === "course").map((m) => String(m.impact?.rockId)));
-  return new Set([...unblock, ...flags.filter((f) => f.rule === "leadership.rock_off_course" && rocks.has(String(f.subject?.id ?? "").split(":")[0])).map((f) => f.id)]);
+  return new Set([...flags.filter((f) => f.rule === "leadership.rock_off_course" && rocks.has(String(f.subject?.id ?? "").split(":")[0])).map((f) => f.id)]);
 }
 
 /* The queue's filters: which pile (open, waiting, handled), what kind (P1, P2, decision,
