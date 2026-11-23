@@ -1850,3 +1850,10 @@ input, select, textarea, button { max-width: 100%; }
   .flag.q-row:not(.sched-item) > .q-acts::-webkit-scrollbar { display: none; }
   .flag.q-row:not(.sched-item) > .q-acts > * { flex: none; white-space: nowrap; }
 }
+
+/* Search behind an icon: the box shows only once the icon is tapped (or it holds text). */
+.q-search-toggle { margin-left: auto; display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border-radius: 999px; border: 1px solid rgba(28, 43, 42, 0.15); background: #fff; color: var(--ink); cursor: pointer; }
+.q-tools.searching .q-search-toggle { background: var(--ink); color: #fff; border-color: var(--ink); }
+.q-tools:not(.searching) .q-search:placeholder-shown { display: none; }
+@media (max-width: 640px) { .q-tools.searching .q-search { flex-basis: 100%; } }
+.q-search-toggle + .q-search { margin-left: 0; }

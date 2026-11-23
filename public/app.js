@@ -127,11 +127,6 @@ function render() {
   $("drawer-generated").textContent = `Pulled ${new Date(report.generatedAt).toLocaleString()}`;
 
   const banners = [];
-  if (report.mode !== "official") {
-    banners.push(
-      `<p class="meta preview-line">Live preview against the previous working day's 8 AM snapshot. The 8 AM send is still the official readout.</p>`,
-    );
-  }
   for (const missing of report.missing ?? []) {
     banners.push(
       `<div class="missing"><strong>Missing section: ${esc(missing.section)}.</strong> ${esc(missing.reason)}. The rest of this readout is complete.</div>`,
@@ -836,6 +831,7 @@ function renderTopThree(flags) {
       <div id="q-moved"></div>
       <div class="q-tools">
         <div id="q-filters"></div>
+        <button type="button" id="q-search-toggle" class="q-search-toggle" aria-label="Search the queue" title="Search the queue"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
         <input type="search" id="q-search" class="q-search" placeholder="Search the queue" aria-label="Search the queue">
       </div>
       <div id="q-body"></div>
@@ -8894,3 +8890,24 @@ if (/[?&]wide\b/.test(location.search)) {
   setInterval(check, 2000);
   setTimeout(check, 800);
 }
+
+/* Search sits behind an icon so the filters keep the space (Alex, 2026-11-22: "hide search
+   behind a search icon so we get that space back"). It stays open while it holds text. */
+document.addEventListener("click", (event) => {
+  const b = event.target.closest("#q-search-toggle");
+  if (!b) return;
+  const tools = b.closest(".q-tools");
+  const open = !tools.classList.contains("searching");
+  tools.classList.toggle("searching", open);
+  if (open) $("q-search")?.focus();
+  else if ($("q-search")?.value) {
+    $("q-search").value = "";
+    queue.f.q = "";
+    renderTopThree(state.report?.flags ?? []);
+  }
+});
+document.addEventListener("focusout", (event) => {
+  if (event.target.id !== "q-search" || event.target.value.trim()) return;
+  // Let a tap on the icon itself decide, rather than closing under it.
+  setTimeout(() => { if (document.activeElement?.id !== "q-search-toggle") event.target.closest(".q-tools")?.classList.remove("searching"); }, 150);
+});
