@@ -1899,3 +1899,4 @@ input, select, textarea, button { max-width: 100%; }
 .q-header #q-moved { flex: 1 1 auto; max-width: none; display: flex; justify-content: flex-end; }
 .q-header #q-moved .q-moved { display: block; max-width: 100%; }
 abbr.initials { text-decoration: none; font-weight: 600; cursor: help; }
+.q-acts .q-fixed { background: var(--green); color: #fff; border-color: var(--green); }

@@ -465,6 +465,7 @@ function queueRow(flag, { also = 0, who = null } = {}) {
       <span class="q-meta">${esc(meta)}</span>
       ${link ? `<span class="q-link"><a class="ql" href="${esc(link.href)}"${link.external ? ' target="_blank" rel="noreferrer"' : ""}>${esc(link.label)}${link.external ? " ↗" : ""}</a></span>` : ""}
       <span class="q-acts">
+        ${t ? "" : `<button type="button" class="sm q-fixed" data-triage="done" title="Done. Comes back if it is still true in two days.">I fixed it</button>`}
         ${comments ? `<button type="button" class="ghost sm" data-q-comment aria-expanded="false" title="The latest ClickUp comment on ${ticketsOfFlag(flag).length > 1 ? "each ticket" : "the ticket"}">Latest comment</button>` : ""}
         ${t
           ? `<button type="button" class="ghost sm" data-triage="clear">Bring back</button>`
