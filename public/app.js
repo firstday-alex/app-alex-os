@@ -468,8 +468,8 @@ function queueRow(flag, { also = 0, who = null } = {}) {
       <span class="q-sev${ACTION_LABEL[nextActionOf(flag)] ? ` q-act q-act-${esc(nextActionOf(flag))}` : ""}" title="${esc(SEV_SHORT[flag.severity] ?? flag.severity)}">${esc(ACTION_LABEL[nextActionOf(flag)] ?? SEV_SHORT[flag.severity] ?? flag.severity)}</span>
       <button type="button" class="q-msg" data-q-open="${esc(flag.id)}" title="Open the full card">${esc(flag.message)}</button>
       <span class="q-meta">${esc(meta)}</span>
+      ${link ? `<span class="q-link"><a class="ql" href="${esc(link.href)}"${link.external ? ' target="_blank" rel="noreferrer"' : ""}>${esc(link.label)}${link.external ? " ↗" : ""}</a></span>` : ""}
       <span class="q-acts">
-        ${link ? `<a class="ql" href="${esc(link.href)}"${link.external ? ' target="_blank" rel="noreferrer"' : ""}>${esc(link.label)}${link.external ? " ↗" : ""}</a>` : ""}
         ${comments ? `<button type="button" class="ghost sm" data-q-comment aria-expanded="false" title="The latest ClickUp comment on ${ticketsOfFlag(flag).length > 1 ? "each ticket" : "the ticket"}">Latest comment</button>` : ""}
         ${t
           ? `<button type="button" class="ghost sm" data-triage="clear">Bring back</button>`
@@ -8814,7 +8814,7 @@ routeFromHash();
 
 /* Sideways menus: fade the edge with more to see, let a mouse wheel scroll them, and keep the
    selected item in view. Rows are redrawn often, so they are found again after each change. */
-const HSCROLL = "#tabs, #subtabs, #kindtabs, .dod-windows, .q-seg";
+const HSCROLL = "#tabs, #subtabs, #kindtabs, .dod-windows, .q-seg, .flag.q-row > .q-acts";
 function markScroll(el) {
   const more = el.scrollWidth - el.clientWidth > 2;
   el.classList.toggle("can-left", more && el.scrollLeft > 2);

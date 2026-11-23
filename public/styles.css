@@ -1833,3 +1833,20 @@ input, select, textarea, button { max-width: 100%; }
 @media (max-width: 640px) {
   main { overflow-x: hidden; }
 }
+
+/* A queue row: the tag top left, the ticket link top right, then the buttons as one row
+   that scrolls sideways, then the text (Alex, 2026-11-22: "move click up link to top right
+   of card then the row below should be the buttons that you can scroll horizontally"). */
+.flag.q-row .q-link { grid-area: link; justify-self: end; min-width: 0; max-width: 100%; }
+.flag.q-row .q-link .ql { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.flag.q-row:not(.sched-item) { grid-template-areas: "sev msg link" "sev meta acts" "note note note"; }
+@media (max-width: 640px) {
+  .flag.q-row:not(.sched-item) { grid-template-columns: max-content minmax(0, 1fr); grid-template-areas: "sev link" "acts acts" "msg msg" "meta meta" "note note"; row-gap: 8px; }
+  .flag.q-row:not(.sched-item) .q-sev { margin-top: 0; align-self: center; }
+  .flag.q-row:not(.sched-item) > .q-acts {
+    flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; overflow-y: hidden; max-width: 100%;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; padding-bottom: 2px;
+  }
+  .flag.q-row:not(.sched-item) > .q-acts::-webkit-scrollbar { display: none; }
+  .flag.q-row:not(.sched-item) > .q-acts > * { flex: none; white-space: nowrap; }
+}
