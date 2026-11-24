@@ -46,3 +46,14 @@ test("a version is saved with its name, cleaned (photo refs only, https links on
   assert.equal(await repo.removeVersion(b, { id: one.id }), true);
   assert.equal((await repo.listVersions(b)).length, 1);
 });
+
+test("a win can be starred for a week, and a saved version keeps its star", async () => {
+  const b = memory();
+  assert.deepEqual(await repo.setWeekStar(b, { weekId: "2026-11-23", key: "tabc", star: true }), { tabc: true });
+  assert.deepEqual(await repo.weekStars(b, "2026-11-23"), { tabc: true });
+  assert.deepEqual(await repo.setWeekStar(b, { weekId: "2026-11-23", key: "tabc", star: false }), {});
+  await assert.rejects(repo.setWeekStar(b, { weekId: "2026-11-23", key: "<b>", star: true }), repo.KudosError);
+  const clean = repo.cleanWeek({ id: "2026-11-23", rocks: [{ n: "Rock", w: [{ k: "ta", t: "Starred", s: 1 }, { k: "tb", t: "Plain" }] }] });
+  assert.equal(clean.rocks[0].w[0].s, 1);
+  assert.equal(clean.rocks[0].w[1].s, undefined);
+});

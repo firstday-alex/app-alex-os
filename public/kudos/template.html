@@ -39,6 +39,21 @@ ul{padding-left:1.3em;font-size:clamp(16px,1.46vw,36px);line-height:1.35}
 .win{border-radius:6px;outline:none}
 .win .label{border-radius:6px;padding:0 .15em;transition:background .15s}
 .win .label{color:inherit;text-decoration:none}
+/* Stars (Alex, 2026-11-24): a starred win stands out and sits at the top of its rock; once any
+   win is starred, the rest are smaller, lighter and off-white. */
+.wstar{display:inline-flex;align-items:center;justify-content:center;width:.9em;height:.9em;margin:0 .3em 0 -.1em;padding:0;border:0;background:none;vertical-align:-.08em;cursor:pointer;position:relative}
+.wstar::before{content:"";position:absolute;inset:-.3em}
+.wstar[hidden]{display:none}
+.wstar:disabled{cursor:default}
+.wstar svg{width:100%;height:100%;fill:none;stroke:#f2b84b;stroke-width:1.8;stroke-linejoin:round;transition:transform .15s,fill .15s}
+.can-star .win:not(.starred) .wstar{opacity:0;transition:opacity .15s}
+.can-star .win:hover .wstar,.can-star .wstar:focus-visible{opacity:1}
+.wstar:not(:disabled):hover svg{transform:scale(1.15)}
+.wstar:focus-visible{outline:2px solid #f2b84b;outline-offset:2px;border-radius:4px}
+.win.starred .wstar svg{fill:#f2b84b}
+.win.starred .label{font-weight:800;color:#fff}
+.has-stars .win:not(.starred){font-size:.84em;font-weight:300;color:#d9d6c7}
+.has-stars .win:not(.starred) .label{color:#d9d6c7}
 .win.interactive .label{cursor:pointer}
 .win.interactive .label:hover,.win.interactive .label:focus-visible,.win.open .label{background:rgba(255,248,236,.14);outline:none}
 .win.linked .label{text-decoration:underline;text-decoration-color:rgba(242,184,75,.55);text-underline-offset:.18em;text-decoration-thickness:.06em}
@@ -136,7 +151,8 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
   // A screenshot or link saved on the published page wins over these.
   var bound=new Set();
   var SEED=/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+\/=]+$/;
-  var seedLinks={}, seedShots={}; DEFAULT.rocks.forEach(function(r){r.w.forEach(function(x){if(typeof x.u==='string'&&/^https:\/\//.test(x.u))seedLinks[x.k]=x.u;if(typeof x.i==='string'&&SEED.test(x.i))seedShots[x.k]=x.i;});});
+  var seedLinks={}, seedShots={}, seedStars={}; DEFAULT.rocks.forEach(function(r){r.w.forEach(function(x){if(x.s)seedStars[x.k]=true;if(typeof x.u==='string'&&/^https:\/\//.test(x.u))seedLinks[x.k]=x.u;if(typeof x.i==='string'&&SEED.test(x.i))seedShots[x.k]=x.i;});});
+  var stars=Object.assign({},seedStars);
   var shots=Object.assign({},seedShots), links=Object.assign({},seedLinks), linkEdit=null, dbWeeks={}, db=null, assets=null, canEdit=false, cur=DEFAULT.id;
   var active=null, pinned=false, busy=false, closeT=null, openT=null, confirmKey=null, confirmDel=false, formMode=null;
   var $=function(id){return document.getElementById(id);};
@@ -146,6 +162,20 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
   var wins=[];
   var mine={}; if(APP&&Array.isArray(APP.mine))APP.mine.forEach(function(k){mine[k]=1;});
   // May this win's photo be changed here? In Ecom OS mode only on the week it opened with.
+  // Stars can be set from Ecom OS (saved there) or on the published page (saved in its db).
+  function canStar(){return canEdit||(!!APP&&cur===DEFAULT.id);}
+  var STAR='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z"/></svg>';
+  function toggleStar(key){
+    if(!canStar()||busy)return;
+    var on=!stars[key], was=stars[key];
+    if(on)stars[key]=true; else delete stars[key];
+    renderWeek();
+    var saved=canEdit?db.doc('stars/'+key).set({on:on,at:new Date().toISOString()}):appPost(APP.api,{week:APP.week,key:key,star:on});
+    Promise.resolve(saved).catch(function(e){
+      if(was)stars[key]=true; else delete stars[key];
+      renderWeek(); hint.textContent='The star could not be saved: '+((e&&e.message)||'try again')+'.';
+    });
+  }
   function canPhoto(){return canEdit||(!!APP&&cur===DEFAULT.id);}
   function src(id){return SEED.test(id)?id:'/_blob/'+id;}
   function el(tag,cls,text){var e=document.createElement(tag); if(cls)e.className=cls; if(text!=null)e.textContent=text; return e;}
@@ -187,9 +217,13 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
       col.forEach(function(rock){
         var d=el('div','rock'); d.appendChild(el('h2',null,rock.n));
         var ul=el('ul');
-        rock.w.forEach(function(x){
+        // Starred wins first in their rock (Alex, 2026-11-24: "those should bump to the top").
+        var order=rock.w.map(function(x,i){return {x:x,i:i};}).sort(function(a,b){return (stars[b.x.k]?1:0)-(stars[a.x.k]?1:0)||a.i-b.i;}).map(function(o){return o.x;});
+        order.forEach(function(x){
           // The words are the link; only the dot opens the photo card (Alex, 2026-11-24).
-          var li=el('li','win'); li.dataset.key=x.k; li.appendChild(el('a','label',x.t));
+          var li=el('li','win'); li.dataset.key=x.k;
+          var st=el('button','wstar'); st.type='button'; st.innerHTML=STAR; st.addEventListener('click',function(e){e.stopPropagation();toggleStar(x.k);}); li.appendChild(st);
+          li.appendChild(el('a','label',x.t));
           var dot=el('button','wdot'); dot.type='button'; dot.setAttribute('aria-label','Photo and link for this win'); li.appendChild(dot);
           bindWin(li); wins.push(li); ul.appendChild(li);
         });
@@ -311,7 +345,12 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
   /* ---------- screenshots ---------- */
   function refresh(){
     var any=false;
+    var anyStar=false;
     wins.forEach(function(w){
+      var on=!!stars[w.dataset.key]; if(on)anyStar=true;
+      w.classList.toggle('starred',on);
+      var sb=w.querySelector('.wstar'); sb.hidden=!(on||canStar()); sb.disabled=!canStar();
+      sb.setAttribute('aria-pressed',String(on)); sb.setAttribute('aria-label',on?'Starred: click to unstar':'Star this win so it stands out'); sb.title=canStar()?(on?'Unstar':'Star: bump it to the top'):'Starred';
       var has=!!shots[w.dataset.key]; if(has)any=true;
       w.classList.toggle('has-shot',has);
       var url=links[w.dataset.key], a=w.querySelector('a.label');
@@ -328,6 +367,8 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
       w.querySelector('.wdot').hidden=!(has||url||canPhoto());
       if(has||url)any=true;
     });
+    document.body.classList.toggle('has-stars',anyStar);
+    document.body.classList.toggle('can-star',canStar());
     hint.textContent='';
     if(APP&&!canEdit){hint.appendChild(el('span','dot'));hint.appendChild(document.createTextNode('Hover a win’s dot to add or replace its photo. It is attached to the win’s ClickUp ticket, and the newest image on the ticket is the one this page shows.'));}
     else if(canEdit){hint.appendChild(el('span','dot'));hint.appendChild(document.createTextNode('Hover a win’s dot to add or view its screenshot or link; click its words to open the link. Use the menu at the top right to switch weeks or add a new one.'));}
@@ -541,6 +582,13 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
         var next={};
         snap.docs.forEach(function(d){var b=d.data();if(!KEY.test(d.id)||!b||typeof b.url!=='string'||b.url.length>2000)return;try{var u=new URL(b.url);if(/^https?:$/.test(u.protocol))next[d.id]=u.href;}catch(e){}});
         links=Object.assign({},seedLinks,next); refresh();
+      },function(){});
+      db.collection('stars').onSnapshot(function(snap){
+        var next={};
+        snap.docs.forEach(function(d){var b=d.data();if(KEY.test(d.id)&&b&&typeof b.on==='boolean')next[d.id]=b.on;});
+        var all=Object.assign({},seedStars,next), out={};
+        Object.keys(all).forEach(function(k){if(all[k])out[k]=true;});
+        if(JSON.stringify(out)!==JSON.stringify(stars)){stars=out;if(!formMode)renderWeek();}
       },function(){});
       var first=true;
       db.collection('weeks').onSnapshot(function(snap){

@@ -4319,6 +4319,12 @@ async function kudosImages(week, { freeze = false, say } = {}) {
   return { images, failed, fromClickUp, mine: mineKeys.length, mineKeys };
 }
 
+/** The wins starred on the kudos page this week (s: 1), so they open on top (Alex, 2026-11-24). */
+async function markStars(week) {
+  const stars = await fetch(`${FN}/kudos?week=${week.id}`).then((r) => r.json()).then((r) => r.stars ?? {}).catch(() => ({}));
+  for (const r of week.rocks) for (const x of r.w) if (stars[x.k]) x.s = 1;
+}
+
 /** Open the page in the tab opened on the click, and download it. */
 function openAndDownload(html, fileName, tab) {
   const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
@@ -4348,6 +4354,7 @@ document.addEventListener("click", async (event) => {
     const [template, monster] = await kudosAssets();
     const got = await kudosImages(week, { say: (n, of) => (note.textContent = `Gathering images (${n} of ${of})…`) });
     const withImage = addImages(week, got.images);
+    await markStars(week);
     // The tab can add and remove photos on this week's wins, saved here (Alex, 2026-11-21).
     const app = { api: new URL(`${FN}/kudos`, location.href).href, imageApi: new URL(`${FN}/kudos-image`, location.href).href, origin: location.origin, week: week.id, mine: got.mineKeys };
     openAndDownload(kudosPage(template, week, monster, app), kudosFileName(week), tab);
@@ -4403,6 +4410,7 @@ document.addEventListener("click", async (event) => {
   try {
     const got = await kudosImages(week, { freeze: true, say: (n, of) => (note.textContent = `Noting each image (${n} of ${of})…`) });
     for (const r of week.rocks) for (const x of r.w) if (got.images.has(x.k)) x.i = got.images.get(x.k);
+    await markStars(week);
     const out = await kudosPost({ save: { name, kind, week } });
     kudosRepo.versions = out.versions;
     renderKudosRepo();

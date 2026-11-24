@@ -7,6 +7,7 @@
 //   GET  /kudos?version=<id>                        one saved version
 //   POST /kudos { photo: dataUrl }                  store a photo → { id }
 //   POST /kudos { week, key, photoId|null }         put a photo on a win, or take it off
+//   POST /kudos { week, key, star: bool }           star a win so it stands out, or unstar it
 //   POST /kudos { save: { name, kind, week } }      save a version
 //   POST /kudos { rename: { id, name } }            rename a version
 //   POST /kudos { remove: id }                      take a version off the list
@@ -31,7 +32,7 @@ export default async (req) => {
         const p = await repo.getPhoto(b, q.get("photo"));
         return new Response(p.bytes, { status: 200, headers: { "content-type": p.type, "cache-control": "private, max-age=86400, immutable" } });
       }
-      if (q.get("week")) return json({ photos: await repo.weekPhotos(b, q.get("week")) });
+      if (q.get("week")) return json({ photos: await repo.weekPhotos(b, q.get("week")), stars: await repo.weekStars(b, q.get("week")) });
       if (q.get("version")) return json(await repo.getVersion(b, q.get("version")));
       return json({ versions: await repo.listVersions(b) });
     }
@@ -44,6 +45,7 @@ export default async (req) => {
       await repo.removeVersion(b, { id: body.remove });
       return json({ versions: await repo.listVersions(b) });
     }
+    if (body.week && typeof body.star === "boolean") return json({ stars: await repo.setWeekStar(b, { weekId: body.week, key: body.key, star: body.star }) });
     if (body.week) return json({ photos: await repo.setWeekPhoto(b, { weekId: body.week, key: body.key, photoId: body.photoId ?? null }) });
     return json({ error: "What should change?" }, 400);
   } catch (err) {
