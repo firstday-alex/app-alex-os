@@ -4299,13 +4299,8 @@ async function kudosImages(week, { freeze = false, say } = {}) {
         const res = await fetch(`${FN}/kudos-image?task=${encodeURIComponent(taskIdOf(key))}`, { cache: "no-store" });
         if (res.status === 204) return;
         if (res.status !== 200) return void failed++;
-        // A saved version keeps the attachment's link, not a copy (it is hosted in ClickUp).
-        const link = res.headers.get("x-image-url");
-        if (freeze && link && /^https:\/\/([a-z0-9-]+\.)*(clickup\.com|clickup-attachments\.com)\//i.test(link)) {
-          fromClickUp++;
-          images.set(key, link);
-          return;
-        }
+        // A saved version keeps a copy here: ClickUp's image links carry a one-use token that
+        // expires, so a saved link showed nothing when the version was opened (2026-11-24).
         const small = await shrinkImage(await res.blob());
         fromClickUp++;
         images.set(key, freeze ? `photo:${(await kudosPost({ photo: small })).id}` : small);
@@ -4497,10 +4492,15 @@ document.addEventListener("click", async (event) => {
     // Each image: a photo kept here, or a link to the ClickUp attachment, fetched through the
     // server (the token stays there) and put inside the page so it opens anywhere.
     const refs = week.rocks.flatMap((r) => r.w.filter((x) => /^(photo:|https:\/\/)/.test(x.i ?? "")));
+    let missing = 0;
     await fourAtATime(refs, async (x) => {
       const at = x.i.startsWith("photo:") ? `${FN}/kudos?photo=${encodeURIComponent(x.i.slice(6))}` : `${FN}/kudos-image?url=${encodeURIComponent(x.i)}`;
-      const r = await fetch(at);
-      if (r.status === 200) images.set(x.k, await asDataUrl(await r.blob()));
+      let r = await fetch(at).catch(() => null);
+      // Versions saved before 2026-11-24 kept ClickUp links, which stop working after one use:
+      // fall back to the newest image on the win's ticket.
+      if (r?.status !== 200 && !x.i.startsWith("photo:")) r = await fetch(`${FN}/kudos-image?task=${encodeURIComponent(taskIdOf(x.k))}`).catch(() => null);
+      if (r?.status === 200) images.set(x.k, await shrinkImage(await r.blob()));
+      else missing++;
     });
     for (const r of week.rocks) for (const x of r.w) delete x.i;
     addImages(week, images);
@@ -4510,7 +4510,7 @@ document.addEventListener("click", async (event) => {
       if (tab) tab.location.href = url;
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } else openAndDownload(html, kudosFileName(week, v.name), null);
-    note.textContent = "";
+    note.textContent = missing ? `${plural(missing, "image", "images")} could not be read.` : "";
   } catch (err) {
     if (note) note.textContent = `Could not: ${err.message}`;
   }

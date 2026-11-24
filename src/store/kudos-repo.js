@@ -5,8 +5,9 @@
 //   kudos/week-photos/<week>.json   which photo goes on which win that week: { [winKey]: photoId }
 //   kudos/week-stars/<week>.json    the wins starred to stand out that week: { [winKey]: true }
 //   kudos/versions.json             the saved pages: { items: { [id]: { id, name, weekId, ... } } }
-//   kudos/versions/<id>.json        one saved page's week; each image a link to the ClickUp
-//                                   attachment, or "photo:<id>" for a photo kept here
+//   kudos/versions/<id>.json        one saved page's week; each image "photo:<id>", a copy kept
+//                                   here (older versions kept ClickUp links, which expire after
+//                                   one use; the dashboard falls back to the ticket's image)
 //
 // A saved version points at the exact attachment it showed (not "the newest on the ticket"),
 // so a newer image on the ticket does not change it. Alex, 2026-11-21: "the saved kudos
