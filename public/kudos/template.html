@@ -54,6 +54,7 @@ button.btn:disabled{opacity:.5;cursor:default}
 .drop{border:2px dashed #1c6b45;border-radius:12px;padding:22px 14px;text-align:center;background:rgba(28,107,69,.07);outline:none;cursor:pointer}
 .drop:focus,.drop.over{background:rgba(242,184,75,.3);border-color:#b8431a}
 .drop b{display:block;font-size:17px;margin-bottom:4px}
+.paste-hint{margin:8px 0 0;font-size:13px;opacity:.75}
 .msg{margin-top:8px;font-size:14px;color:#b8431a;min-height:1em}
 .light{position:fixed;inset:0;z-index:50;background:rgba(4,20,14,.92);display:none;align-items:center;justify-content:center;padding:3vmin;cursor:zoom-out}
 .light.show{display:flex}
@@ -126,6 +127,7 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
   var COLORS=['#9fe0a8','#f26b3a','#f2b84b'];
   // Ecom OS puts each win's ClickUp link (u) and the newest image on its ticket (i) in the file.
   // A screenshot or link saved on the published page wins over these.
+  var bound=new Set();
   var SEED=/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+\/=]+$/;
   var seedLinks={}, seedShots={}; DEFAULT.rocks.forEach(function(r){r.w.forEach(function(x){if(typeof x.u==='string'&&/^https:\/\//.test(x.u))seedLinks[x.k]=x.u;if(typeof x.i==='string'&&SEED.test(x.i))seedShots[x.k]=x.i;});});
   var shots=Object.assign({},seedShots), links=Object.assign({},seedLinks), linkEdit=null, dbWeeks={}, db=null, assets=null, canEdit=false, cur=DEFAULT.id;
@@ -335,16 +337,18 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
       b.appendChild(im); b.onclick=function(){openLight(id);}; pop.appendChild(b);
       var row=el('div','row');
       var v=el('button','btn','View full size'); v.type='button'; v.onclick=function(){openLight(id);}; row.appendChild(v);
-      if(APP&&canPhoto()){
-        var ar=el('button','btn ghost',busy?'Uploading…':'Replace'); ar.type='button'; ar.disabled=busy; ar.title='Attaches a new photo to the ClickUp ticket; the newest image is the one shown.'; ar.onclick=pick; row.appendChild(ar);
-      } else if(canEdit&&SEED.test(id)){
-        var rp=el('button','btn ghost','Replace'); rp.type='button'; rp.disabled=busy; rp.onclick=pick; row.appendChild(rp);
-      } else if(canEdit){
+      // Replace by paste as well as by file (Alex, 2026-11-24: "all I'm trying to do is paste
+      // image to replace"): any win you can add a photo to can have it replaced.
+      if(canPhoto()){
+        var ar=el('button','btn ghost',busy?'Uploading…':'Replace'); ar.type='button'; ar.disabled=busy; ar.title=APP&&!canEdit?'Attaches a new photo to the ClickUp ticket; the newest image is the one shown.':'Choose a new image'; ar.onclick=pick; row.appendChild(ar);
+      }
+      if(canEdit&&!SEED.test(id)){
         var c=el('button','btn '+(confirmKey===key?'danger':'ghost'),confirmKey===key?'Click again to clear':'Clear screenshot'); c.type='button'; c.disabled=busy;
         c.onclick=function(){ if(confirmKey!==key){confirmKey=key;pinned=true;render();return;} clearShot(key); };
         row.appendChild(c);
       }
       pop.appendChild(row);
+      if(canPhoto()&&!busy)pop.appendChild(el('p','paste-hint','To replace it, copy an image and press Ctrl/⌘+V while this is open.'));
     } else if(canPhoto()){
       var d=el('div','drop'); d.tabIndex=0; d.setAttribute('role','button');
       d.appendChild(el('b',null,busy?'Uploading…':APP?'Add a photo':'Add a screenshot'));
@@ -399,12 +403,14 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
   function later(){clearTimeout(closeT);if(pinned||busy)return;closeT=setTimeout(closePop,300);}
   function keep(){clearTimeout(closeT);}
   function bindWin(w){
+    bound.add(w);
     w.addEventListener('mouseenter',function(){keep();clearTimeout(openT);if(pinned||busy)return;openT=setTimeout(function(){open(w);},120);});
     w.addEventListener('mouseleave',function(){clearTimeout(openT);later();});
     w.addEventListener('click',function(){keep();if(busy)return;if(active===w&&pinned){closePop();return;}open(w);if(active===w)pinned=true;});
     w.addEventListener('keydown',function(e){if(e.key==='Enter'){open(w);if(active===w)pinned=true;}});
   }
   pop.addEventListener('mouseenter',keep); pop.addEventListener('mouseleave',later);
+  pop.addEventListener('mousedown',function(){pinned=true;keep();});
   document.addEventListener('mousedown',function(e){
     if(active&&!pop.contains(e.target)&&!active.contains(e.target))closePop();
     if(!menu.hidden&&!menu.contains(e.target)&&!menuBtn.contains(e.target))toggleMenu(false);
@@ -415,6 +421,7 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
   });
   window.addEventListener('resize',function(){if(active)place();});
   document.addEventListener('paste',function(e){
+    if(!active&&!busy&&!formMode&&menu.hidden){var hov=document.querySelector('[data-key]:hover');if(hov&&bound.has(hov)){open(hov);pinned=true;}}
     if(!active||!canPhoto()||busy||formMode)return;
     if(e.target&&e.target.tagName==='INPUT')return;
     var items=(e.clipboardData&&e.clipboardData.items)||[], f=null;
