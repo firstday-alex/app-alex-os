@@ -38,9 +38,18 @@ h2{font-family:'Bebas Neue','Arial Narrow',sans-serif;font-weight:400;font-size:
 ul{padding-left:1.3em;font-size:clamp(16px,1.46vw,36px);line-height:1.35}
 .win{border-radius:6px;outline:none}
 .win .label{border-radius:6px;padding:0 .15em;transition:background .15s}
-.win.interactive{cursor:pointer}
-.win.interactive:hover .label,.win.interactive:focus-visible .label,.win.open .label{background:rgba(255,248,236,.14)}
-.win.has-shot .label::after{content:"";display:inline-block;width:.42em;height:.42em;margin-left:.45em;border-radius:50%;background:#f2b84b;vertical-align:middle;box-shadow:0 0 0 .14em rgba(242,184,75,.3)}
+.win .label{color:inherit;text-decoration:none}
+.win.interactive .label{cursor:pointer}
+.win.interactive .label:hover,.win.interactive .label:focus-visible,.win.open .label{background:rgba(255,248,236,.14);outline:none}
+.win.linked .label{text-decoration:underline;text-decoration-color:rgba(242,184,75,.55);text-underline-offset:.18em;text-decoration-thickness:.06em}
+.win.linked .label:hover{text-decoration-color:#f2b84b}
+/* The dot: gold when there is a screenshot, an outline when there is only a link or room to add one.
+   Hovering it opens the card; the hit area is bigger than the dot. */
+.wdot{display:inline-block;width:.42em;height:.42em;margin-left:.45em;padding:0;border:.09em solid #f2b84b;border-radius:50%;background:transparent;vertical-align:middle;cursor:pointer;position:relative}
+.wdot::before{content:"";position:absolute;inset:-.4em}
+.wdot[hidden]{display:none}
+.win.has-shot .wdot{background:#f2b84b;box-shadow:0 0 0 .14em rgba(242,184,75,.3)}
+.wdot:hover,.wdot:focus-visible,.win.open .wdot{box-shadow:0 0 0 .22em rgba(242,184,75,.45);outline:none}
 .monster{position:fixed;right:clamp(12px,5.6vw,140px);bottom:0;width:clamp(120px,13.1vw,320px);height:auto;pointer-events:none;z-index:0}
 .pop{position:absolute;z-index:20;width:min(440px,calc(100vw - 24px));background:#fff8ec;color:#082a1e;border-radius:16px;padding:14px;box-shadow:0 18px 50px rgba(0,0,0,.45);font-size:16px;line-height:1.4;display:none}
 .pop.show{display:block}
@@ -71,8 +80,6 @@ button.btn:disabled{opacity:.5;cursor:default}
 .hint{font-size:clamp(13px,1vw,20px);color:#cfe3d2}
 .hint .dot{display:inline-block;width:.6em;height:.6em;border-radius:50%;background:#f2b84b;margin-right:.4em}
 @media (max-width:900px){.cols{grid-template-columns:1fr}main{padding-bottom:160px}ul{font-size:17px}h2{font-size:26px}}
-.win a.ext{color:#f2b84b;text-decoration:none;font-weight:700;margin-left:.35em;padding:0 .2em;border-radius:6px}
-.win a.ext:hover,.win a.ext:focus-visible{background:rgba(242,184,75,.25);outline:none}
 a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;background:#0f4a33;color:#fff8ec;text-decoration:none;display:inline-block}
 .linkrow{margin-top:12px;padding-top:12px;border-top:1px solid rgba(8,42,30,.15)}
 .pop .linkrow input{flex:1;min-width:160px;font:inherit;font-size:15px;padding:8px 12px;border-radius:999px;border:2px solid #9bb8a6;background:#fff;color:#082a1e}
@@ -181,7 +188,9 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
         var d=el('div','rock'); d.appendChild(el('h2',null,rock.n));
         var ul=el('ul');
         rock.w.forEach(function(x){
-          var li=el('li','win'); li.dataset.key=x.k; li.tabIndex=0; li.appendChild(el('span','label',x.t));
+          // The words are the link; only the dot opens the photo card (Alex, 2026-11-24).
+          var li=el('li','win'); li.dataset.key=x.k; li.appendChild(el('a','label',x.t));
+          var dot=el('button','wdot'); dot.type='button'; dot.setAttribute('aria-label','Photo and link for this win'); li.appendChild(dot);
           bindWin(li); wins.push(li); ul.appendChild(li);
         });
         d.appendChild(ul); s.appendChild(d);
@@ -305,18 +314,24 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
     wins.forEach(function(w){
       var has=!!shots[w.dataset.key]; if(has)any=true;
       w.classList.toggle('has-shot',has);
-      var url=links[w.dataset.key], a=w.querySelector('a.ext');
+      var url=links[w.dataset.key], a=w.querySelector('a.label');
       if(url){
-        if(!a){a=el('a','ext','↗');a.target='_blank';a.rel='noopener noreferrer';a.setAttribute('aria-label','Open link in a new tab');a.addEventListener('click',function(e){e.stopPropagation();});w.appendChild(a);}
         if(a.getAttribute('href')!==url)a.href=url;
-      } else if(a){a.remove();}
+        a.target='_blank'; a.rel='noopener noreferrer'; a.removeAttribute('role'); a.removeAttribute('tabindex');
+      } else {
+        a.removeAttribute('href'); a.removeAttribute('target');
+        // No link: the words open the card, where a photo or link can be added.
+        if(has||canPhoto()){a.setAttribute('role','button');a.tabIndex=0;} else {a.removeAttribute('role');a.removeAttribute('tabindex');}
+      }
+      w.classList.toggle('linked',!!url);
       w.classList.toggle('interactive',has||!!url||canPhoto());
+      w.querySelector('.wdot').hidden=!(has||url||canPhoto());
       if(has||url)any=true;
     });
     hint.textContent='';
-    if(APP&&!canEdit){hint.appendChild(el('span','dot'));hint.appendChild(document.createTextNode('Hover a win to add or replace its photo. It is attached to the win’s ClickUp ticket, and the newest image on the ticket is the one this page shows.'));}
-    else if(canEdit){hint.appendChild(el('span','dot'));hint.appendChild(document.createTextNode('Hover a win to add or view its screenshot or link. Use the menu at the top right to switch weeks or add a new one.'));}
-    else if(any){hint.appendChild(el('span','dot'));hint.appendChild(document.createTextNode('Wins with a gold dot have a screenshot, and ↗ opens a link in a new tab. Hover a win to see both.'));}
+    if(APP&&!canEdit){hint.appendChild(el('span','dot'));hint.appendChild(document.createTextNode('Hover a win’s dot to add or replace its photo. It is attached to the win’s ClickUp ticket, and the newest image on the ticket is the one this page shows.'));}
+    else if(canEdit){hint.appendChild(el('span','dot'));hint.appendChild(document.createTextNode('Hover a win’s dot to add or view its screenshot or link; click its words to open the link. Use the menu at the top right to switch weeks or add a new one.'));}
+    else if(any){hint.appendChild(el('span','dot'));hint.appendChild(document.createTextNode('Click a win’s words to open its link. Wins with a gold dot have a screenshot: hover the dot to see it.'));}
     if(active&&!(document.activeElement&&document.activeElement.tagName==='INPUT'&&pop.contains(document.activeElement)))render();
   }
   function place(){
@@ -404,10 +419,14 @@ a.btn{font-weight:700;font-size:15px;border-radius:999px;padding:8px 16px;backgr
   function keep(){clearTimeout(closeT);}
   function bindWin(w){
     bound.add(w);
-    w.addEventListener('mouseenter',function(){keep();clearTimeout(openT);if(pinned||busy)return;openT=setTimeout(function(){open(w);},120);});
-    w.addEventListener('mouseleave',function(){clearTimeout(openT);later();});
-    w.addEventListener('click',function(){keep();if(busy)return;if(active===w&&pinned){closePop();return;}open(w);if(active===w)pinned=true;});
-    w.addEventListener('keydown',function(e){if(e.key==='Enter'){open(w);if(active===w)pinned=true;}});
+    var dot=w.querySelector('.wdot'), words=w.querySelector('.label');
+    var toggle=function(){keep();if(busy)return;if(active===w&&pinned){closePop();return;}open(w);if(active===w)pinned=true;};
+    dot.addEventListener('mouseenter',function(){keep();clearTimeout(openT);if(pinned||busy)return;openT=setTimeout(function(){open(w);},120);});
+    dot.addEventListener('mouseleave',function(){clearTimeout(openT);later();});
+    dot.addEventListener('click',function(e){e.stopPropagation();toggle();});
+    // Words with a link follow it; without one they open the card.
+    words.addEventListener('click',function(e){if(words.getAttribute('href'))return;if(w.classList.contains('interactive')){e.preventDefault();toggle();}});
+    words.addEventListener('keydown',function(e){if(!words.getAttribute('href')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();toggle();}});
   }
   pop.addEventListener('mouseenter',keep); pop.addEventListener('mouseleave',later);
   pop.addEventListener('mousedown',function(){pinned=true;keep();});
